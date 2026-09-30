@@ -1,0 +1,466 @@
+/* ══ rack list — RACK at sheet density ════════════════════════════════════
+ *
+ * The stylesheet for a service that IS one table: author_manager was the first,
+ * reference_manager the second, and a rule changed here reaches both. Written
+ * for a service whose whole screen is a list, not for a page with a list on it.
+ *
+ * The portal's vocabulary, denser: grey ground, white module, the nameplate IS
+ * the title, square corners, no bold, one text size — 26px lines and 12px text
+ * instead of the portal's 36 and 14, because the job here is scanning hundreds
+ * of rows rather than reading eight facts.
+ *
+ * Class prefix: rl-. Colour and metric tokens: --rk-* (RACK's own).
+ */
+
+:root {
+  --rk-row: 26px;          /* one height for every line: head and record alike */
+  --rk-fs: 12px;           /* one size */
+  --rk-ground: #f1f5f9;
+  --rk-panel: #ffffff;
+  --rk-head: #e2e8f0;
+  --rk-line: #e2e8f0;      /* between rows */
+  --rk-edge: #cbd5e1;      /* the module's own edge, a step stronger */
+  --rk-text: #1e293b;
+  --rk-dim: #475569;
+  --rk-mute: #94a3b8;
+  --rk-ink: #0f172a;
+  --rk-gut: #f8fafc;
+  --rk-hover: #e9eef5;   /* a row under the pointer */
+  --rk-tab: #f3e5bb;     /* a control that belongs to ONE tab */
+  --rk-tab-t: #92400e;
+  --rk-cite: #dbeafe;      /* the citation columns wear it on the HEAD only */
+  --rk-cite-t: #1d4ed8;
+  --rk-mono: 'D2 coding', ui-monospace, Menlo, Consolas, monospace;
+  --rk-sans: Pretendard, 'IBM Plex Sans', -apple-system, BlinkMacSystemFont,
+             system-ui, 'Apple SD Gothic Neo', sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--rk-ground);
+  color: var(--rk-text);
+  font-family: var(--rk-sans);
+  font-size: var(--rk-fs);
+  /* Inside the portal's panel there is nothing to scroll but the table. */
+  overflow: hidden;
+}
+
+.rl {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
+}
+
+/* The module. One per screen, filling it. */
+.rl-mod {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--rk-panel);
+  border: 1px solid var(--rk-edge);
+  overflow: hidden;
+}
+
+/* The nameplate keeps the portal's 36px: a denser table does not make the
+   module's own name smaller. */
+.rl-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 36px;
+  padding: 0 11px;
+  background: var(--rk-head);
+  border-bottom: 1px solid var(--rk-edge);
+}
+.rl-bar b { font-weight: 400; color: var(--rk-ink); }
+.rl-bar .rl-n { color: var(--rk-dim); font-family: var(--rk-mono); }
+
+/* The table. One grid template, shared by the head and every row, so a column
+   is a column all the way down. */
+.rl-tab {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.rl-row {
+  display: grid;
+  height: var(--rk-row);
+}
+.rl-row + .rl-row { border-top: 1px solid var(--rk-line); }
+
+.rl-c {
+  padding: 0 6px;
+  line-height: calc(var(--rk-row) - 1px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rl-dim { color: var(--rk-dim); }
+.rl-ink { color: var(--rk-ink); }
+.rl-mono { font-family: var(--rk-mono); }
+.rl-num { text-align: right; color: var(--rk-dim); }
+/* A column head is a word, not a value: never the monospace of what is
+   under it. */
+.rl-head .rl-mono { font-family: var(--rk-sans); }
+.rl-mid { text-align: center; }
+
+/* The row number: the sheet's, and what you say out loud. */
+.rl-gut {
+  padding: 0 6px;
+  text-align: right;
+  line-height: calc(var(--rk-row) - 1px);
+  background: var(--rk-gut);
+  border-right: 1px solid var(--rk-line);
+  font-family: var(--rk-mono);
+  font-size: 11px;
+  color: var(--rk-mute);
+}
+
+/* The head. Sticky, because a column name you have scrolled past is a column
+   you have to guess at. */
+.rl-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--rk-head);
+  border-bottom: 1px solid var(--rk-edge);
+}
+.rl-head .rl-c { color: var(--rk-dim); }
+.rl-head .rl-gut { color: var(--rk-dim); background: var(--rk-gut); }
+
+.rl-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: var(--rk-row);
+  padding: 0 11px;
+  background: var(--rk-gut);
+  border-top: 1px solid var(--rk-edge);
+  color: var(--rk-dim);
+}
+.rl-sp { flex: 1; }
+.rl-msg { padding: 14px 11px; color: var(--rk-mute); }
+
+/* Narrower than the design width, columns LEAVE rather than the table
+   scrolling sideways — a name scrolled away from its own row is worse than a
+   column you can read somewhere else. Reverse order of need. */
+
+/* ── the command line ─────────────────────────────────────────────────────
+   What the selection can do, and the one search field. Buttons are 22px —
+   one step inside the 26px line, the portal's rule for what sits in a row. */
+.rl-cmd {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 11px;
+  border-bottom: 1px solid var(--rk-line);
+}
+.rl-btn {
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--rk-dim);
+  border-radius: 0;
+  background: var(--rk-panel);
+  font: inherit;
+  font-size: var(--rk-fs);
+  color: var(--rk-dim);
+  cursor: pointer;
+}
+.rl-btn:hover:not(:disabled) { background: var(--rk-gut); border-color: var(--rk-ink); color: var(--rk-ink); }
+.rl-btn:disabled { border-color: var(--rk-line); color: var(--rk-mute); cursor: default; }
+.rl-btn.rl-go { border-color: var(--rk-cite-t); background: var(--rk-cite); color: var(--rk-cite-t); }
+.rl-find {
+  width: 240px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--rk-edge);
+  border-radius: 0;
+  background: var(--rk-panel);
+  font: inherit;
+  font-size: var(--rk-fs);
+  color: var(--rk-text);
+}
+
+/* ── the tabs ─────────────────────────────────────────────────────────────
+   They sit ON the table: the chosen one is the table's own white, the rest
+   are the head's grey, so a tab reads as the front sheet of a folder. */
+.rl-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  height: 26px;
+  background: var(--rk-gut);
+  border-bottom: 1px solid var(--rk-edge);
+  overflow-x: auto;
+}
+.rl-tab {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  background: var(--rk-head);
+  border-right: 1px solid var(--rk-edge);
+  color: var(--rk-dim);
+}
+.rl-tab.on { background: var(--rk-panel); color: var(--rk-ink); }
+.rl-tabname {
+  height: 100%;
+  padding: 0 11px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--rk-fs);
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rl-x {
+  width: 18px;
+  height: 100%;
+  padding: 0;
+  margin-right: 3px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--rk-mute);
+  cursor: pointer;
+}
+.rl-x:hover { color: #b91c1c; }
+
+/* ── rows you can hit ─────────────────────────────────────────────────────
+   Hover says "this line is a thing you can act on"; the selected fill is the
+   portal's own selected blue. */
+.rl-tab-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.rl-hit { cursor: default; }
+.rl-hit:hover { background: var(--rk-hover); }
+.rl-hit.on { background: var(--rk-cite); }
+.rl-hit.on:hover { background: #cfe0fb; }
+.rl-chk { display: grid; place-items: center; }
+.rl-chk input { width: 12px; height: 12px; margin: 0; accent-color: var(--rk-cite-t); }
+
+
+
+/* ── one record, at the readable size ─────────────────────────────────────
+   Finding is dense; reading and typing are not. */
+.rl-rec {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  align-items: stretch;
+  font-size: 13px;
+}
+.rl-fl {
+  display: flex;
+  align-items: center;
+  padding: 7px 12px;
+  border-top: 1px solid var(--rk-line);
+  color: var(--rk-dim);
+}
+.rl-fv {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 7px 12px;
+  border-top: 1px solid var(--rk-line);
+}
+.rl-rec > :nth-child(1), .rl-rec > :nth-child(2) { border-top: 0; }
+.rl-in {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--rk-edge);
+  border-radius: 0;
+  background: var(--rk-panel);
+  font: inherit;
+  font-size: 13px;
+  color: var(--rk-text);
+}
+.rl-hint { color: var(--rk-mute); }
+
+/* ── a draggable column edge ───────────────────────────────────────────────
+   The head cell holds it; it is 7px wide so it can be caught without being
+   seen, and only shows itself under the pointer. */
+.rl-head .rl-c, .rl-head .rl-gut { position: relative; }
+.rl-grip {
+  position: absolute;
+  top: 0; right: -3px; bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+  z-index: 2;
+}
+.rl-grip:hover { background: var(--rk-cite-t); opacity: .35; }
+/* While a column is being dragged nothing else should select or hover. */
+body.rl-resizing { cursor: col-resize; user-select: none; }
+body.rl-resizing .rl-hit:hover { background: transparent; }
+
+/* ── My List's output ─────────────────────────────────────────────────────
+   Under the table, because it is what the table is FOR: the list goes in, a
+   paper's author block comes out. */
+.rl-out {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--rk-edge);
+  background: var(--rk-gut);
+}
+.rl-outbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 7px 11px;
+}
+.rl-outfoot { border-top: 1px solid var(--rk-line); }
+.rl-gap { width: 10px; }
+.rl-outbox {
+  margin: 0 11px 9px;
+  min-height: 92px;
+  max-height: 200px;
+  padding: 7px 9px;
+  border: 1px solid var(--rk-edge);
+  border-radius: 0;
+  background: var(--rk-panel);
+  font-family: var(--rk-mono);
+  font-size: var(--rk-fs);
+  line-height: 1.5;
+  color: var(--rk-text);
+  resize: vertical;
+  white-space: pre;
+}
+.rl-newgrp { margin: 0 11px 4px; background: var(--rk-panel); border: 1px solid var(--rk-edge); }
+/* One name in My List, with the way to take it out again. */
+.rl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 19px;
+  padding: 0 2px 0 7px;
+  border: 1px solid var(--rk-edge);
+  background: var(--rk-panel);
+  color: var(--rk-dim);
+  white-space: nowrap;
+}
+.rl-chip .rl-x { width: 15px; height: 100%; margin: 0; font-size: 12px; }
+
+/* ── the listing rule ─────────────────────────────────────────────────────
+   The buttons above only fill this in; this is what makes the text. */
+.rl-rule-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px 6px;
+}
+.rl-tokens { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 0 11px 7px; }
+.rl-tok {
+  height: 18px;
+  padding: 0 6px;
+  border: 1px dashed var(--rk-edge);
+  background: var(--rk-panel);
+  font-family: var(--rk-mono);
+  font-size: 11px;
+  color: var(--rk-dim);
+  cursor: pointer;
+}
+.rl-tok:hover:not(:disabled) { border-style: solid; border-color: var(--rk-cite-t); color: var(--rk-cite-t); }
+.rl-tok:disabled { color: var(--rk-mute); cursor: default; }
+/* The preset you are on fills, like the portal's own switches. */
+.rl-btn.on { background: var(--rk-cite); border-color: var(--rk-cite-t); color: var(--rk-cite-t); }
+
+/* A tab you opened, against the four that are always there. Blue is the
+   portal's "this one is yours / selected" tint; when it is the front sheet it
+   goes white like any other tab, with a blue cap so the family still reads. */
+.rl-tab.rl-opened { background: var(--rk-cite); color: var(--rk-cite-t); }
+.rl-tab.rl-opened.on {
+  background: var(--rk-panel);
+  color: var(--rk-ink);
+  box-shadow: inset 0 2px 0 var(--rk-cite-t);
+}
+.rl-tab.rl-opened .rl-x { color: var(--rk-cite-t); }
+
+/* Deleting is the one thing here that cannot be undone. */
+.rl-btn.rl-danger { border-color: #b91c1c; color: #b91c1c; }
+.rl-btn.rl-danger:hover:not(:disabled) { background: #fee2e2; border-color: #b91c1c; color: #b91c1c; }
+
+/* The column label is the sort button; the arrow says which way it went. */
+.rl-head > .rl-c:has(.rl-sort) { padding: 0; }
+/* The whole cell is the control: aiming at four characters of label was work
+   for nothing, and the head row is exactly as tall as a target needs. */
+.rl-sort {
+  display: flex; align-items: center; gap: 4px;
+  width: 100%; height: 100%; padding: 0 6px;
+  border: 0; background: none;
+  font: inherit; color: inherit; cursor: pointer; text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rl-head > .rl-c.rl-num:has(.rl-sort) .rl-sort { justify-content: flex-end; }
+.rl-sort:hover { background: rgba(15, 23, 42, .06); }
+.rl-sort:hover { color: var(--rk-ink); }
+.rl-arrow { font-style: normal; font-size: 10px; color: var(--rk-cite-t); }
+
+/* A line between the labels — only in the head. The rows stay clean (a table
+   of people is not a grid of cells), but the head is where a column begins and
+   ends, and it is also where the edge is dragged: the line shows where to
+   take hold. */
+.rl-head > .rl-c + .rl-c { border-left: 1px solid var(--rk-edge); }
+
+/* Filter mode: the label you are picking values from, and how many are picked. */
+.rl-facet.on { color: var(--rk-cite-t); }
+.rl-head:has(.rl-facet) { background: var(--rk-tab); }
+/* One value on offer, and how many rows it would keep. */
+.rl-row.rl-frow { grid-template-columns: 26px 34px minmax(160px, 1fr) 80px; }
+
+/* The listing drawer's handle. */
+.rl-outhead {
+  display: flex; align-items: center; gap: 7px;
+  width: 100%; height: 26px; padding: 0 11px;
+  border: 0; background: none;
+  font: inherit; font-size: var(--rk-fs); color: var(--rk-dim);
+  cursor: pointer; text-align: left;
+}
+.rl-outhead:hover { background: var(--rk-hover); color: var(--rk-ink); }
+.rl-outhead.on { color: var(--rk-ink); }
+.rl-caret { font-style: normal; font-size: 9px; color: var(--rk-mute); }
+
+/* A field that holds SEVERAL entries: one line each, and a way to add another. */
+.rl-rows { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.rl-rrow { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.rl-rrow .rl-x { width: 18px; height: 22px; color: var(--rk-mute); }
+.rl-rrow .rl-x:hover { color: #b91c1c; }
+.rl-tag {
+  display: inline-flex; align-items: center; height: 17px; padding: 0 7px;
+  border: 1px solid var(--rk-cite-t); background: var(--rk-cite);
+  font-size: 11px; color: var(--rk-cite-t);
+}
+.rl-rows select.rl-in { padding: 0 4px; }
+
+/* A warning in a form: said where the thing it is about is. */
+.rl-warn { color: #b91c1c; }
+
+/* Two panes side by side: the lists, and the editor with its own tabs. Each
+   keeps its own scroll, so reading one does not move the other. */
+.rl-body { flex: 1; min-height: 0; display: flex; align-items: stretch; }
+.rl-pane { flex: 1 1 50%; min-width: 0; display: flex; flex-direction: column; }
+.rl-epane { border-left: 1px solid var(--rk-edge); overflow-y: auto; background: var(--rk-panel); }
+/* A row that is open in the editor, while the selection blue means something
+   else entirely. */
+.rl-hit.rl-edited { box-shadow: inset 2px 0 0 var(--rk-cite-t); }
+
+/* A button that is only here while this tab is: mustard, so it is not read as
+   part of the row that is always there. */
+.rl-btn.rl-tabonly { border-color: var(--rk-tab-t); background: var(--rk-tab); color: var(--rk-tab-t); }
+.rl-btn.rl-tabonly:hover:not(:disabled) { background: #ecd89f; border-color: var(--rk-tab-t); color: var(--rk-tab-t); }
+.rl-btn.rl-tabonly:disabled { border-color: var(--rk-line); background: none; color: var(--rk-mute); }
+
+/* The group picker is a button that happens to open its own list. */
+.rl-btn.rl-pick { padding-right: 2px; }
