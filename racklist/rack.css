@@ -451,7 +451,20 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
    keeps its own scroll, so reading one does not move the other. */
 .rl-body { flex: 1; min-height: 0; display: flex; align-items: stretch; }
 .rl-pane { flex: 1 1 50%; min-width: 0; display: flex; flex-direction: column; }
-.rl-epane { border-left: 1px solid var(--rk-edge); overflow-y: auto; background: var(--rk-panel); }
+/* The pane scrolls its CONTENT, not itself: a tab strip that scrolls away is
+   not a tab strip, and the way out of a record was leaving with it. */
+.rl-epane {
+  border-left: 1px solid var(--rk-edge);
+  overflow: hidden;
+  background: var(--rk-panel);
+}
+.rl-edit { flex: 1; min-height: 0; overflow-y: auto; }
+/* author_manager's editors put the record straight in a .rl-tab-body, which
+   already scrolls — named here too so the rule cannot depend on which wrapper
+   a service happened to use. */
+.rl-epane > .rl-tab-body { flex: 1; min-height: 0; overflow-y: auto; }
+/* Same rule for the strip itself: it stays put while the record moves. */
+.rl-epane > .rl-tabs { position: sticky; top: 0; z-index: 3; }
 /* A row that is open in the editor, while the selection blue means something
    else entirely. */
 .rl-hit.rl-edited { box-shadow: inset 2px 0 0 var(--rk-cite-t); }
