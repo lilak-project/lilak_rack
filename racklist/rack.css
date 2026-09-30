@@ -464,3 +464,17 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
 
 /* The group picker is a button that happens to open its own list. */
 .rl-btn.rl-pick { padding-right: 2px; }
+
+/* A number or a name that is also the way to the thing it names. */
+.rl-lnk {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--rk-fs);
+  color: var(--rk-cite-t);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.rl-lnk:hover { color: var(--rk-ink); }
