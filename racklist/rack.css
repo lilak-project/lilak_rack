@@ -82,13 +82,9 @@ body {
 .rl-bar .rl-n { color: var(--rk-dim); font-family: var(--rk-mono); }
 
 /* The table. One grid template, shared by the head and every row, so a column
-   is a column all the way down. */
-.rl-tab {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
+   is a column all the way down. (The container is .rl-tab-body, below — a rule
+   for `.rl-tab` used to live here, which is the TAB's class, and it was quietly
+   handing every tab an overflow it had no use for.) */
 .rl-row {
   display: grid;
   height: var(--rk-row);
@@ -194,20 +190,32 @@ body {
 /* ── the tabs ─────────────────────────────────────────────────────────────
    They sit ON the table: the chosen one is the table's own white, the rest
    are the head's grey, so a tab reads as the front sheet of a folder. */
+/* Tabs WRAP rather than scroll. A 26px strip with a horizontal scrollbar in it
+   has ~16px left for the tab, so the scrollbar was covering the names it was
+   there to let you reach. Three rows is as tall as it goes; past that it
+   scrolls, without a bar over the text. */
 .rl-tabs {
   flex: 0 0 auto;
   display: flex;
+  flex-wrap: wrap;
   align-items: stretch;
+  align-content: flex-start;
   gap: 0;
-  height: 26px;
+  min-height: 26px;
+  max-height: 78px;
+  overflow-y: auto;
+  scrollbar-width: none;
   background: var(--rk-gut);
   border-bottom: 1px solid var(--rk-edge);
-  overflow-x: auto;
 }
+.rl-tabs::-webkit-scrollbar { width: 0; height: 0; }
 .rl-tab {
   display: flex;
   align-items: center;
+  /* Its own height, not one borrowed from the strip: wrapped onto a second row
+     a tab was stretching to half of 26px instead of standing 26px tall. */
   flex: 0 0 auto;
+  height: var(--rk-row);
   background: var(--rk-head);
   border-right: 1px solid var(--rk-edge);
   color: var(--rk-dim);
