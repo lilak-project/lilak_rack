@@ -86,6 +86,24 @@ export function useFindKey(ref) {
   }, [ref])
 }
 
+/** ⌘Enter / Ctrl+Enter toggles every row now on screen. It is the one thing a
+ *  keyboard is wanted for here — search, then take all of it — and the modifier
+ *  is what keeps a stray Enter from selecting a hundred rows. It fires wherever
+ *  the focus is, including inside the search field you just typed in. */
+export function useToggleKey(toggleAll) {
+  const fn = useRef(toggleAll)
+  fn.current = toggleAll
+  useEffect(() => {
+    const on = (e) => {
+      if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey)) return
+      e.preventDefault()
+      fn.current?.()
+    }
+    window.addEventListener('keydown', on)
+    return () => window.removeEventListener('keydown', on)
+  }, [])
+}
+
 /** One line of status, and it clears itself. */
 export function useNote(ms = 4000) {
   const [note, setNote] = useState('')

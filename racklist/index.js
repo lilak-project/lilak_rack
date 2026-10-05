@@ -1,6 +1,7 @@
 export { RackTable, RackRow, RackTabs } from './table.jsx'
 export {
-  useColumnWidths, useViewportWidth, useSelection, useFindKey, useNote, useViewState,
+  useColumnWidths, useViewportWidth, useSelection, useFindKey, useToggleKey,
+  useNote, useViewState,
 } from './hooks.js'
 export { bySome, fill, facetOf, passesFilter } from './sort.js'
 export {
