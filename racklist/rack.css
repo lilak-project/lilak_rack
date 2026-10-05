@@ -68,6 +68,10 @@ body {
 
 /* The nameplate keeps the portal's 36px: a denser table does not make the
    module's own name smaller. */
+/* The nameplate wears the service's OWN colour — the one on the card the user
+   pressed to get here — so the screen and the icon are the same thing. The
+   portal injects it (__PORTAL_SERVICE__); outside the portal there is no colour
+   and the plate stays RACK's grey. */
 .rl-bar {
   flex: 0 0 auto;
   display: flex;
@@ -75,11 +79,12 @@ body {
   gap: 9px;
   height: 36px;
   padding: 0 11px;
-  background: var(--rk-head);
+  background: var(--rk-brand, var(--rk-head));
+  color: var(--rk-brand-t, var(--rk-dim));
   border-bottom: 1px solid var(--rk-edge);
 }
-.rl-bar b { font-weight: 400; color: var(--rk-ink); }
-.rl-bar .rl-n { color: var(--rk-dim); font-family: var(--rk-mono); }
+.rl-bar b { font-weight: 400; color: var(--rk-brand-t, var(--rk-ink)); }
+.rl-bar .rl-n { color: var(--rk-brand-t, var(--rk-dim)); font-family: var(--rk-mono); opacity: .75; }
 
 /* The table. One grid template, shared by the head and every row, so a column
    is a column all the way down. (The container is .rl-tab-body, below — a rule

@@ -12,6 +12,27 @@ export const PORTAL_BASE = BASE
 /** The project the portal opened: the last part of /pp/<svc>/<proj>/. */
 export const PORTAL_PROJECT = PARTS.length ? PARTS[PARTS.length - 1] : ''
 
+/** What the portal injected about this service: the colour on its card, its
+ *  label, the project it was opened for. Empty when the app is opened outside
+ *  the portal — the nameplate then keeps the plain RACK grey. */
+export const PORTAL_SERVICE = (typeof window !== 'undefined' && window.__PORTAL_SERVICE__) || {}
+
+/** Readable text on a given plate. Luminance, not a guess: a service may be
+ *  painted anything from #f3e5bb to #3d5a80. */
+export function onColor(hex) {
+  const h = String(hex || '').replace('#', '')
+  if (h.length !== 6) return ''
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255)
+  const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+  const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+  return L > 0.5 ? '#0f172a' : '#ffffff'
+}
+
+/** The two variables a rack-list app puts on its root so the nameplate wears
+ *  the service's own colour. Spread into a style prop. */
+export const brandStyle = (color = PORTAL_SERVICE.color) => (color
+  ? { '--rk-brand': color, '--rk-brand-t': onColor(color) } : {})
+
 export const load = (k, fallback) => {
   try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback } catch { return fallback }
 }
