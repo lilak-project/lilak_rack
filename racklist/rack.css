@@ -520,3 +520,19 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
   border-top: 1px solid var(--rk-edge);
   background: var(--rk-gut);
 }
+
+/* Rows whose first cell is a name of its own width — a tag, a group — do not
+   line up by themselves: every row starts where its own chip ends. Here the
+   LIST is the grid and each row hands its cells to it, so a column is as wide
+   as the widest thing in it and the fields below a field. */
+.rl-rows.rl-grid {
+  display: grid;
+  grid-template-columns: repeat(5, max-content);
+  gap: 4px 5px;
+  align-items: center;
+  justify-content: start;
+}
+.rl-rows.rl-grid > .rl-rrow { display: contents; }
+/* A row that is not part of the table of fields — an add control, a note —
+   takes the whole width back. */
+.rl-rows.rl-grid > .rl-full { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; }
