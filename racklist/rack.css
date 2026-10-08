@@ -544,3 +544,16 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
 /* A row that is not part of the table of fields — an add control, a note —
    takes the whole width back. */
 .rl-rows.rl-grid > .rl-full { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; }
+
+/* A tag that is also a choice: the main one wears the plate, the others an
+   outline of it. */
+.rl-tagpick {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  font-size: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.rl-tag.rl-main { border-color: var(--rk-tab-t); background: var(--rk-tab); color: var(--rk-tab-t); }
