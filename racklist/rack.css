@@ -160,13 +160,18 @@ body {
 .rl-cmd {
   flex: 0 0 auto;
   display: flex;
+  flex-wrap: wrap;          /* narrow: a second row, not squashed buttons */
   align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 11px;
+  gap: 5px 6px;
+  min-height: 32px;
+  padding: 4px 11px;
   border-bottom: 1px solid var(--rk-line);
 }
 .rl-btn {
+  /* A toolbar button is as wide as its word: shrinking it wraps the label onto
+     a second line that a 22px box cannot show. */
+  flex: 0 0 auto;
+  white-space: nowrap;
   height: 22px;
   padding: 0 9px;
   border: 1px solid var(--rk-dim);
@@ -181,7 +186,10 @@ body {
 .rl-btn:disabled { border-color: var(--rk-line); color: var(--rk-mute); cursor: default; }
 .rl-btn.rl-go { border-color: var(--rk-cite-t); background: var(--rk-cite); color: var(--rk-cite-t); }
 .rl-find {
-  width: 240px;
+  /* The one thing in the row that may give up width before it wraps. */
+  flex: 1 1 240px;
+  min-width: 120px;
+  max-width: 240px;
   height: 22px;
   padding: 0 8px;
   border: 1px solid var(--rk-edge);
