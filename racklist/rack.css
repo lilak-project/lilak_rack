@@ -5,16 +5,17 @@
  * for a service whose whole screen is a list, not for a page with a list on it.
  *
  * The portal's vocabulary, denser: grey ground, white module, the nameplate IS
- * the title, square corners, no bold, one text size — 26px lines and 12px text
- * instead of the portal's 36 and 14, because the job here is scanning hundreds
- * of rows rather than reading eight facts.
+ * the title, square corners, no bold, one text size — 26px lines and 15px text
+ * against the portal's 36 and 14: the rows are packed tighter than the portal's
+ * because the job here is scanning hundreds of them, but the text is the text
+ * you read all day and it is not made smaller for that.
  *
  * Class prefix: rl-. Colour and metric tokens: --rk-* (RACK's own).
  */
 
 :root {
   --rk-row: 26px;          /* one height for every line: head and record alike */
-  --rk-fs: 12px;           /* one size */
+  --rk-fs: 15px;           /* one size */
   --rk-ground: #f1f5f9;
   --rk-panel: #ffffff;
   --rk-head: #e2e8f0;
@@ -268,7 +269,7 @@ body.rl-page {
   border: 0;
   background: none;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--rk-fs);
   line-height: 1;
   color: var(--rk-mute);
   cursor: pointer;
@@ -294,7 +295,7 @@ body.rl-page {
   display: grid;
   grid-template-columns: 110px 1fr;
   align-items: stretch;
-  font-size: 13px;
+  font-size: var(--rk-fs);
 }
 .rl-fl {
   display: flex;
@@ -319,7 +320,7 @@ body.rl-page {
   border-radius: 0;
   background: var(--rk-panel);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--rk-fs);
   color: var(--rk-text);
 }
 .rl-hint { color: var(--rk-mute); }
