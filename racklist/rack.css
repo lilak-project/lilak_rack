@@ -570,3 +570,16 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
 
 /* A fact that is either there or not: the tick is the whole cell. */
 .rl-ok { color: var(--rk-cite-t); }
+
+/* A PDF, read by the service because the browser may not read the disk. */
+.rl-pdf { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.rl-pdfbar {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 11px;
+  border-bottom: 1px solid var(--rk-line);
+}
+.rl-pdfbar .rl-mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rl-pdfview { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--rk-ground); }
+/* A field you can drop a file on. */
+.rl-rows.rl-over { outline: 2px dashed var(--rk-cite-t); outline-offset: 2px; }
