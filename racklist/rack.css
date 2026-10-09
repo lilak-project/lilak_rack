@@ -480,8 +480,10 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
    than the list's continuation. */
 .rl-epane {
   margin: 6px 6px 6px 0;
-  border: 1px solid var(--rk-edge);
-  box-shadow: var(--rk-shadow, 0 1px 2px rgba(15, 23, 42, .06));
+  /* A darker edge than the table's own lines: the pane is a different thing,
+     not another section of the list. */
+  border: 1px solid var(--rk-dim);
+  box-shadow: 0 1px 6px rgba(15, 23, 42, .10);
   overflow: hidden;
   background: var(--rk-panel);
 }
@@ -565,3 +567,6 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
   cursor: pointer;
 }
 .rl-tag.rl-main { border-color: var(--rk-tab-t); background: var(--rk-tab); color: var(--rk-tab-t); }
+
+/* A fact that is either there or not: the tick is the whole cell. */
+.rl-ok { color: var(--rk-cite-t); }
