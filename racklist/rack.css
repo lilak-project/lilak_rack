@@ -634,3 +634,24 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
 .rl-edge-l { left: 0; }
 .rl-edge-r { right: 0; background: linear-gradient(to left, var(--rk-panel), transparent); }
 .rl-edge:hover { color: var(--rk-ink); background-color: var(--rk-gut); }
+
+/* ── an editor column's strip ─────────────────────────────────────────────
+   Its tabs, then the two things you may do with the column itself: send the
+   record across, or take the list's width. */
+.rl-strip { flex: 0 0 auto; display: flex; align-items: stretch; background: var(--rk-gut); }
+.rl-strip-tabs { flex: 1; min-width: 0; }
+.rl-strip-tabs .rl-tabs { background: none; }
+.rl-btn.rl-pane-btn {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: var(--rk-row);
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--rk-edge);
+  border-bottom: 1px solid var(--rk-edge);
+  background: var(--rk-gut);
+  color: var(--rk-dim);
+}
+.rl-btn.rl-pane-btn:hover { background: var(--rk-head); color: var(--rk-ink); }
