@@ -2,6 +2,7 @@ export { RackTable, RackRow, RackTabs } from './table.jsx'
 export { useEditorPanes, RackPaneStrip } from './panes.jsx'
 export { RackActions } from './actions.jsx'
 export { RackField, RackTextRows } from './fields.jsx'
+export { useMergeMode, RackMergeButtons, RackMerge } from './merge.jsx'
 export {
   useColumnWidths, useViewportWidth, useSelection, useFindKey, useToggleKey,
   useNote, useViewState, usePaneSplit, useRackKeys,
