@@ -6,7 +6,10 @@ import { useState } from 'react'
  * component rather than a shape each editor redraws from memory.
  *
  *   [등록]                        while the record is a draft
- *   [save and exit] [cancel] ……… [revert] [delete]      once it exists
+ *   [save] [cancel] ……… [revert] [delete]              once it exists
+ *
+ * save SAVES. Leaving is ⌘X or the tab's own ×, because a button that closes
+ * what you are working on is a button you stop pressing.
  *
  * Leaving is on the left, undoing and destroying on the right: four buttons in
  * a row read as one kind of thing, and two of them are not.
@@ -18,7 +21,7 @@ import { useState } from 'react'
  */
 export function RackActions({
   draft, createLabel = '등록', onCreate, createDisabled, hint,
-  saveLabel = 'save and exit', onSave, saveDisabled,
+  saveLabel = 'save', onSave, saveDisabled,
   onCancel, onRevert, onDelete, deleteWarn = '되돌릴 수 없습니다.',
 }) {
   const [sure, setSure] = useState(false)
