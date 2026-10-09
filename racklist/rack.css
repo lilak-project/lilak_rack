@@ -338,6 +338,9 @@ body.rl-page {
 .rl-grip:hover { background: var(--rk-cite-t); opacity: .35; }
 /* While a column is being dragged nothing else should select or hover. */
 body.rl-resizing { cursor: col-resize; user-select: none; }
+/* An iframe swallows the pointer; while the line is moving, nothing in the
+   panes may take it. */
+body.rl-resizing iframe { pointer-events: none; }
 body.rl-resizing .rl-hit:hover { background: transparent; }
 
 /* ── My List's output ─────────────────────────────────────────────────────

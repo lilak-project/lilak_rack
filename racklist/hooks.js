@@ -136,27 +136,34 @@ export function usePaneSplit(key, initial = 50) {
   })
   const [dragging, setDragging] = useState(false)
   const box = useRef(null)
+  const span = useRef(null)
   useEffect(() => { save(key, pct) }, [key, pct])
+  // A drag that is still on when the handle goes leaves the page unclickable.
+  useEffect(() => () => document.body.classList.remove('rl-resizing'), [])
 
-  const onMouseDown = useCallback((e) => {
+  // Pointer capture, not window listeners: the pane next door may hold an
+  // iframe (a PDF), and an iframe eats every mouse event over it — the drag
+  // stopped following, and the mouseup that would have ended it never
+  // arrived, so afterwards the line moved with the bare pointer.
+  const onPointerDown = useCallback((e) => {
     e.preventDefault()
     const parent = box.current?.parentElement
     if (!parent) return
-    const rect = parent.getBoundingClientRect()
+    span.current = parent.getBoundingClientRect()
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* no capture */ }
     setDragging(true)
     document.body.classList.add('rl-resizing')
-    const move = (ev) => {
-      const v = ((ev.clientX - rect.left) / rect.width) * 100
-      setPct(Math.min(80, Math.max(20, v)))
-    }
-    const up = () => {
-      setDragging(false)
-      document.body.classList.remove('rl-resizing')
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
-    }
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+  }, [])
+
+  const onPointerMove = useCallback((e) => {
+    if (!dragging || !span.current) return
+    const { left, width } = span.current
+    setPct(Math.min(80, Math.max(20, ((e.clientX - left) / width) * 100)))
+  }, [dragging])
+
+  const stop = useCallback(() => {
+    setDragging(false)
+    document.body.classList.remove('rl-resizing')
   }, [])
 
   return {
@@ -169,7 +176,12 @@ export function usePaneSplit(key, initial = 50) {
     /** spread onto a <div className="rl-split"> between them */
     handleProps: {
       ref: box,
-      onMouseDown,
+      onPointerDown,
+      onPointerMove,
+      onPointerUp: stop,
+      onPointerCancel: stop,
+      onLostPointerCapture: stop,
+      style: { touchAction: 'none' },
       onDoubleClick: () => setPct(initial),
       role: 'separator',
       title: '끌어서 넓이 조절 · 두 번 누르면 반반',
