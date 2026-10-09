@@ -473,12 +473,20 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
 .rl-body { flex: 1; min-height: 0; display: flex; align-items: stretch; }
 .rl-pane { flex: 1 1 50%; min-width: 0; display: flex; flex-direction: column; }
 /* The pane scrolls its CONTENT, not itself: a tab strip that scrolls away is
-   not a tab strip, and the way out of a record was leaving with it. */
+   not a tab strip, and the way out of a record was leaving with it.
+
+   It is also drawn as its own thing — a border all the way round and a step of
+   ground between it and the list — because what is in it is one record rather
+   than the list's continuation. */
 .rl-epane {
-  border-left: 1px solid var(--rk-edge);
+  margin: 6px 6px 6px 0;
+  border: 1px solid var(--rk-edge);
+  box-shadow: var(--rk-shadow, 0 1px 2px rgba(15, 23, 42, .06));
   overflow: hidden;
   background: var(--rk-panel);
 }
+/* Two of them side by side need the gap between them, not two margins. */
+.rl-epane + .rl-epane { margin-left: 0; }
 .rl-edit { flex: 1; min-height: 0; overflow-y: auto; }
 /* author_manager's editors put the record straight in a .rl-tab-body, which
    already scrolls — named here too so the rule cannot depend on which wrapper
