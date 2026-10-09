@@ -181,6 +181,10 @@ body {
   font-size: var(--rk-fs);
   color: var(--rk-dim);
   cursor: pointer;
+  /* An <a> wearing this class is still a button: no underline. */
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
 }
 .rl-btn:hover:not(:disabled) { background: var(--rk-gut); border-color: var(--rk-ink); color: var(--rk-ink); }
 .rl-btn:disabled { border-color: var(--rk-line); color: var(--rk-mute); cursor: default; }
@@ -573,12 +577,15 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
 
 /* A PDF, read by the service because the browser may not read the disk. */
 .rl-pdf { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* The path is long and the buttons are not: each gets its own line, so neither
+   is squeezed by the other. */
 .rl-pdfbar {
   flex: 0 0 auto;
-  display: flex; align-items: center; gap: 6px;
-  height: 32px; padding: 0 11px;
+  display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+  padding: 6px 11px;
   border-bottom: 1px solid var(--rk-line);
 }
+.rl-pdfacts { display: flex; align-items: center; gap: 6px; }
 .rl-pdfbar .rl-mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rl-pdfview { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--rk-ground); }
 /* A field you can drop a file on. */
