@@ -585,6 +585,10 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
   color: inherit;
   cursor: pointer;
 }
+/* A name on its way out: struck through is the one thing that reads as gone
+   without a word next to it. */
+.rl-gone { text-decoration: line-through; color: var(--rk-mute); }
+
 .rl-tag.rl-main { border-color: var(--rk-tab-t); background: var(--rk-tab); color: var(--rk-tab-t); }
 
 /* A fact that is either there or not: the tick is the whole cell. */
