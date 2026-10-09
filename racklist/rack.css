@@ -598,3 +598,39 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
   cursor: copy; text-align: left;
 }
 .rl-path:hover { color: var(--rk-ink); }
+
+/* ── the line between the list and the editor ─────────────────────────────
+   Dragged, remembered, and double-clicked back to half. Narrow enough to be a
+   line, with a hit area wider than it looks. */
+.rl-split {
+  flex: 0 0 5px;
+  margin: 0 -2px;
+  z-index: 2;
+  background: none;
+  border-left: 1px solid var(--rk-edge);
+  cursor: col-resize;
+}
+.rl-split:hover, .rl-split.on { border-left-color: var(--rk-cite-t); box-shadow: inset 1px 0 0 var(--rk-cite-t); }
+
+/* ── reaching the columns that fell off the end ───────────────────────────
+   The body scrolls sideways without a bar (one lies across the rows); the
+   arrows at the edges move it a column at a time. */
+.rl-tab-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.rl-tab-body { overflow-x: auto; scrollbar-width: none; }
+.rl-tab-body::-webkit-scrollbar { height: 0; }
+.rl-edge {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 18px;
+  z-index: 4;
+  border: 0;
+  padding: 0;
+  background: linear-gradient(to right, var(--rk-panel), transparent);
+  font: inherit;
+  font-size: 15px;
+  color: var(--rk-dim);
+  cursor: pointer;
+}
+.rl-edge-l { left: 0; }
+.rl-edge-r { right: 0; background: linear-gradient(to left, var(--rk-panel), transparent); }
+.rl-edge:hover { color: var(--rk-ink); background-color: var(--rk-gut); }

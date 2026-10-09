@@ -1,3 +1,5 @@
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+
 /**
  * The table shell: one column template, a sticky head, draggable edges.
  *
@@ -7,8 +9,57 @@
  */
 export function RackTable({ cols, onDrag, head, sort, onSort, facet, children }) {
   const tmpl = `${cols.map((c) => `${c.w}px`).join(' ')} 1fr`
+  // When the table is wider than the room it has — a narrow window, or the
+  // editor taking half — the columns that fall off the end are reached by the
+  // arrows at the edges rather than by a scrollbar lying across the rows.
+  const body = useRef(null)
+  const [edge, setEdge] = useState({ left: false, right: false })
+  const look = useCallback(() => {
+    const el = body.current
+    if (!el) return
+    const more = el.scrollWidth - el.clientWidth
+    const next = { left: el.scrollLeft > 2, right: more > 2 && el.scrollLeft < more - 2 }
+    // Only when it changed: this runs after every commit, and a setState that
+    // always fires is a render loop.
+    setEdge((cur) => (cur.left === next.left && cur.right === next.right ? cur : next))
+  }, [])
+  // After every commit, because the thing that changes the width is usually a
+  // render — the editor opening beside the list. A ResizeObserver was tried
+  // and does not fire for that in every embedding.
+  useLayoutEffect(look)
+  useEffect(() => {
+    const el = body.current
+    if (!el) return undefined
+    el.addEventListener('scroll', look)
+    const ro = new ResizeObserver(look)
+    ro.observe(el)
+    return () => { el.removeEventListener('scroll', look); ro.disconnect() }
+  }, [look])
+  const slide = (dir) => {
+    const el = body.current
+    if (!el) return
+    // One column at a time, from where we are: a fixed number of pixels lands
+    // mid-column and reads as a broken table.
+    let x = 0
+    const stops = cols.map((c) => { x += c.w; return x })
+    const at = el.scrollLeft
+    const next = dir > 0 ? stops.find((s) => s > at + 2)
+      : [...stops].reverse().find((s) => s < at - 2) ?? 0
+    // Plain, not smooth: a smooth scroll is a nicety that some embeddings
+    // drop on the floor, and then the arrow does nothing at all.
+    el.scrollLeft = Math.max(0, next ?? at)
+  }
   return (
-    <div className="rl-tab-body">
+    <div className="rl-tab-wrap">
+      {edge.left && (
+        <button type="button" className="rl-edge rl-edge-l" title="왼쪽 열"
+          onClick={() => slide(-1)}>‹</button>
+      )}
+      {edge.right && (
+        <button type="button" className="rl-edge rl-edge-r" title="오른쪽 열"
+          onClick={() => slide(1)}>›</button>
+      )}
+      <div className="rl-tab-body" ref={body}>
       <div className="rl-row rl-head" style={{ gridTemplateColumns: tmpl }}>
         {cols.map((c) => (
           <span key={c.k}
@@ -42,6 +93,7 @@ export function RackTable({ cols, onDrag, head, sort, onSort, facet, children })
         <span className="rl-c" />
       </div>
       {children}
+      </div>
     </div>
   )
 }

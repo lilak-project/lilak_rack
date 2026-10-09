@@ -122,3 +122,58 @@ export function useViewState(key) {
   const first = useMemo(() => (typeof localStorage === 'undefined' ? {} : load(key, {})), [key])
   return [first, useCallback((v) => save(key, v), [key])]
 }
+
+/** The line between the list and the editor, dragged.
+ *
+ *  A pane that is always half the width is right for nobody: a wide record
+ *  wants more, a long list wants less. The ratio is remembered per project,
+ *  because it is a working habit rather than a preference about the app.
+ */
+export function usePaneSplit(key, initial = 50) {
+  const [pct, setPct] = useState(() => {
+    const v = Number(load(key, initial))
+    return Number.isFinite(v) && v >= 20 && v <= 80 ? v : initial
+  })
+  const [dragging, setDragging] = useState(false)
+  const box = useRef(null)
+  useEffect(() => { save(key, pct) }, [key, pct])
+
+  const onMouseDown = useCallback((e) => {
+    e.preventDefault()
+    const parent = box.current?.parentElement
+    if (!parent) return
+    const rect = parent.getBoundingClientRect()
+    setDragging(true)
+    document.body.classList.add('rl-resizing')
+    const move = (ev) => {
+      const v = ((ev.clientX - rect.left) / rect.width) * 100
+      setPct(Math.min(80, Math.max(20, v)))
+    }
+    const up = () => {
+      setDragging(false)
+      document.body.classList.remove('rl-resizing')
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }, [])
+
+  return {
+    pct,
+    reset: () => setPct(initial),
+    /** on the pane that comes first */
+    leftStyle: { flex: `0 0 ${pct}%`, maxWidth: `${pct}%` },
+    /** on the one after the handle */
+    rightStyle: { flex: '1 1 auto', minWidth: 0 },
+    /** spread onto a <div className="rl-split"> between them */
+    handleProps: {
+      ref: box,
+      onMouseDown,
+      onDoubleClick: () => setPct(initial),
+      role: 'separator',
+      title: '끌어서 넓이 조절 · 두 번 누르면 반반',
+      className: `rl-split${dragging ? ' on' : ''}`,
+    },
+  }
+}

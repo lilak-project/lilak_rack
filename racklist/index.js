@@ -1,7 +1,7 @@
 export { RackTable, RackRow, RackTabs } from './table.jsx'
 export {
   useColumnWidths, useViewportWidth, useSelection, useFindKey, useToggleKey,
-  useNote, useViewState,
+  useNote, useViewState, usePaneSplit,
 } from './hooks.js'
 export { bySome, fill, facetOf, passesFilter } from './sort.js'
 export { useFacetFilter, FilterBar, FacetRows } from './filter.jsx'
