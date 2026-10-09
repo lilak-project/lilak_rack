@@ -527,19 +527,19 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
 }
 .rl-lnk:hover { color: var(--rk-ink); }
 
-/* The editor's actions, stuck to the bottom of the pane. On a long record the
-   way to save it was below the fold, and a form you have to scroll to leave is
-   a form you leave by accident. */
+/* The editor's actions, at the TOP of the pane and stuck there. The record is
+   as long as it is; the things you do to it are always in the same place,
+   right under the tab that says which record it is. */
 .rl-acts {
   position: sticky;
-  bottom: 0;
+  top: 0;
   z-index: 2;
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
   padding: 7px 10px;
-  border-top: 1px solid var(--rk-edge);
+  border-bottom: 1px solid var(--rk-edge);
   background: var(--rk-gut);
 }
 

@@ -6,7 +6,7 @@ import { useState } from 'react'
  * component rather than a shape each editor redraws from memory.
  *
  *   [등록]                        while the record is a draft
- *   [save] [cancel] ……… [revert] [delete]              once it exists
+ *   [save] [cancel] [그 editor의 것들] ……… [revert] [delete]   once it exists
  *
  * save SAVES. Leaving is ⌘X or the tab's own ×, because a button that closes
  * what you are working on is a button you stop pressing.
@@ -23,6 +23,10 @@ export function RackActions({
   draft, createLabel = '등록', onCreate, createDisabled, hint,
   saveLabel = 'save', onSave, saveDisabled,
   onCancel, onRevert, onDelete, deleteWarn = '되돌릴 수 없습니다.',
+  // Anything this one editor can do that the others cannot — a preview, a
+  // paste, a re-scan. It rides with save and cancel, which are also about
+  // this record, and never with revert and delete.
+  extra,
 }) {
   const [sure, setSure] = useState(false)
   if (draft) {
@@ -31,6 +35,7 @@ export function RackActions({
         <button type="button" className="rl-btn rl-go" disabled={createDisabled}
           onClick={onCreate}>{createLabel}</button>
         {onCancel && <button type="button" className="rl-btn" onClick={onCancel}>cancel</button>}
+        {extra}
         {hint && <span className="rl-hint">{hint}</span>}
       </div>
     )
@@ -40,6 +45,7 @@ export function RackActions({
       <button type="button" className="rl-btn rl-go" disabled={saveDisabled}
         onClick={onSave}>{saveLabel}</button>
       {onCancel && <button type="button" className="rl-btn" onClick={onCancel}>cancel</button>}
+      {extra}
       {hint && <span className="rl-hint">{hint}</span>}
       <span className="rl-sp" />
       {onRevert && <button type="button" className="rl-btn" onClick={onRevert}>revert</button>}
