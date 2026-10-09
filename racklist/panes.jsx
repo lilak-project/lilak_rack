@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { RackTabs } from './table.jsx'
+import { load, save } from './portal.js'
 
 /**
  * The editor beside the list, in one or two columns.
@@ -9,18 +10,26 @@ import { RackTabs } from './table.jsx'
  * is the tab's own business (`col`), so the arrangement is one array and the
  * panes are drawn from it.
  *
- *   const panes = useEditorPanes()
+ * Give it a storage key and the arrangement outlives the page: a record you
+ * were in the middle of is still open when you come back from another service
+ * in the portal, which unmounts this one. Pass nothing and nothing is kept.
+ *
+ *   const panes = useEditorPanes(projectKey('rm', 'panes'))
  *   panes.open({ id, label, … })      // whatever the service's tab is
  *   panes.cols.map((c) => <div className="rl-pane rl-epane">
  *       <RackPaneStrip panes={panes} col={c} />
  *       … the editor for panes.current(c) …
  *   </div>)
  */
-export function useEditorPanes() {
-  const [tabs, setTabs] = useState([])            // [{ …service's own, col }]
-  const [active, setActive] = useState({})        // { col: id }
-  const [col, setCol] = useState(0)               // where a new record opens
-  const [full, setFull] = useState(false)         // the list gives up its width
+export function useEditorPanes(key) {
+  const was = useMemo(() => (key ? load(key, null) : null) || {}, [key])
+  const [tabs, setTabs] = useState(was.tabs || [])   // [{ …service's own, col }]
+  const [active, setActive] = useState(was.active || {})  // { col: id }
+  const [col, setCol] = useState(was.col || 0)       // where a new record opens
+  const [full, setFull] = useState(!!was.full)       // the list gives up its width
+  useEffect(() => {
+    if (key) save(key, { tabs, active, col, full })
+  }, [key, tabs, active, col, full])
 
   const open = useCallback((t) => {
     setTabs((ts) => {

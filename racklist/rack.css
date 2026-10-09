@@ -35,10 +35,13 @@
              system-ui, 'Apple SD Gothic Neo', sans-serif;
 }
 
-* { box-sizing: border-box; }
-
-html, body, #root { height: 100%; }
-body {
+/* The page-level rules belong to an app that IS a rack list — it says so with
+   `rl-page` on its body. An app that only wants a table somewhere (a desktop
+   view inside a phone-first app, say) imports this file and keeps its own page.
+   The .rl-* parts below are scoped by their own names and work either way. */
+body.rl-page, body.rl-page * { box-sizing: border-box; }
+html:has(> body.rl-page), body.rl-page, body.rl-page > #root { height: 100%; }
+body.rl-page {
   margin: 0;
   background: var(--rk-ground);
   color: var(--rk-text);
@@ -47,6 +50,8 @@ body {
   /* Inside the portal's panel there is nothing to scroll but the table. */
   overflow: hidden;
 }
+/* Borrowed into another app's page, the rack still owns its own box model. */
+.rl, .rl * { box-sizing: border-box; }
 
 .rl {
   height: 100%;
