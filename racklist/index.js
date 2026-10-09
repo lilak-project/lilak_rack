@@ -1,4 +1,5 @@
 export { RackTable, RackRow, RackTabs } from './table.jsx'
+export { RackActions } from './actions.jsx'
 export {
   useColumnWidths, useViewportWidth, useSelection, useFindKey, useToggleKey,
   useNote, useViewState, usePaneSplit, useRackKeys,
