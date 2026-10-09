@@ -177,3 +177,51 @@ export function usePaneSplit(key, initial = 50) {
     },
   }
 }
+
+/** The three keys a rack-list service answers, wherever you are in it.
+ *
+ *   ⌘S / Ctrl+S   save the record you are in
+ *   ⌘X / Ctrl+X   close its tab — unless there is a selection to cut, because
+ *                 inside a field that is what ⌘X has always meant
+ *   ⌘N / Ctrl+N   a new one of whatever this tab is about
+ *
+ * Pass only the ones that make sense where you call it: the app knows how to
+ * open and close, the editor knows how to save.
+ */
+export function useRackKeys({ onNew, onSave, onClose } = {}) {
+  const fns = useRef({})
+  fns.current = { onNew, onSave, onClose }
+  useEffect(() => {
+    const on = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return
+      const { onNew: n, onSave: s, onClose: c } = fns.current
+      const el = document.activeElement
+      const field = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'
+        || el.isContentEditable)
+      switch (e.key.toLowerCase()) {
+        case 's':
+          if (!s) return
+          break
+        case 'x': {
+          if (!c) return
+          // A selection inside a field is something to cut; leave it alone.
+          const cutting = field && (el.isContentEditable
+            || el.selectionStart !== el.selectionEnd)
+          if (cutting) return
+          break
+        }
+        case 'n':
+          if (!n) return
+          break
+        default:
+          return
+      }
+      e.preventDefault()
+      e.stopPropagation()
+      const run = { s, x: c, n }[e.key.toLowerCase()]
+      run?.()
+    }
+    window.addEventListener('keydown', on, true)
+    return () => window.removeEventListener('keydown', on, true)
+  }, [])
+}
