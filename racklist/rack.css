@@ -583,3 +583,11 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
 .rl-pdfview { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--rk-ground); }
 /* A field you can drop a file on. */
 .rl-rows.rl-over { outline: 2px dashed var(--rk-cite-t); outline-offset: 2px; }
+/* A path is a fact you take with you: press it and it is on the clipboard. */
+.rl-path {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  border: 0; padding: 0; background: none;
+  font: inherit; font-size: var(--rk-fs); color: var(--rk-dim);
+  cursor: copy; text-align: left;
+}
+.rl-path:hover { color: var(--rk-ink); }
