@@ -183,7 +183,9 @@ export function usePaneSplit(key, initial = 50) {
  *   ⌘S / Ctrl+S   save the record you are in
  *   ⌘X / Ctrl+X   close its tab — unless there is a selection to cut, because
  *                 inside a field that is what ⌘X has always meant
- *   ⌘N / Ctrl+N   a new one of whatever this tab is about
+ *   ⌘N / Ctrl+N   a new one of whatever this tab is about — and plain `n`
+ *                 outside a field, because the browser keeps ⌘N for its own
+ *                 new window and never hands it to a page
  *
  * Pass only the ones that make sense where you call it: the app knows how to
  * open and close, the editor knows how to save.
@@ -193,11 +195,19 @@ export function useRackKeys({ onNew, onSave, onClose } = {}) {
   fns.current = { onNew, onSave, onClose }
   useEffect(() => {
     const on = (e) => {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return
       const { onNew: n, onSave: s, onClose: c } = fns.current
       const el = document.activeElement
       const field = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'
         || el.isContentEditable)
+      // Plain `n` where there is nothing to type into: ⌘N belongs to the
+      // browser, which opens a window with it and tells the page nothing.
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey
+        && (e.key === 'n' || e.key === 'N') && !field && n) {
+        e.preventDefault()
+        n()
+        return
+      }
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return
       switch (e.key.toLowerCase()) {
         case 's':
           if (!s) return

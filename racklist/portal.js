@@ -72,7 +72,9 @@ export async function putDoc(baseVersion, body) {
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ baseVersion, ...body }),
   })
-  if (r.status === 409) return { conflict: true }
+  // A conflict hands back the document that won, so the caller can take it
+  // and let the edit be saved again rather than die with it.
+  if (r.status === 409) return { conflict: true, doc: (await r.json()).current }
   if (!r.ok) throw new Error(`PUT /api/data → ${r.status}`)
   return { doc: await r.json() }
 }

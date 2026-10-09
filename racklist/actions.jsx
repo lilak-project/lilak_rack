@@ -9,7 +9,9 @@ import { useState } from 'react'
  *   [save] [cancel] [그 editor의 것들] ……… [revert] [delete]   once it exists
  *
  * save SAVES. Leaving is ⌘X or the tab's own ×, because a button that closes
- * what you are working on is a button you stop pressing.
+ * what you are working on is a button you stop pressing. An editor that saves
+ * as you type passes no `onSave` at all and the button is not there — there is
+ * nothing left for it to do, and `hint` says where the record stands.
  *
  * Leaving is on the left, undoing and destroying on the right: four buttons in
  * a row read as one kind of thing, and two of them are not.
@@ -22,7 +24,7 @@ import { useState } from 'react'
 export function RackActions({
   draft, createLabel = '등록', onCreate, createDisabled, hint,
   saveLabel = 'save', onSave, saveDisabled,
-  onCancel, onRevert, onDelete, deleteWarn = '되돌릴 수 없습니다.',
+  onCancel, onRevert, revertTitle, onDelete, deleteWarn = '되돌릴 수 없습니다.',
   // Anything this one editor can do that the others cannot — a preview, a
   // paste, a re-scan. It rides with save and cancel, which are also about
   // this record, and never with revert and delete.
@@ -42,13 +44,17 @@ export function RackActions({
   }
   return (
     <div className="rl-acts">
-      <button type="button" className="rl-btn rl-go" disabled={saveDisabled}
-        onClick={onSave}>{saveLabel}</button>
+      {onSave && (
+        <button type="button" className="rl-btn rl-go" disabled={saveDisabled}
+          onClick={onSave}>{saveLabel}</button>
+      )}
       {onCancel && <button type="button" className="rl-btn" onClick={onCancel}>cancel</button>}
       {extra}
       {hint && <span className="rl-hint">{hint}</span>}
       <span className="rl-sp" />
-      {onRevert && <button type="button" className="rl-btn" onClick={onRevert}>revert</button>}
+      {onRevert && (
+        <button type="button" className="rl-btn" title={revertTitle} onClick={onRevert}>revert</button>
+      )}
       {onDelete && (sure ? (
         <>
           <span className="rl-warn">{deleteWarn}</span>
