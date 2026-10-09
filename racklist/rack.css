@@ -58,6 +58,12 @@ body.rl-page {
   display: flex;
   flex-direction: column;
   padding: 12px 14px;
+  /* RACK is a light design, and a native control must not flip with the OS:
+     in a browser set to dark, an unchecked checkbox rendered as a black
+     square. Also pins the text colour, since the rack may be borrowed into a
+     page whose own colour is anything. */
+  color-scheme: light;
+  color: var(--rk-text);
 }
 
 /* The module. One per screen, filling it. */
