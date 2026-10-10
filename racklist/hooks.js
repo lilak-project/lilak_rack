@@ -227,8 +227,13 @@ export function useRackKeys({ onNew, onSave, onClose } = {}) {
         case 'x': {
           if (!c) return
           // A selection inside a field is something to cut; leave it alone.
-          const cutting = field && (el.isContentEditable
-            || el.selectionStart !== el.selectionEnd)
+          // An empty caret is not a selection — in a rich text editor, where
+          // the caret lives in the text all the time, taking ⌘X away from the
+          // whole document would mean never closing a note from the keyboard.
+          const sel = el.isContentEditable ? document.getSelection() : null
+          const cutting = field && (sel
+            ? !sel.isCollapsed
+            : el.selectionStart !== el.selectionEnd)
           if (cutting) return
           break
         }
