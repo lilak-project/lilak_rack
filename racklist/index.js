@@ -3,6 +3,7 @@ export { useEditorPanes, RackPaneStrip } from './panes.jsx'
 export { RackActions } from './actions.jsx'
 export { RackField, RackTextRows } from './fields.jsx'
 export { useMergeMode, RackMergeButtons, RackMerge } from './merge.jsx'
+export { RackEditClass } from './classedit.jsx'
 export {
   useColumnWidths, useViewportWidth, useSelection, useFindKey, useToggleKey,
   useNote, useViewState, usePaneSplit, useRackKeys,
