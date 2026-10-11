@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { RackActions } from './actions.jsx'
 import { RackField } from './fields.jsx'
 import { typeOf } from './types.jsx'
-import { ctxFor, labelOf, wornBy } from './schema.js'
+import { ctxFor, labelOf, wornBy, valueOf } from './schema.js'
 import { newId } from './portal.js'
 
 /**
@@ -17,7 +17,8 @@ import { newId } from './portal.js'
  *
  * A field with `edit: false` is shown in the table but not here (something the
  * service computes); `edit: (props) => node` replaces the widget for that one
- * field — the way out when a field needs something no type has.
+ * field — the way out when a field needs something no type has. A computed
+ * field (`get`) is left out unless its type can Show it (a folder).
  *
  * Deleting a record also unhooks every link in this document that pointed at
  * it, so a ref never points at nothing.
@@ -103,13 +104,14 @@ export function RackItemEditor({
         onDelete={canDelete ? remove : undefined}
         extra={actions?.(f, setF)} />
       <div className="rl-rec">
-        {fields.filter((fl) => fl.edit !== false && !fl.get).map((fl) => {
+        {fields.filter((fl) => fl.edit !== false && (!fl.get || typeOf(fl).Show)).map((fl) => {
           const T = typeOf(fl)
           const c = ctxFor(def, doc, fl, extra)
           const set = (v) => setF((s) => ({ ...s, [fl.k]: v }))
           return (
             <RackField key={fl.k} label={fl.label}>
-              {typeof fl.edit === 'function'
+              {fl.get ? <T.Show value={valueOf(fl, f)} field={fl} ctx={c} />
+                : typeof fl.edit === 'function'
                 ? fl.edit({ value: f[fl.k], onChange: set, rec: f, ctx: c })
                 : <T.Edit value={f[fl.k]} onChange={set} field={fl} ctx={c} />}
               {fl.hint && fl.type !== 'check' && <span className="rl-hint">{fl.hint}</span>}

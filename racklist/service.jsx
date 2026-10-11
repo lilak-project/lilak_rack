@@ -11,7 +11,7 @@ import { typeOf } from './types.jsx'
 import { bySome } from './sort.js'
 import {
   defineRack, itemColumns, classColumns, itemSorters, itemCells, itemSearch, itemTokens,
-  classRows, wornBy, wears, isRef, fixedTabs, itemScope, labelOf, useRemoteDocs, EMPTY_CELL as D,
+  classRows, wornBy, wears, isRef, fixedTabs, itemScope, labelOf, useRemoteDocs, useFolders, EMPTY_CELL as D,
 } from './schema.js'
 import { PORTAL_PROJECT, brandStyle, isManager, fetchDoc, putDoc } from './portal.js'
 
@@ -42,6 +42,7 @@ export function RackService({ def: declared, slots = {} }) {
   const [doc, setDoc] = useState(null)
   const [outOpen, setOutOpen] = useState(false)
   const remote = useRemoteDocs(def)
+  const folders = useFolders(def)
   const IS_ADMIN = useMemo(() => isManager(), [])
 
   const FIXED = useMemo(() => [
@@ -49,7 +50,7 @@ export function RackService({ def: declared, slots = {} }) {
     ...(slots.tabs || []).map((t) => ({ id: t.id, kind: 'slot', label: t.label })),
   ], [def, slots.tabs])
 
-  const extra = useMemo(() => ({ remote }), [remote])
+  const extra = useMemo(() => ({ remote, folders }), [remote, folders])
   const itemSort = useMemo(() => itemSorters(def, doc, extra), [def, doc, extra])
   const sortersFor = useCallback((t) => (t?.kind === 'items' ? itemSort : {}), [itemSort])
   const scopeOf = useCallback((t, sort) => itemScope(def, doc, t, sort, itemSort), [def, doc, itemSort])
@@ -136,8 +137,8 @@ export function RackService({ def: declared, slots = {} }) {
     const rec = c?.stored && (doc?.[of] || []).find((r) => r.name === name)
     if (rec) openClass(c, rec)
   }, [def, doc, openClass])
-  const ctx = useMemo(() => ({ remote, say: setNote, openItem, openClass: openClassByName }),
-    [remote, setNote, openItem, openClassByName])
+  const ctx = useMemo(() => ({ remote, folders, say: setNote, openItem, openClass: openClassByName }),
+    [remote, folders, setNote, openItem, openClassByName])
   const api = { def, doc, commit, openTab, openEdit, openItem, setNote, picked, chosen, tab, rows, scope }
 
   const cols = useMemo(() => L.colsOf(''), [L.colsOf])   // eslint-disable-line react-hooks/exhaustive-deps
