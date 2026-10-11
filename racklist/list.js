@@ -65,8 +65,10 @@ export function useRackList(cfg) {
 
   /** One column set at its current widths, minus what this window is too narrow
    *  for. `prefix` is the set's own width key — '' for the records, 'c:' for
-   *  the classes — so two tables remember two widths for a column named alike. */
-  const colsOf = useCallback((prefix = '') => sized(cols[prefix] || [], vw, prefix),
+   *  the classes — so two tables remember two widths for a column named alike.
+   *  `set` picks which columns when one key serves two tables (authors and the
+   *  other classes share 'c:' widths but not columns). */
+  const colsOf = useCallback((prefix = '', set) => sized(set || cols[prefix] || [], vw, prefix),
     [sized, vw, cols])                                             // eslint-disable-line react-hooks/exhaustive-deps
 
   // The service sorts its own scope — a numbered reference list keeps its
