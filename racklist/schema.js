@@ -32,19 +32,42 @@ import { typeOf, refTarget, remoteDoc, refLabelOf } from './types.jsx'
  * the editor's form, the tabs, and the keys the backend owns. A field is said
  * once.
  *
- * `col` on a field puts it in the table: a width, or { w, min, drop } where
- * `drop` is the window width below which the column leaves. A field without
- * one is in the editor only.
+ * `col` on a field puts it in the table: a width, or { w, min, drop, label }
+ * where `drop` is the window width below which the column leaves and `label`
+ * is the header when it is not the field's label. A field without one is in
+ * the editor only. The columns come in declared order unless `item.columns`
+ * lists their keys — the table and the form need not read the same way.
  *
- * `get: (rec) => value` makes a field COMPUTED — shown, sorted, searched and
- * listed, never stored or edited. `item.fill(rec) => rec` runs before a save
- * and fills what a new record can work out for itself (a naming rule).
+ * `get: (rec, ctx) => value` makes a field COMPUTED — shown, sorted, searched
+ * and listed, never stored or edited (ctx.doc is the whole document, so a
+ * count of who points at this record is a computed field too).
+ * `item.fill(rec, doc) => rec` runs before a save and fills what a record can
+ * work out for itself (a naming rule).
+ *
+ * More a field may say:
+ *   sort: (v, ctx) => key      what its column sorts by, when not its text
+ *   cell: (rec, ctx) => node   its table cell, drawn by hand
+ *   when: (rec, { draft }) => bool   shown in the editor only then
+ *   store: false               a helper in the editor (a paste box), never saved
+ *   tone: 'ink' | 'dim'        the column's colour: the record's own words, or about it
+ *   search: false              not read by the search box
+ *   fold(rec, gone, to)        how merging names (tags) changes a record, when
+ *                              more than the field itself moves (a main tag)
+ *
+ * A stored class may say:
+ *   keyBy: 'id'                items point at its records by id (people), not name
+ *   rowLabel: (rec) => string  what its row and tab are called
+ *   fill(rec, doc) / check(rec, doc, prev) => '' | why not
+ *   onSave(rec, prev, doc) => patch    more to change when one is saved
+ *   onDelete(rec, doc) => patch        … or deleted (and deleteWarn(rec, doc))
+ *   countLabel                 the header of its count column
+ * and its fields may be computed (`get`) and drawn (`cell`) like an item's.
  */
 export function defineRack(def) {
   const item = def.item || {}
   const fields = (item.fields || []).map((f) => ({ label: f.k, ...f }))
   const classes = (def.classes || []).map((c) => ({
-    label: c.k, ...c,
+    label: c.k, keyBy: 'name', ...c,
     // A class with fields of its own is a list of records in the document; one
     // without is a name the items wear (its list is what they use).
     stored: !c.field,
@@ -69,7 +92,7 @@ const D = '·'
 /** A field's value: what is stored, or — for a field with `get` — what is
  *  worked out from the record (a year from a date). A computed field is never
  *  stored, so it cannot disagree with what it is computed from. */
-export const valueOf = (f, rec) => (f.get ? f.get(rec || {}) : rec?.[f.k])
+export const valueOf = (f, rec, ctx) => (f.get ? f.get(rec || {}, ctx || {}) : rec?.[f.k])
 
 /** The context a type is handed: what it may look at. */
 export const ctxFor = (def, doc, field, extra = {}) => ({ def, doc, field, ...extra })
@@ -84,8 +107,8 @@ export function labelOf(def, rec) {
 // ─── the table ────────────────────────────────────────────────────────────
 const colOf = (f) => {
   const c = typeof f.col === 'object' ? f.col : { w: f.col }
-  return { k: f.k, label: f.label, w: c.w || 120, min: c.min || 40, drop: c.drop,
-    num: f.type === 'number' || c.num }
+  return { k: f.k, label: c.label || f.label, w: c.w || 120, min: c.min || 40, drop: c.drop,
+    num: f.type === 'number' || c.num, tone: f.tone }
 }
 
 /** The item table's columns: the checkbox, the number, then every field that
@@ -94,7 +117,9 @@ export function itemColumns(def) {
   return [
     { k: 'chk', w: 26, min: 26, fix: true },
     { k: 'num', w: 40, min: 30, fix: true, label: '#' },
-    ...def.item.fields.filter((f) => f.col).map(colOf),
+    ...(def.item.columns
+      ? def.item.columns.map((k) => def.item.fields.find((f) => f.k === k)).filter(Boolean)
+      : def.item.fields.filter((f) => f.col)).map(colOf),
   ]
 }
 
@@ -104,7 +129,7 @@ export function classColumns(def, cls) {
   return [
     { k: 'num', w: 40, min: 30, fix: true, label: '#' },
     ...own.map(colOf),
-    { k: 'count', w: 70, min: 46, label: def.unit === '개' ? 'count' : def.item.noun, num: true },
+    { k: 'count', w: 70, min: 46, label: cls.countLabel || (def.unit === '개' ? 'count' : def.item.noun), num: true },
   ]
 }
 
@@ -115,7 +140,8 @@ export function itemSorters(def, doc, extra = {}) {
   for (const f of def.item.fields) {
     const T = typeOf(f)
     const c = ctxFor(def, doc, f, extra)
-    out[f.k] = (r) => T.sort(valueOf(f, r), c)
+    const by = f.sort ? (v) => f.sort(v, c) : (v) => T.sort(v, c)
+    out[f.k] = (r) => by(valueOf(f, r, c))
   }
   return out
 }
@@ -125,8 +151,9 @@ export function itemCells(def, doc, rec, extra = {}) {
   const out = {}
   for (const f of def.item.fields) {
     if (!f.col) continue
-    const T = typeOf(f)
-    out[f.k] = f.cell ? f.cell(rec, ctxFor(def, doc, f, extra)) : T.cell(valueOf(f, rec), ctxFor(def, doc, f, extra))
+    // The record rides along, so a cell can open what it belongs to.
+    const c = ctxFor(def, doc, f, { ...extra, rec })
+    out[f.k] = f.cell ? f.cell(rec, c) : typeOf(f).cell(valueOf(f, rec, c), c)
   }
   return out
 }
@@ -134,15 +161,22 @@ export function itemCells(def, doc, rec, extra = {}) {
 /** What the search box reads: every field that has not opted out. */
 export function itemSearch(def, doc, extra = {}) {
   const fs = def.item.fields.filter((f) => f.search !== false)
-  return (rec, q) => fs.some((f) => typeOf(f).text(valueOf(f, rec), ctxFor(def, doc, f, extra)).toLowerCase().includes(q))
+  return (rec, q) => fs.some((f) => {
+    const c = ctxFor(def, doc, f, extra)
+    return typeOf(f).text(valueOf(f, rec, c), c).toLowerCase().includes(q)
+  })
 }
 
 /** The listing's tokens: one per field, by its label AND its key, so a rule
- *  can say {제목} or {title}. */
+ *  can say {제목} or {title}. A service whose listing speaks a language of its
+ *  own (BibTeX's {author (bib)}) gives `listing.tokens(doc) => { name: fn }`,
+ *  and those are the tokens. */
 export function itemTokens(def, doc, extra = {}) {
+  if (def.listing?.tokens) return def.listing.tokens(doc, extra)
   const out = {}
   for (const f of def.item.fields) {
-    const get = (r) => typeOf(f).text(valueOf(f, r), ctxFor(def, doc, f, extra))
+    if (f.store === false) continue
+    const get = (r) => { const c = ctxFor(def, doc, f, extra); return typeOf(f).text(valueOf(f, r, c), c) }
     out[f.k] = get
     if (f.label && f.label !== f.k) out[f.label] = get
   }
@@ -165,6 +199,10 @@ export const linkKey = (l) => (l?.id ? `id:${l.id}` : `name:${l?.label || ''}`)
  *  tab here (책임자 → author_manager) the way tags are. */
 function worn(rec, field) {
   const v = rec?.[field.k]
+  // A type of the service's own says what a value wears (an author row points
+  // at a person by id).
+  const T = typeOf(field)
+  if (T.keys) return T.keys(v, field)
   const vs = (Array.isArray(v) ? v : (v ? [v] : [])).filter(Boolean)
   return isRef(field) ? vs.map(linkKey) : vs.map(String)
 }
@@ -177,7 +215,7 @@ export function classRows(def, doc, cls, extra = {}) {
   const field = wornBy(def, cls)
   const items = doc?.[def.item.key] || []
   let recs
-  if (cls.stored) recs = (doc?.[cls.k] || []).map((r) => ({ ...r, key: r.name }))
+  if (cls.stored) recs = (doc?.[cls.k] || []).map((r) => ({ ...r, key: r[cls.keyBy] }))
   else if (isRef(field)) {
     const seen = new Map()
     for (const it of items) {
@@ -191,14 +229,22 @@ export function classRows(def, doc, cls, extra = {}) {
   } else {
     recs = [...new Set(items.flatMap((r) => worn(r, field)))].map((name) => ({ key: name, name }))
   }
-  return recs.map((r) => ({ ...r, count: field ? items.filter((x) => wears(x, field, r.key)).length : 0 }))
+  // How many wear each, in one pass over the items rather than one per row
+  // (1,971 authors × 287 papers is a pause you can feel).
+  const n = new Map()
+  if (field) for (const it of items) for (const k of new Set(worn(it, field))) n.set(k, (n.get(k) || 0) + 1)
+  return recs.map((r) => ({ ...r, count: n.get(r.key) || 0 }))
 }
 
 // ─── tabs ─────────────────────────────────────────────────────────────────
+/** The every-item tab's id. A service moved onto the kit keeps the id it had
+ *  (`item.tabId`), since it is in everyone's stored view. */
+export const itemTabId = (def) => def.item.tabId || 'all'
+
 /** The tabs that are always there: every item, then one per class. */
 export function fixedTabs(def) {
   return [
-    { id: 'all', kind: 'items', label: def.item.allLabel || def.item.key },
+    { id: itemTabId(def), kind: 'items', label: def.item.allLabel || def.item.key },
     // `tab: false` keeps a class out of the strip: its records are reached
     // from the items that point at them, not from a list of their own.
     ...def.classes.filter((c) => c.tab !== false)

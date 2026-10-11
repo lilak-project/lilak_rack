@@ -56,8 +56,16 @@ function Input({ value, onChange, field, type = 'text', width }) {
   )
 }
 
+/** `href: (v) => url` puts a link beside it (a doi → doi.org). */
 registerType('text', {
-  Edit: (p) => <Input {...p} width={320} />,
+  Edit: (p) => (
+    <>
+      <Input {...p} width={320} />
+      {p.field.href && str(p.value).trim() && (
+        <a className="rl-hint" href={p.field.href(str(p.value).trim())} target="_blank" rel="noreferrer">열기</a>
+      )}
+    </>
+  ),
   tidy: (v) => str(v).trim(),
 })
 
