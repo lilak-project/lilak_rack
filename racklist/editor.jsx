@@ -36,8 +36,12 @@ export function RackItemEditor({
 
   const tidy = (r) => {
     const out = { ...r }
-    for (const fl of fields) out[fl.k] = typeOf(fl).tidy(r[fl.k], fl)
-    return out
+    for (const fl of fields) {
+      if (fl.get) { delete out[fl.k]; continue }      // computed: never stored
+      out[fl.k] = typeOf(fl).tidy(r[fl.k], fl)
+    }
+    // What a record can work out for itself — a naming rule — fills in last.
+    return isItem && def.item.fill ? def.item.fill(out) : out
   }
   const label = isItem ? labelOf(def, f) : String(f.name || '')
   const missing = fields.filter((fl) => fl.required && !typeOf(fl).text(f[fl.k], ctxFor(def, doc, fl, extra)).trim())
@@ -91,7 +95,7 @@ export function RackItemEditor({
   return (
     <div className="rl-edit">
       <div className="rl-rec">
-        {fields.filter((fl) => fl.edit !== false).map((fl) => {
+        {fields.filter((fl) => fl.edit !== false && !fl.get).map((fl) => {
           const T = typeOf(fl)
           const c = ctxFor(def, doc, fl, extra)
           const set = (v) => setF((s) => ({ ...s, [fl.k]: v }))

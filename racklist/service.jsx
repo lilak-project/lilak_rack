@@ -7,6 +7,7 @@ import { RackListing } from './listing.jsx'
 import { RackItemEditor } from './editor.jsx'
 import { useRackList } from './list.js'
 import { useRackKeys, useToggleKey } from './hooks.js'
+import { typeOf } from './types.jsx'
 import { bySome } from './sort.js'
 import {
   defineRack, itemColumns, classColumns, itemSorters, itemCells, itemSearch, itemTokens,
@@ -305,7 +306,9 @@ export function RackService({ def: declared, slots = {} }) {
                     onContextMenu={(e) => { e.preventDefault(); openClass(cls, r) }}
                     cell={{
                       num: i + 1,
-                      ...Object.fromEntries(cls.fields.filter((f) => f.col).map((f) => [f.k, r[f.k] || D])),
+                      // A class record's own columns are drawn by their types, as an item's are.
+                      ...Object.fromEntries(cls.fields.filter((f) => f.col)
+                        .map((f) => [f.k, typeOf(f).cell(r[f.k], { def, doc, field: f, ...ctx })])),
                       name: r.name || D,
                       count: r.count || D,
                     }} />

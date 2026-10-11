@@ -35,6 +35,10 @@ import { typeOf, refTarget, remoteDoc } from './types.jsx'
  * `col` on a field puts it in the table: a width, or { w, min, drop } where
  * `drop` is the window width below which the column leaves. A field without
  * one is in the editor only.
+ *
+ * `get: (rec) => value` makes a field COMPUTED — shown, sorted, searched and
+ * listed, never stored or edited. `item.fill(rec) => rec` runs before a save
+ * and fills what a new record can work out for itself (a naming rule).
  */
 export function defineRack(def) {
   const item = def.item || {}
@@ -62,6 +66,10 @@ export function defineRack(def) {
 
 const str = (v) => (v === null || v === undefined ? '' : String(v))
 const D = '·'
+/** A field's value: what is stored, or — for a field with `get` — what is
+ *  worked out from the record (a year from a date). A computed field is never
+ *  stored, so it cannot disagree with what it is computed from. */
+export const valueOf = (f, rec) => (f.get ? f.get(rec || {}) : rec?.[f.k])
 
 /** The context a type is handed: what it may look at. */
 export const ctxFor = (def, doc, field, extra = {}) => ({ def, doc, field, ...extra })
@@ -107,7 +115,7 @@ export function itemSorters(def, doc, extra = {}) {
   for (const f of def.item.fields) {
     const T = typeOf(f)
     const c = ctxFor(def, doc, f, extra)
-    out[f.k] = (r) => T.sort(r?.[f.k], c)
+    out[f.k] = (r) => T.sort(valueOf(f, r), c)
   }
   return out
 }
@@ -118,7 +126,7 @@ export function itemCells(def, doc, rec, extra = {}) {
   for (const f of def.item.fields) {
     if (!f.col) continue
     const T = typeOf(f)
-    out[f.k] = f.cell ? f.cell(rec, ctxFor(def, doc, f, extra)) : T.cell(rec?.[f.k], ctxFor(def, doc, f, extra))
+    out[f.k] = f.cell ? f.cell(rec, ctxFor(def, doc, f, extra)) : T.cell(valueOf(f, rec), ctxFor(def, doc, f, extra))
   }
   return out
 }
@@ -126,7 +134,7 @@ export function itemCells(def, doc, rec, extra = {}) {
 /** What the search box reads: every field that has not opted out. */
 export function itemSearch(def, doc, extra = {}) {
   const fs = def.item.fields.filter((f) => f.search !== false)
-  return (rec, q) => fs.some((f) => typeOf(f).text(rec?.[f.k], ctxFor(def, doc, f, extra)).toLowerCase().includes(q))
+  return (rec, q) => fs.some((f) => typeOf(f).text(valueOf(f, rec), ctxFor(def, doc, f, extra)).toLowerCase().includes(q))
 }
 
 /** The listing's tokens: one per field, by its label AND its key, so a rule
@@ -134,7 +142,7 @@ export function itemSearch(def, doc, extra = {}) {
 export function itemTokens(def, doc, extra = {}) {
   const out = {}
   for (const f of def.item.fields) {
-    const get = (r) => typeOf(f).text(r?.[f.k], ctxFor(def, doc, f, extra))
+    const get = (r) => typeOf(f).text(valueOf(f, r), ctxFor(def, doc, f, extra))
     out[f.k] = get
     if (f.label && f.label !== f.k) out[f.label] = get
   }
