@@ -1,3 +1,4 @@
+export { useRackList } from './list.js'
 export { RackTable, RackRow, RackTabs } from './table.jsx'
 export { useEditorPanes, RackPaneStrip } from './panes.jsx'
 export { RackActions } from './actions.jsx'
