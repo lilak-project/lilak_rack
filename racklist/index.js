@@ -1,4 +1,13 @@
 export { useRackList } from './list.js'
+// The declared service: a definition in, the whole screen out.
+export { RackService } from './service.jsx'
+export { RackItemEditor } from './editor.jsx'
+export { RackListing } from './listing.jsx'
+export { registerType, typeOf, remoteDoc, forgetRemote, useRefOptions } from './types.jsx'
+export {
+  defineRack, itemColumns, classColumns, itemSorters, itemCells, itemSearch, itemTokens,
+  classRows, fixedTabs, itemScope, labelOf, useRemoteDocs,
+} from './schema.js'
 export { RackTable, RackRow, RackTabs } from './table.jsx'
 export { useEditorPanes, RackPaneStrip } from './panes.jsx'
 export { RackActions } from './actions.jsx'
