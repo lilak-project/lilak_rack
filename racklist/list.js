@@ -23,7 +23,8 @@ import { projectKey } from './portal.js'
  *   const L = useRackList({
  *     key: 'nt',                         // storage prefix: nt.view.<project> …
  *     fixed: FIXED,                      // the tabs that are always there
- *     sorters: SORTERS,                  // column key → accessor
+ *     sorters: SORTERS,                  // column key → accessor, or (tab) => that
+ *     idOf: (r) => r.id,                 // what a selection holds — pass a STABLE function
  *     cols: { '': COLS, 'c:': CLS_COLS },// column sets, by width-key prefix
  *     sort: { k: 'date', dir: -1 },      // the order a tab has before you click
  *     clsSort: { k: 'count', dir: -1 },
@@ -36,9 +37,12 @@ import { projectKey } from './portal.js'
  * service's own data, and an identity that changes every render would re-sort
  * and re-filter the list on every keystroke.
  */
+const byId = (r) => r.id      // a constant, so the selection is not rebuilt every render
+
 export function useRackList(cfg) {
   const {
-    key, fixed, sorters = {}, cols = {}, scopeOf, search, remember,
+    key, fixed, sorters: sortersIn = {}, cols = {}, scopeOf, search, remember,
+    idOf = byId,
     sort: sort0 = null, clsSort: clsSort0 = { k: 'name', dir: 1 },
     firstTab = fixed?.[0]?.id,
   } = cfg
@@ -76,6 +80,10 @@ export function useRackList(cfg) {
   // is handed IN rather than applied on top. That is also what keeps the hook
   // and the service from needing each other in the same breath.
   const scope = useMemo(() => (scopeOf ? scopeOf(tab, sort) : []), [scopeOf, tab, sort])
+  // Two kinds of tab may sort and filter by different columns, so the sorters
+  // can depend on the tab.
+  const sorters = useMemo(() => (typeof sortersIn === 'function' ? sortersIn(tab) : sortersIn),
+    [sortersIn, tab])
   const filter = useFacetFilter(scope, sorters, { sel: view.fsel, on: view.fon })
 
   const rows = useMemo(() => {
@@ -85,8 +93,11 @@ export function useRackList(cfg) {
     return kept.filter((r) => search(r, q))
   }, [scope, filter.on, filter.passes, query, search])
 
-  const sel = useSelection(rows)
-  const chosen = useMemo(() => rows.filter((r) => sel.picked.has(r.id)), [rows, sel.picked])
+  // What a selection holds is whatever names a record — `id` usually, but an
+  // asset is known by its 자산번호 and has no other.
+  const keys = useMemo(() => rows.map((r) => ({ id: idOf(r) })), [rows, idOf])
+  const sel = useSelection(keys)
+  const chosen = useMemo(() => rows.filter((r) => sel.picked.has(idOf(r))), [rows, sel.picked, idOf])
 
   // How this project was left. The four fixed tabs are not worth storing, and
   // picking mode is not a state you come back to — only the applied filter is.
@@ -115,9 +126,11 @@ export function useRackList(cfg) {
     setTabs((ts) => (ts.some((x) => x.id === t.id) ? ts : [...ts, t]))
     setActive(t.id)
   }, [])
-  const closeTab = useCallback((id) => {
+  /** Closing the tab you are on lands on `to` — the first tab unless the
+   *  service knows a better one (a list's own tab goes back to the lists). */
+  const closeTab = useCallback((id, to = firstTab) => {
     setTabs((ts) => ts.filter((t) => t.id !== id))
-    setActive((a) => (a === id ? firstTab : a))
+    setActive((a) => (a === id ? to : a))
   }, [firstTab])
   const closeOpened = useCallback(() => { setTabs(fixed); setActive(firstTab) }, [fixed, firstTab])
 
