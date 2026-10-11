@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { typeOf, refTarget, remoteDoc, refLabelOf } from './types.jsx'
-import { PORTAL_BASE, authHeaders } from './portal.js'
 
 /**
  * A service, declared.
@@ -253,20 +252,6 @@ export function useRemoteDocs(def) {
     return () => { alive = false }
   }, [targets])
   return docs
-}
-
-/** The folders under the project's roots, when a field is a `folder` — read
- *  once from the backend's mount_folders. null until it answers. */
-export function useFolders(def) {
-  const want = def.item.fields.some((f) => f.type === 'folder')
-  const [got, setGot] = useState(null)
-  useEffect(() => {
-    if (!want) return
-    fetch(`${PORTAL_BASE}/api/folders`, { headers: authHeaders() })
-      .then((r) => (r.ok ? r.json() : { roots: [], dirs: {} }))
-      .then(setGot).catch(() => setGot({ roots: [], dirs: {} }))
-  }, [want])
-  return got
 }
 
 export const EMPTY_CELL = D

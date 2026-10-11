@@ -607,6 +607,17 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
 .rl-pdfacts { display: flex; align-items: center; gap: 6px; }
 .rl-pdfbar .rl-mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rl-pdfview { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--rk-ground); }
+/* A folder's files: one line each, the name first and long. */
+.rl-files { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0; }
+.rl-file {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center;
+  width: 100%; padding: 4px 11px; border: 0; background: none; text-align: left;
+  font: inherit; color: var(--rk-text); cursor: pointer;
+}
+.rl-file > * { white-space: nowrap; }
+.rl-file > :first-child { overflow: hidden; text-overflow: ellipsis; }
+.rl-file > .rl-dim { text-align: right; }
+.rl-file:hover { background: var(--rk-hover); }
 /* A field you can drop a file on. */
 .rl-rows.rl-over { outline: 2px dashed var(--rk-cite-t); outline-offset: 2px; }
 /* A path is a fact you take with you: press it and it is on the clipboard. */

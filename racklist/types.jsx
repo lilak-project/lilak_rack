@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RackTextRows } from './fields.jsx'
-import { PORTAL_BASE, authHeaders } from './portal.js'
+import { authHeaders } from './portal.js'
 
 /**
  * Field types — what a property of an [항목] IS, said once.
@@ -96,65 +96,6 @@ registerType('url', {
       )}
     </>
   ),
-})
-
-// ─── a folder on disk ─────────────────────────────────────────────────────
-/** A record's folder, found by its name — the naming convention IS the link
- *  (Academic_20131207_HIM2013 → the folder of that name under a root the
- *  project lists in settings.folderRoots). Declared as a computed field,
- *  `{ type: 'folder', get: (r) => r.key }`, so nothing is stored per record.
- *  The list comes from the backend's mount_folders (ctx.folders). Opening
- *  happens on the machine the backend runs on, so the button is offered only
- *  when that is this one; the path can always be copied. */
-const nfc = (v) => str(v).normalize('NFC')
-const folderOf = (v, ctx) => (v ? ctx.folders?.dirs?.[nfc(v)] || '' : '')
-const onThisMachine = typeof location !== 'undefined'
-  && ['localhost', '127.0.0.1', '[::1]', ''].includes(location.hostname)
-async function openFolder(name, say) {
-  try {
-    const r = await fetch(`${PORTAL_BASE}/api/folders/open`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ name }),
-    })
-    const got = await r.json().catch(() => ({}))
-    say?.(r.ok ? `폴더를 열었습니다 — ${got.path}` : (got.detail || '열 수 없습니다.'))
-  } catch (e) { say?.(String(e.message || e)) }
-}
-async function copyText(text, say) {
-  try { await navigator.clipboard.writeText(text); say?.(`복사했습니다 — ${text}`) }
-  catch { say?.(text) }
-}
-registerType('folder', {
-  text: (v, ctx) => (folderOf(v, ctx) ? str(v) : ''),
-  sort: (v, ctx) => (folderOf(v, ctx) ? 0 : null),     // with a folder first
-  cell(v, ctx) {
-    const path = folderOf(v, ctx)
-    if (!path) return D
-    return (
-      <button type="button" className="rl-lnk" title={path} onClick={(e) => {
-        e.stopPropagation()
-        if (onThisMachine) openFolder(v, ctx.say); else copyText(path, ctx.say)
-      }}>{onThisMachine ? '열기' : '경로'}</button>
-    )
-  },
-  // Computed, so shown rather than edited.
-  Show: ({ value, ctx }) => {
-    const path = folderOf(value, ctx)
-    const roots = ctx.folders?.roots || []
-    if (!ctx.folders) return <span className="rl-hint">폴더 목록을 읽는 중…</span>
-    if (!roots.length) return <span className="rl-hint">폴더 루트가 정해지지 않았습니다 (settings.folderRoots).</span>
-    if (!path) {
-      return <span className="rl-hint">{value ? `${roots[0]} 안에 '${value}' 폴더를 만들면 연결됩니다.` : '이름이 정해지면 연결됩니다.'}</span>
-    }
-    return (
-      <>
-        <span className="rl-mono rl-dim" title={path}
-          style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{path}</span>
-        {onThisMachine && <button type="button" className="rl-btn" onClick={() => openFolder(value, ctx.say)}>폴더 열기</button>}
-        <button type="button" className="rl-btn" onClick={() => copyText(path, ctx.say)}>경로 복사</button>
-      </>
-    )
-  },
 })
 
 registerType('email', { Edit: (p) => <Input {...p} type="email" width={260} /> })

@@ -8,10 +8,11 @@ import { RackItemEditor } from './editor.jsx'
 import { useRackList } from './list.js'
 import { useRackKeys, useToggleKey } from './hooks.js'
 import { typeOf } from './types.jsx'
+import { useFolders, RackFolder, RackFolderRoots } from './files.jsx'
 import { bySome } from './sort.js'
 import {
   defineRack, itemColumns, classColumns, itemSorters, itemCells, itemSearch, itemTokens,
-  classRows, wornBy, wears, isRef, fixedTabs, itemScope, labelOf, useRemoteDocs, useFolders, EMPTY_CELL as D,
+  classRows, wornBy, wears, isRef, fixedTabs, itemScope, labelOf, useRemoteDocs, valueOf, EMPTY_CELL as D,
 } from './schema.js'
 import { PORTAL_PROJECT, brandStyle, isManager, fetchDoc, putDoc } from './portal.js'
 
@@ -42,7 +43,8 @@ export function RackService({ def: declared, slots = {} }) {
   const [doc, setDoc] = useState(null)
   const [outOpen, setOutOpen] = useState(false)
   const remote = useRemoteDocs(def)
-  const folders = useFolders(def)
+  const [folders, reloadFolders] = useFolders(def)
+  const folderField = useMemo(() => def.item.fields.find((f) => f.type === 'folder'), [def])
   const IS_ADMIN = useMemo(() => isManager(), [])
 
   const FIXED = useMemo(() => [
@@ -137,8 +139,14 @@ export function RackService({ def: declared, slots = {} }) {
     const rec = c?.stored && (doc?.[of] || []).find((r) => r.name === name)
     if (rec) openClass(c, rec)
   }, [def, doc, openClass])
-  const ctx = useMemo(() => ({ remote, folders, say: setNote, openItem, openClass: openClassByName }),
-    [remote, folders, setNote, openItem, openClassByName])
+  /** A record's folder, in a pane of its own — the ✓ in the table, 열기 in
+   *  the editor. Named after the record it belongs to, when one does. */
+  const openFolder = useCallback((name) => {
+    const r = folderField && items.find((x) => valueOf(folderField, x) === name)
+    openEdit({ id: `folder:${name}`, kind: 'folder', who: name, label: `📁 ${r ? labelOf(def, r) : name}` })
+  }, [def, folderField, items, openEdit])
+  const ctx = useMemo(() => ({ remote, folders, reloadFolders, openFolder, say: setNote, openItem, openClass: openClassByName }),
+    [remote, folders, reloadFolders, openFolder, setNote, openItem, openClassByName])
   const api = { def, doc, commit, openTab, openEdit, openItem, setNote, picked, chosen, tab, rows, scope }
 
   const cols = useMemo(() => L.colsOf(''), [L.colsOf])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -170,6 +178,13 @@ export function RackService({ def: declared, slots = {} }) {
 
   function editorFor(etab) {
     if (slots.editors?.[etab.kind]) return slots.editors[etab.kind](etab, api)
+    if (etab.kind === 'folder') return <RackFolder key={etab.who} name={etab.who} say={setNote} />
+    if (etab.kind === 'folder-roots') {
+      return (
+        <RackFolderRoots doc={doc} folders={folders} onSave={commit} onReload={reloadFolders} onOpen={openFolder}
+          names={folderField ? items.map((r) => valueOf(folderField, r)).filter(Boolean) : []} />
+      )
+    }
     if (etab.kind === 'item') {
       const rec = etab.who ? items.find((r) => r.id === etab.who) : null
       return (
@@ -250,6 +265,10 @@ export function RackService({ def: declared, slots = {} }) {
             <button type="button" className="rl-btn" title="편집 패널의 탭을 모두 닫습니다" onClick={panes.closeAll}>
               편집 닫기 ({panes.tabs.length})
             </button>
+          )}
+          {folderField && IS_ADMIN && (
+            <button type="button" className="rl-btn" title="폴더 루트와 연결 상태"
+              onClick={() => openEdit({ id: 'folder-roots', kind: 'folder-roots', label: '폴더 설정' })}>폴더 설정</button>
           )}
           {tab?.kind === 'items' && <FilterBar f={filter} />}
           <span className="rl-sp" />

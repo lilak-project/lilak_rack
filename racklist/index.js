@@ -3,6 +3,7 @@ export { useRackList } from './list.js'
 export { RackService } from './service.jsx'
 export { RackItemEditor } from './editor.jsx'
 export { RackListing } from './listing.jsx'
+export { RackFolder, RackFolderRoots, useFolders, fileSrc, onDesktop, copyText } from './files.jsx'
 export { registerType, typeOf, remoteDoc, forgetRemote, useRefOptions } from './types.jsx'
 export {
   defineRack, itemColumns, classColumns, itemSorters, itemCells, itemSearch, itemTokens,
