@@ -330,6 +330,9 @@ registerType('files', {
  * across services. The label is looked up when shown, so renaming the target
  * renames every link to it. `many: true` holds a list of them.
  *
+ * `names: true` lets an entry be a name with nobody behind it ({ label }) — a
+ * collaborator the other service does not list. It shows as plain text.
+ *
  * Another service's records are read through the portal's proxy with the
  * user's own token — the same origin, and the same permissions they have
  * there. Nothing is copied across.
@@ -371,10 +374,11 @@ export function useRefOptions(field, ctx) {
     [src, t.item])   // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-function refLabelOf(link, field, ctx) {
+export function refLabelOf(link, field, ctx) {
   const t = refTarget(field, ctx.def)
   const id = typeof link === 'object' ? link?.id : link
-  if (!id) return ''
+  // A name with nobody behind it yet: someone the other service does not have.
+  if (!id) return (typeof link === 'object' && link?.label) || ''
   const src = t.local ? ctx.doc : ctx.remote?.[`${t.svc}/${t.proj}`]
   const rec = (src?.[t.item] || []).find((r) => r.id === id)
   return rec ? labelWith(t.label)(rec) : (typeof link === 'object' && link?.label) || '(없는 항목)'
@@ -395,17 +399,27 @@ function RefEdit({ value, onChange, field, ctx }) {
     else onChange(mk(o))
     setQ('')
   }
-  const name = (l) => options.find((o) => o.id === l.id)?.label || l.label || '(없는 항목)'
+  const name = (l) => (l.id ? options.find((o) => o.id === l.id)?.label : null) || l.label || '(없는 항목)'
+  // A name the other side does not have can still be written down; it shows as
+  // plain text and links the moment someone with that name is picked instead.
+  const putName = () => {
+    const n = q.trim()
+    if (!n || byLabel.has(n)) return
+    if (field.many) { if (!links.some((l) => !l.id && l.label === n)) onChange([...links, { label: n }]) }
+    else onChange({ label: n })
+    setQ('')
+  }
   return (
     <div className="rl-rows">
       <div className="rl-rrow">
         {links.map((l) => (
-          <span key={l.id} className="rl-tag">
-            {t.local && ctx.openItem
+          <span key={l.id || `name:${l.label}`} className={`rl-tag${l.id ? '' : ' rl-unlinked'}`}
+            title={l.id ? '' : '연결된 항목 없이 이름만'}>
+            {t.local && l.id && ctx.openItem
               ? <button type="button" className="rl-lnk" onClick={() => ctx.openItem(l.id)}>{name(l)}</button>
               : name(l)}
             <button type="button" className="rl-x" title="연결 끊기"
-              onClick={() => onChange(field.many ? links.filter((x) => x.id !== l.id) : null)}>×</button>
+              onClick={() => onChange(field.many ? links.filter((x) => x !== l) : null)}>×</button>
           </span>
         ))}
         {links.length === 0 && <span className="rl-hint">{t.svc ? `${t.svc} 의 항목과 연결` : '없음'}</span>}
@@ -418,6 +432,9 @@ function RefEdit({ value, onChange, field, ctx }) {
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); put() } }} />
           <datalist id={id}>{options.map((o) => <option key={o.id} value={o.label} />)}</datalist>
           <button type="button" className="rl-btn" onClick={put} disabled={!byLabel.has(q.trim())}>연결</button>
+          {field.names && q.trim() && !byLabel.has(q.trim()) && (
+            <button type="button" className="rl-btn" onClick={putName}>이름만 적기</button>
+          )}
         </div>
       )}
     </div>
@@ -436,5 +453,5 @@ registerType('refs', {
   text(v, ctx) { return list(v).map((l) => refLabelOf(l, ctx.field, ctx)).filter(Boolean).join(', ') },
   cell(v, ctx) { const n = list(v).length; return n ? `${this.text(v, ctx)}` : D },
   Edit: (p) => <RefEdit {...p} field={{ ...p.field, many: true }} />,
-  tidy: (v) => list(v).filter((l) => l?.id),
+  tidy: (v) => list(v).filter((l) => l?.id || String(l?.label || '').trim()),
 })

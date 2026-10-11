@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { typeOf, refTarget, remoteDoc } from './types.jsx'
+import { typeOf, refTarget, remoteDoc, refLabelOf } from './types.jsx'
 
 /**
  * A service, declared.
@@ -156,21 +156,42 @@ export function wornBy(def, cls) {
   if (cls.field) return def.item.fields.find((f) => f.k === cls.field)
   return def.item.fields.find((f) => f.of === cls.k)
 }
-const wears = (rec, field, name) => {
+export const isRef = (f) => f?.type === 'ref' || f?.type === 'refs'
+/** One link's identity: the record it points at, or — for a name with nobody
+ *  behind it — the name. */
+export const linkKey = (l) => (l?.id ? `id:${l.id}` : `name:${l?.label || ''}`)
+/** What a record wears through a field, as keys: names for a name field, link
+ *  identities for a link field — so people in another service can be a class
+ *  tab here (책임자 → author_manager) the way tags are. */
+function worn(rec, field) {
   const v = rec?.[field.k]
-  return Array.isArray(v) ? v.includes(name) : v === name
+  const vs = (Array.isArray(v) ? v : (v ? [v] : [])).filter(Boolean)
+  return isRef(field) ? vs.map(linkKey) : vs.map(String)
 }
+export const wears = (rec, field, key) => worn(rec, field).includes(key)
 
 /** A class tab's rows: the class records (or the names in use), each with how
- *  many items wear it. */
-export function classRows(def, doc, cls) {
+ *  many items wear it. A row's `key` is what an item wears; `name` is what is
+ *  shown. They differ only for links, whose label comes from where they point. */
+export function classRows(def, doc, cls, extra = {}) {
   const field = wornBy(def, cls)
   const items = doc?.[def.item.key] || []
-  const names = cls.stored
-    ? (doc?.[cls.k] || [])
-    : [...new Set(items.flatMap((r) => (Array.isArray(r[field?.k]) ? r[field.k] : [r[field?.k]])).filter(Boolean))]
-      .map((name) => ({ name }))
-  return names.map((r) => ({ ...r, count: field ? items.filter((x) => wears(x, field, r.name)).length : 0 }))
+  let recs
+  if (cls.stored) recs = (doc?.[cls.k] || []).map((r) => ({ ...r, key: r.name }))
+  else if (isRef(field)) {
+    const seen = new Map()
+    for (const it of items) {
+      const v = it[field.k]
+      for (const l of (Array.isArray(v) ? v : (v ? [v] : []))) {
+        const k = linkKey(l)
+        if (!seen.has(k)) seen.set(k, { key: k, name: refLabelOf(l, field, { def, doc, field, ...extra }), linked: !!l.id })
+      }
+    }
+    recs = [...seen.values()]
+  } else {
+    recs = [...new Set(items.flatMap((r) => worn(r, field)))].map((name) => ({ key: name, name }))
+  }
+  return recs.map((r) => ({ ...r, count: field ? items.filter((x) => wears(x, field, r.key)).length : 0 }))
 }
 
 // ─── tabs ─────────────────────────────────────────────────────────────────
@@ -186,9 +207,9 @@ export function fixedTabs(def) {
 export function itemScope(def, doc, tab, sort, sorters) {
   if (tab?.kind !== 'items') return []
   let list = doc?.[def.item.key] || []
-  if (tab.of && tab.name) {
+  if (tab.of && (tab.key || tab.name)) {
     const field = wornBy(def, def.classes.find((c) => c.k === tab.of) || {})
-    if (field) list = list.filter((r) => wears(r, field, tab.name))
+    if (field) list = list.filter((r) => wears(r, field, tab.key || tab.name))
   }
   if (tab.ids) {
     const order = new Map(tab.ids.map((id, i) => [id, i]))

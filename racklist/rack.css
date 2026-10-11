@@ -674,3 +674,6 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
   color: var(--rk-dim);
 }
 .rl-btn.rl-pane-btn:hover { background: var(--rk-head); color: var(--rk-ink); }
+
+/* A name written down with nobody behind it: plain, not a chip that links. */
+.rl-tag.rl-unlinked { border-style: dashed; background: none; color: var(--rk-dim); }

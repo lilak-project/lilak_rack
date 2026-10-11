@@ -11,7 +11,7 @@ import { typeOf } from './types.jsx'
 import { bySome } from './sort.js'
 import {
   defineRack, itemColumns, classColumns, itemSorters, itemCells, itemSearch, itemTokens,
-  classRows, wornBy, fixedTabs, itemScope, labelOf, useRemoteDocs, EMPTY_CELL as D,
+  classRows, wornBy, wears, isRef, fixedTabs, itemScope, labelOf, useRemoteDocs, EMPTY_CELL as D,
 } from './schema.js'
 import { PORTAL_PROJECT, brandStyle, isManager, fetchDoc, putDoc } from './portal.js'
 
@@ -79,11 +79,11 @@ export function RackService({ def: declared, slots = {} }) {
   useEffect(() => {
     if (!doc) return
     L.keepTabs((t) => {
-      if (t.of && t.name) return items.some((r) => {
+      if (t.of && (t.key || t.name)) {
         const f = wornBy(def, def.classes.find((c) => c.k === t.of) || {})
-        const v = f && r[f.k]
-        return Array.isArray(v) ? v.includes(t.name) : v === t.name
-      }) || (doc[t.of] || []).some((r) => r.name === t.name)
+        return (f && items.some((r) => wears(r, f, t.key || t.name)))
+          || (doc[t.of] || []).some((r) => r.name === t.name)
+      }
       if (t.ids) return true
       return false
     })
@@ -137,11 +137,11 @@ export function RackService({ def: declared, slots = {} }) {
   const classes = useMemo(() => {
     if (!cls) return []
     const q = query.trim().toLowerCase()
-    const all = classRows(def, doc, cls)
+    const all = classRows(def, doc, cls, extra)
       .filter((r) => !q || Object.values(r).some((v) => typeof v === 'string' && v.toLowerCase().includes(q)))
     const get = clsSort.k === 'count' ? (r) => r.count : (r) => r[clsSort.k]
     return all.sort(bySome(get, clsSort.dir))
-  }, [cls, def, doc, query, clsSort])
+  }, [cls, def, doc, query, clsSort, extra])
 
   const showEdit = L.showEdit && !!doc
   const showList = !showEdit || L.showList
@@ -183,7 +183,7 @@ export function RackService({ def: declared, slots = {} }) {
         )
       }
       const field = wornBy(def, c)
-      const names = classRows(def, doc, c).map((r) => r.name)
+      const names = classRows(def, doc, c, extra).map((r) => r.name)
       const wearing = (gone) => items.filter((r) => {
         const v = r[field.k]
         return Array.isArray(v) ? v.some((x) => gone.includes(x)) : gone.includes(v)
@@ -301,9 +301,14 @@ export function RackService({ def: declared, slots = {} }) {
                 onSort={(k) => setClsSort((s2) => (s2.k === k ? { k, dir: -s2.dir } : { k, dir: 1 }))}>
                 {classes.map((r, i) => (
                   <RackRow key={r.id || r.name} cols={clsCols} className="rl-hit"
-                    onClick={() => openTab({ id: `${cls.k}:${r.name}`, kind: 'items', of: cls.k,
-                      name: r.name, label: r.name })}
-                    onContextMenu={(e) => { e.preventDefault(); openClass(cls, r) }}
+                    onClick={() => openTab({ id: `${cls.k}:${r.key || r.name}`, kind: 'items', of: cls.k,
+                      key: r.key || r.name, name: r.name, label: r.name })}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      // A class of links names people who live in another
+                      // service: there is nothing here to rename them in.
+                      if (!isRef(wornBy(def, cls))) openClass(cls, r)
+                    }}
                     cell={{
                       num: i + 1,
                       // A class record's own columns are drawn by their types, as an item's are.
