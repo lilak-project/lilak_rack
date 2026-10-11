@@ -199,7 +199,10 @@ export function classRows(def, doc, cls, extra = {}) {
 export function fixedTabs(def) {
   return [
     { id: 'all', kind: 'items', label: def.item.allLabel || def.item.key },
-    ...def.classes.map((c) => ({ id: `cls:${c.k}`, kind: 'classes', of: c.k, label: c.label })),
+    // `tab: false` keeps a class out of the strip: its records are reached
+    // from the items that point at them, not from a list of their own.
+    ...def.classes.filter((c) => c.tab !== false)
+      .map((c) => ({ id: `cls:${c.k}`, kind: 'classes', of: c.k, label: c.label })),
   ]
 }
 

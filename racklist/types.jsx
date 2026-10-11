@@ -159,7 +159,10 @@ function Chips({ value, onChange, field, ctx, single }) {
       <div className="rl-rrow">
         {vals.map((t) => (
           <span key={t} className="rl-tag">
-            {t}
+            {/* A name that is a record of a stored class opens that record. */}
+            {field.of && ctx.openClass && (ctx.doc?.[field.of] || []).some((r) => r.name === t)
+              ? <button type="button" className="rl-lnk" onClick={() => ctx.openClass(field.of, t)}>{t}</button>
+              : t}
             <button type="button" className="rl-x" title="떼기"
               onClick={() => onChange(single ? '' : vals.filter((x) => x !== t))}>×</button>
           </span>

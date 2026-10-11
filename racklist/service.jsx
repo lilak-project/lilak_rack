@@ -129,7 +129,15 @@ export function RackService({ def: declared, slots = {} }) {
     onClose: () => { const cur = panes.current(panes.cols[0]); if (cur) panes.close(cur.id) },
   })
 
-  const ctx = useMemo(() => ({ remote, say: setNote, openItem }), [remote, setNote, openItem])
+  /** Open a stored class record by name — what a chip in the editor does, so a
+   *  class without a tab of its own (tab: false) is still one press away. */
+  const openClassByName = useCallback((of, name) => {
+    const c = def.classes.find((x) => x.k === of)
+    const rec = c?.stored && (doc?.[of] || []).find((r) => r.name === name)
+    if (rec) openClass(c, rec)
+  }, [def, doc, openClass])
+  const ctx = useMemo(() => ({ remote, say: setNote, openItem, openClass: openClassByName }),
+    [remote, setNote, openItem, openClassByName])
   const api = { def, doc, commit, openTab, openEdit, openItem, setNote, picked, chosen, tab, rows, scope }
 
   const cols = useMemo(() => L.colsOf(''), [L.colsOf])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -165,7 +173,7 @@ export function RackService({ def: declared, slots = {} }) {
       const rec = etab.who ? items.find((r) => r.id === etab.who) : null
       return (
         <RackItemEditor def={def} doc={doc} rec={rec} ctx={ctx} onSave={commit}
-          canDelete={IS_ADMIN}
+          canDelete={IS_ADMIN} onCancel={() => panes.close(etab.id)}
           onCreated={(r) => { panes.close(etab.id); openItem(r.id, r) }}
           onDeleted={() => panes.close(etab.id)} />
       )
@@ -177,7 +185,7 @@ export function RackService({ def: declared, slots = {} }) {
         const rec = etab.who ? (doc[c.k] || []).find((r) => r.id === etab.who) : null
         return (
           <RackItemEditor def={def} doc={doc} rec={rec} fields={c.fields} listKey={c.k} noun={c.label}
-            ctx={ctx} onSave={commit} canDelete={IS_ADMIN}
+            ctx={ctx} onSave={commit} canDelete={IS_ADMIN} onCancel={() => panes.close(etab.id)}
             onCreated={(r) => { panes.close(etab.id); openClass(c, r) }}
             onDeleted={() => panes.close(etab.id)} />
         )

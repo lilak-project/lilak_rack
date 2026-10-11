@@ -24,7 +24,7 @@ import { newId } from './portal.js'
  */
 export function RackItemEditor({
   def, doc, rec, fields: fieldsIn, listKey, noun, ctx: extra = {},
-  onSave, onCreated, onDeleted, onRenamed, canDelete = true, actions,
+  onSave, onCreated, onDeleted, onRenamed, onCancel, canDelete = true, actions,
 }) {
   const fields = fieldsIn || def.item.fields
   const key = listKey || def.item.key
@@ -94,6 +94,14 @@ export function RackItemEditor({
 
   return (
     <div className="rl-edit">
+      {/* First, and stuck to the top of the pane: the record is as long as it
+          is, and what you do to it is always in the same place. */}
+      <RackActions key={f.id || 'draft'} draft={draft}
+        onCreate={create} createDisabled={missing.length > 0}
+        hint={missing.length ? `${missing.map((x) => x.label).join(', ')} 이(가) 있어야 합니다.` : ''}
+        onSave={save} onCancel={onCancel} onRevert={() => setF(rec || blank)}
+        onDelete={canDelete ? remove : undefined}
+        extra={actions?.(f, setF)} />
       <div className="rl-rec">
         {fields.filter((fl) => fl.edit !== false && !fl.get).map((fl) => {
           const T = typeOf(fl)
@@ -109,12 +117,6 @@ export function RackItemEditor({
           )
         })}
       </div>
-      <RackActions key={f.id || 'draft'} draft={draft}
-        onCreate={create} createDisabled={missing.length > 0}
-        hint={missing.length ? `${missing.map((x) => x.label).join(', ')} 이(가) 있어야 합니다.` : ''}
-        onSave={save} onRevert={() => setF(rec || blank)}
-        onDelete={canDelete ? remove : undefined}
-        extra={actions?.(f, setF)} />
     </div>
   )
 }
