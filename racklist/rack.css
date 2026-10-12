@@ -688,3 +688,9 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
 
 /* A name written down with nobody behind it: plain, not a chip that links. */
 .rl-tag.rl-unlinked { border-style: dashed; background: none; color: var(--rk-dim); }
+
+/* Today, in a table of dated records (item.now): what is on now, and the
+   line where today falls between what has begun and what has not. */
+.rl-hit.rl-now:not(.on) { background: #fff8c5; }
+.rl-hit.rl-now:not(.on):hover { background: #fbefa0; }
+.rl-row.rl-nowline { border-top: 2px solid #e5484d; }

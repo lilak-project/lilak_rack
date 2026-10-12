@@ -201,6 +201,26 @@ export function RackService({ def: declared, slots = {} }) {
   const showList = !showEdit || L.showList
   const order = sort || def.item.order
 
+  // Today, when the table is in date order: what is on now is lit, and a line
+  // runs where today falls — between what has begun and what has not.
+  const nowAt = useMemo(() => {
+    const n = def.item.now
+    if (!n || order?.k !== n.start) return null
+    const today = new Date().toLocaleDateString('sv-SE')      // YYYY-MM-DD, local
+    const day = (r, k) => String(r?.[k] || '').slice(0, 10)
+    const on = new Set()
+    let line = -1, prev = null
+    rows.forEach((r, i) => {
+      const s = day(r, n.start)
+      if (!s) return
+      if (s <= today && today <= (day(r, n.end) || s)) on.add(r.id)
+      const begun = s <= today
+      if (prev !== null && prev !== begun && line < 0) line = i
+      prev = begun
+    })
+    return { on, line }
+  }, [def, order, rows])
+
   // ── a wearable class (tags): rename, merge or take it off every item ──────
   // A field may say how a record changes beyond the field itself (`fold`): a
   // main tag that was one of the names going.
@@ -377,9 +397,10 @@ export function RackService({ def: declared, slots = {} }) {
                   {!filter.mode && rows.map((r, i) => {
                     const on = picked.has(r.id)
                     const edited = panes.tabs.some((t) => t.kind === 'item' && t.who === r.id)
+                    const now = nowAt ? `${nowAt.on.has(r.id) ? ' rl-now' : ''}${nowAt.line === i ? ' rl-nowline' : ''}` : ''
                     return (
                       <RackRow key={r.id || i} cols={cols} tone={tone}
-                        className={`rl-hit${on ? ' on' : ''}${edited ? ' rl-edited' : ''}`}
+                        className={`rl-hit${on ? ' on' : ''}${edited ? ' rl-edited' : ''}${now}`}
                         onClick={(e) => hit(i, e.shiftKey)}
                         onContextMenu={(e) => { e.preventDefault(); openItem(r.id) }}
                         cell={{

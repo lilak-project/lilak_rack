@@ -51,6 +51,10 @@ import { typeOf, refTarget, remoteDoc, refLabelOf } from './types.jsx'
  *   store: false               a helper in the editor (a paste box), never saved
  *   tone: 'ink' | 'dim'        the column's colour: the record's own words, or about it
  *   search: false              not read by the search box
+ *
+ * `item.now: { start: 'start', end: 'end' }` — records with dates: while the
+ * table is sorted by `start`, what is on today is lit, and a red line marks
+ * where today falls between what has begun and what has not.
  *   fold(rec, gone, to)        how merging names (tags) changes a record, when
  *                              more than the field itself moves (a main tag)
  *
