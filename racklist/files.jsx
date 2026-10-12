@@ -127,7 +127,13 @@ function FolderRow({ name, ctx, field }) {
       <div className={`rl-rows${over ? ' rl-over' : ''}`}
         onDragOver={(e) => { e.preventDefault(); setOver(true) }}
         onDragLeave={() => setOver(false)}
-        onDrop={(e) => { e.preventDefault(); setOver(false); const p = droppedPath(e); if (p) setCand(p.replace(/\/$/, '')) }}>
+        onDrop={(e) => {
+          e.preventDefault(); setOver(false)
+          const got = dropped(e)
+          if (got.why) say?.(got.why)
+          else if (got.dir === false) say?.(`'${got.name}' 은(는) 폴더가 아니라 파일입니다.`)
+          else setCand(got.path || got.name)
+        }}>
         <span className="rl-hint">{roots[0]} 안에 '{name}' 폴더가 없습니다.</span>
         {cand ? (
           <div className="rl-rrow">
@@ -286,11 +292,26 @@ const pickHit = (hits) => {
   const sorted = [...hits].sort((a, b) => a.split('/').length - b.split('/').length)
   return { mode: 'path', path: sorted[0], ...(sorted.length > 1 ? { copies: sorted.slice(1) } : {}) }
 }
-/** A path dropped from Finder arrives as a file:// URL. */
+/** A path dropped from Finder, when the browser tells (a file:// URL) —
+ *  Chrome and Safari do not, for files; they give only the name. */
 const droppedPath = (e) => {
   const uri = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || ''
   const one = uri.split(/\r?\n/).find((x) => x.startsWith('file://')) || uri.trim()
-  try { return one.startsWith('file://') ? decodeURI(one.slice(7)) : one } catch { return one }
+  let p = one
+  try { p = one.startsWith('file://') ? decodeURI(one.slice(7)) : one } catch { /* as it came */ }
+  return p.startsWith('/') ? p.replace(/\/$/, '') : ''
+}
+/** What was dropped: its path when the browser says, else its name and
+ *  whether it is a folder. Read while the drop event lasts. */
+function dropped(e) {
+  const path = droppedPath(e)
+  if (path) return { path, name: path.split('/').pop() }
+  const item = [...(e.dataTransfer.items || [])].find((i) => i.kind === 'file')
+  const entry = item?.webkitGetAsEntry?.()
+  if (entry) return { name: entry.name, dir: entry.isDirectory }
+  const f = e.dataTransfer.files?.[0]
+  if (f) return { name: f.name }
+  return { why: `끌어온 것에서 이름을 읽지 못했습니다 (${[...(e.dataTransfer.types || [])].join(', ') || '빈 끌기'}).` }
 }
 
 registerType('file', {
@@ -333,10 +354,19 @@ function FileRow({ value, onChange, field, ctx, rec }) {
     <div className={`rl-rows${over ? ' rl-over' : ''}`}
       onDragOver={(e) => { e.preventDefault(); setOver(true) }}
       onDragLeave={() => setOver(false)}
-      onDrop={(e) => {
+      onDrop={async (e) => {
         e.preventDefault(); setOver(false)
-        const p = droppedPath(e)
-        if (p) { set(p); say?.('경로를 받았습니다 — 허용 루트 안이어야 열립니다.') }
+        const got = dropped(e)
+        if (got.why) { say?.(got.why); return }
+        if (got.path) { set(got.path); say?.('경로를 받았습니다 — 허용 루트 안이어야 열립니다.'); return }
+        // Only the name came: find the file of that name under the roots.
+        const stem = got.name.replace(/\.[^.]+$/, '').normalize('NFC')
+        try {
+          const hits = (await scanFiles())[stem] || []
+          if (!hits.length) { say?.(`허용 루트 안에서 ${got.name} 을(를) 찾지 못했습니다.`); return }
+          onChange(pickHit(hits))
+          say?.(hits.length > 1 ? `${hits.length}개 찾음 — 가장 바깥 것을 연결했습니다.` : `${got.name} 을(를) 연결했습니다.`)
+        } catch (err) { say?.(String(err.message || err)) }
       }}>
       <div className="rl-rrow">
         <input className="rl-in rl-mono" style={{ width: '100%', minWidth: 260 }} value={path}
@@ -463,8 +493,11 @@ export function RackSettings({ def, doc, folders, onSave, say, onReload, onOpenF
               <div className="rl-rows" onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
                   e.preventDefault()
-                  const p = droppedPath(e).replace(/\/$/, '')
-                  if (p) setRoots((s) => ({ ...s, [k]: [...(s[k] || []).filter((x) => str(x).trim() && x !== p), p] }))
+                  const got = dropped(e)
+                  // A root needs the whole path, and only some browsers give it.
+                  if (!got.path) { say?.('이 브라우저는 끌어온 폴더의 경로를 알려주지 않습니다 — Finder에서 폴더를 고르고 ⌥⌘C 로 경로를 복사해 + 루트 칸에 붙여넣으세요.'); return }
+                  const p = got.path
+                  setRoots((s) => ({ ...s, [k]: [...(s[k] || []).filter((x) => str(x).trim() && x !== p), p] }))
                 }}>
               <RackTextRows value={roots[k] || []} add="+ 루트" width={560}
                 placeholder={isFolder ? '/Users/…/Academic Activities' : '/Users/…/Papers'}
@@ -472,7 +505,7 @@ export function RackSettings({ def, doc, folders, onSave, say, onReload, onOpenF
               <span className="rl-hint">
                 {isFolder ? '이 폴더들 바로 아래의 폴더가 같은 이름의 항목과 연결됩니다. ' : ''}
                 이 폴더들 안의 파일만 서비스가 읽습니다. 심볼릭 링크를 풀어 확인하므로 루트 밖을 가리키는 링크는 거부됩니다.
-                {' '}Finder에서 폴더를 여기로 끌어다 놓으면 루트로 들어갑니다. 루트를 바꿔도 폴더는 옮겨지지 않습니다{isFolder ? ' — 새 폴더는 첫 번째 루트에 만들어집니다' : ''}.
+                {' '}경로는 Finder에서 폴더를 고르고 ⌥⌘C 로 복사해 붙여넣으면 됩니다. 루트를 바꿔도 폴더는 옮겨지지 않습니다{isFolder ? ' — 새 폴더는 첫 번째 루트에 만들어집니다' : ''}.
               </span>
               </div>
             </RackField>
