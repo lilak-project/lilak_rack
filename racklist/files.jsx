@@ -97,28 +97,64 @@ registerType('folder', {
     )
   },
   // Computed from the record's name, so shown rather than edited.
-  Show: ({ value, ctx }) => <FolderRow name={value} ctx={ctx} />,
+  Show: ({ value, ctx, field }) => <FolderRow name={value} ctx={ctx} field={field} />,
 })
 
-function FolderRow({ name, ctx }) {
+function FolderRow({ name, ctx, field }) {
   const [busy, setBusy] = useState(false)
+  const [over, setOver] = useState(false)
+  const [cand, setCand] = useState('')     // a folder chosen or dropped, waiting for 연결
   const { folders, say } = ctx
   const path = folderPathOf(name, folders)
   const roots = folders?.roots || []
+  useEffect(() => { setCand('') }, [name])
   if (!folders) return <span className="rl-hint">폴더 목록을 읽는 중…</span>
-  if (!roots.length) return <span className="rl-hint">폴더 루트가 정해지지 않았습니다 — 설정에서 정합니다.</span>
+  if (!roots.length) return <span className="rl-hint">폴더 루트가 정해지지 않았습니다 — settings 탭에서 정합니다.</span>
   if (!name) return <span className="rl-hint">이름이 정해지면 그 이름의 폴더와 연결됩니다.</span>
   if (!path) {
+    // Folders no record is named after: the ones that could be this one's.
+    const items = ctx.doc?.[ctx.def?.item?.key] || []
+    const named = new Set(items.map((r) => nfc(field?.get ? field.get(r, ctx) : r[field?.k])).filter(Boolean))
+    const orphans = Object.keys(folders.dirs || {}).filter((d) => !named.has(d)).sort()
+    const shown = cand.includes('/') ? cand.split('/').filter(Boolean).pop() : cand
+    async function adopt() {
+      setBusy(true)
+      const got = await post('/adopt', { source: cand, name }, say)
+      if (got) { say?.(`'${shown}' → '${name}' 로 바꿔 연결했습니다.`); setCand(''); ctx.reloadFolders?.() }
+      setBusy(false)
+    }
     return (
-      <div className="rl-rows">
+      <div className={`rl-rows${over ? ' rl-over' : ''}`}
+        onDragOver={(e) => { e.preventDefault(); setOver(true) }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => { e.preventDefault(); setOver(false); const p = droppedPath(e); if (p) setCand(p.replace(/\/$/, '')) }}>
         <span className="rl-hint">{roots[0]} 안에 '{name}' 폴더가 없습니다.</span>
-        <div className="rl-rrow">
-          <button type="button" className="rl-btn rl-go" disabled={busy} onClick={async () => {
-            setBusy(true)
-            if (await post('/make', { name }, say)) { say?.(`폴더를 만들었습니다 — ${name}`); ctx.reloadFolders?.() }
-            setBusy(false)
-          }}>폴더 만들기</button>
-        </div>
+        {cand ? (
+          <div className="rl-rrow">
+            <span className="rl-mono" title={cand}>{shown}</span>
+            <span className="rl-hint">→ {name}</span>
+            <button type="button" className="rl-btn rl-go" disabled={busy} onClick={adopt}>이름 바꿔 연결</button>
+            <button type="button" className="rl-btn" onClick={() => setCand('')}>취소</button>
+          </div>
+        ) : (
+          <div className="rl-rrow">
+            <button type="button" className="rl-btn rl-go" disabled={busy} onClick={async () => {
+              setBusy(true)
+              if (await post('/make', { name }, say)) { say?.(`폴더를 만들었습니다 — ${name}`); ctx.reloadFolders?.() }
+              setBusy(false)
+            }}>폴더 만들기</button>
+            {orphans.length > 0 && (
+              <select className="rl-in" value="" onChange={(e) => setCand(e.target.value)}>
+                <option value="">있는 폴더에 연결…</option>
+                {orphans.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            )}
+          </div>
+        )}
+        <span className="rl-hint">
+          {cand ? '그 폴더의 이름이 바뀝니다 (안의 파일은 그대로).'
+            : 'Finder에서 폴더를 끌어다 놓아도 됩니다 — 루트 안의 폴더면 이 이름으로 바꿔 연결합니다.'}
+        </span>
       </div>
     )
   }
@@ -423,13 +459,22 @@ export function RackSettings({ def, doc, folders, onSave, say, onReload, onOpenF
           const isFolder = users.some((f) => f.type === 'folder')
           return (
             <RackField key={k} label={`${users.map((f) => f.label).join(' · ')} 루트`}>
+              {/* A root is easiest given by dropping the folder from Finder. */}
+              <div className="rl-rows" onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  const p = droppedPath(e).replace(/\/$/, '')
+                  if (p) setRoots((s) => ({ ...s, [k]: [...(s[k] || []).filter((x) => str(x).trim() && x !== p), p] }))
+                }}>
               <RackTextRows value={roots[k] || []} add="+ 루트" width={560}
                 placeholder={isFolder ? '/Users/…/Academic Activities' : '/Users/…/Papers'}
                 onChange={(v) => setRoots((s) => ({ ...s, [k]: v }))} />
               <span className="rl-hint">
                 {isFolder ? '이 폴더들 바로 아래의 폴더가 같은 이름의 항목과 연결됩니다. ' : ''}
                 이 폴더들 안의 파일만 서비스가 읽습니다. 심볼릭 링크를 풀어 확인하므로 루트 밖을 가리키는 링크는 거부됩니다.
+                {' '}Finder에서 폴더를 여기로 끌어다 놓으면 루트로 들어갑니다. 루트를 바꿔도 폴더는 옮겨지지 않습니다{isFolder ? ' — 새 폴더는 첫 번째 루트에 만들어집니다' : ''}.
               </span>
+              </div>
             </RackField>
           )
         })}
