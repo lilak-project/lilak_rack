@@ -85,10 +85,32 @@ registerType('number', {
   tidy: (v) => (v === '' || v === null || v === undefined ? '' : Number(v)),
 })
 
+/** '과' after a final consonant, '와' after a vowel: 행사 시작과, 마감일과… */
+const withGwa = (w) => {
+  const c = str(w).trim().slice(-1).charCodeAt(0)
+  return `${w}${c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 !== 0 ? '과' : '와'}`
+}
+
+/** `same: 'start'` puts a button beside it that copies that field's date —
+ *  a talk on the first day, a trip as long as the meeting. */
 registerType('date', {
   // ISO dates already sort as text; the cell keeps the date part only.
   text: (v) => str(v).slice(0, 10),
-  Edit: (p) => <Input {...p} type="date" width={150} />,
+  Edit: (p) => {
+    const from = p.field.same
+    const src = from && (p.ctx?.def?.item?.fields || []).find((f) => f.k === from)
+    const v = from ? str(p.rec?.[from]) : ''
+    return (
+      <>
+        <Input {...p} type="date" width={150} />
+        {from && (
+          <button type="button" className="rl-btn" disabled={!v || v === str(p.value)}
+            title={v ? `${v}` : `${src?.label || from}이(가) 비어 있습니다`}
+            onClick={() => p.onChange(v)}>{withGwa(src?.label || from)} 같음</button>
+        )}
+      </>
+    )
+  },
 })
 
 /** `short: 'link'` shows that word in the table instead of the address —
