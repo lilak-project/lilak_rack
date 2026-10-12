@@ -91,10 +91,12 @@ registerType('date', {
   Edit: (p) => <Input {...p} type="date" width={150} />,
 })
 
+/** `short: 'link'` shows that word in the table instead of the address —
+ *  a column that says whether there is one, and takes you there. */
 registerType('url', {
-  cell: (v) => (str(v) ? (
-    <a className="rl-lnk" href={str(v)} target="_blank" rel="noreferrer"
-      onClick={(e) => e.stopPropagation()}>{str(v).replace(/^https?:\/\//, '').slice(0, 40)}</a>
+  cell: (v, ctx) => (str(v) ? (
+    <a className="rl-lnk" href={str(v)} target="_blank" rel="noreferrer" title={str(v)}
+      onClick={(e) => e.stopPropagation()}>{ctx.field?.short || str(v).replace(/^https?:\/\//, '').slice(0, 40)}</a>
   ) : D),
   Edit: ({ value, onChange, field }) => (
     <>
