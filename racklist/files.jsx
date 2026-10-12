@@ -47,6 +47,18 @@ const qs = (o) => new URLSearchParams(Object.entries(o).filter(([, v]) => v !== 
 export const fileSrc = (name, path, download) => `${API}/file?${qs({ name, path, download: download ? 1 : undefined })}`
 
 export const folderPathOf = (name, folders) => (name ? folders?.dirs?.[nfc(name)] || '' : '')
+/** Where a new folder of this name would be made: beside the most folders of
+ *  its kind (Proposal_… with the proposals), else the first root — the same
+ *  rule the backend's /make follows. */
+export function homeOf(name, folders) {
+  const kind = `${nfc(name).split('_')[0]}_`
+  const count = {}
+  for (const [n, p] of Object.entries(folders?.dirs || {})) {
+    if (n.startsWith(kind)) { const parent = p.slice(0, p.lastIndexOf('/')); count[parent] = (count[parent] || 0) + 1 }
+  }
+  const best = Object.keys(count).sort((a, b) => count[b] - count[a])[0]
+  return best || folders?.roots?.[0] || ''
+}
 
 async function post(p, body, say) {
   try {
@@ -134,7 +146,7 @@ function FolderRow({ name, ctx, field }) {
           else if (got.dir === false) say?.(`'${got.name}' 은(는) 폴더가 아니라 파일입니다.`)
           else setCand(got.path || got.name)
         }}>
-        <span className="rl-hint">{roots[0]} 안에 '{name}' 폴더가 없습니다.</span>
+        <span className="rl-hint">'{name}' 폴더가 없습니다 — 만들면 {homeOf(name, folders)} 에 생깁니다.</span>
         {cand ? (
           <div className="rl-rrow">
             <span className="rl-mono" title={cand}>{shown}</span>
@@ -159,7 +171,7 @@ function FolderRow({ name, ctx, field }) {
         )}
         <span className="rl-hint">
           {cand ? '그 폴더의 이름이 바뀝니다 (안의 파일은 그대로).'
-            : 'Finder에서 폴더를 끌어다 놓아도 됩니다 — 루트 안의 폴더면 이 이름으로 바꿔 연결합니다.'}
+            : '루트 안의 폴더라면 Finder에서 끌어다 놓아도 됩니다 — 이 이름으로 바꿔 연결합니다.'}
         </span>
       </div>
     )
