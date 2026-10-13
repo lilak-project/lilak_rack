@@ -62,8 +62,11 @@ export function RackService({ def: declared, slots = {} }) {
 
   const extra = useMemo(() => ({ remote, folders }), [remote, folders])
   const itemSort = useMemo(() => itemSorters(def, doc, extra), [def, doc, extra])
-  const sortersFor = useCallback((t) => (t?.kind === 'items' ? itemSort : {}), [itemSort])
-  const scopeOf = useCallback((t, sort) => itemScope(def, doc, t, sort, itemSort), [def, doc, itemSort])
+  // A sorter may depend on the tab (a group's own core on that group's tab).
+  const sortersFor = useCallback((t) => (t?.kind !== 'items' ? {}
+    : def.item.tabbed ? itemSorters(def, doc, { ...extra, tab: t }) : itemSort), [def, doc, extra, itemSort])
+  const scopeOf = useCallback((t, sort) => itemScope(def, doc, t, sort, sortersFor(t),
+    def.item.tie?.(t, { def, doc, ...extra, tab: t })), [def, doc, extra, sortersFor])
   const search = useMemo(() => itemSearch(def, doc, extra), [def, doc, extra])
   const tokens = useMemo(() => itemTokens(def, doc, extra), [def, doc, extra])
   const allClassCols = useMemo(() => def.classes.flatMap((c) => classColumns(def, c)), [def])
@@ -84,7 +87,8 @@ export function RackService({ def: declared, slots = {} }) {
   const cls = tab?.kind === 'classes' ? def.classes.find((c) => c.k === tab.of) : null
   // Names worn through a plain field (tags) can be folded into one another.
   const clsField = cls ? wornBy(def, cls) : null
-  const mergeable = !!cls && !cls.stored && !!clsField && !isRef(clsField) && !typeOf(clsField).keys
+  const mergeable = !!cls && ((!cls.stored && !!clsField && !isRef(clsField) && !typeOf(clsField).keys)
+    || (cls.stored && !!cls.merge))
   const merge = useMergeMode(mergeable)
 
   useEffect(() => {
@@ -150,7 +154,7 @@ export function RackService({ def: declared, slots = {} }) {
   const findStored = (c, who) => (doc?.[c.k] || []).find((r) => (r.id ? r.id === who : r[c.keyBy] === who))
   const openClass = useCallback((c, rec) => openEdit(c.stored
     ? { id: `class:${c.k}:${whoOf(c, rec) || 'new'}`, kind: 'class', of: c.k, stored: true, who: whoOf(c, rec),
-      label: rec ? rowLabel(c, rec) : `새 ${c.label}` }
+      label: rec ? rowLabel(c, rec) : `새 ${c.noun}` }
     : { id: `class:${c.k}:${rec.name}`, kind: 'class', of: c.k, stored: false, who: rec.name, label: rec.name }),
   [openEdit])
 
@@ -178,13 +182,15 @@ export function RackService({ def: declared, slots = {} }) {
     who: rec.id, field: field.k, label: `📄 ${labelOf(def, rec)}` }), [def, openEdit])
   const ctx = useMemo(() => ({
     remote, folders, reloadFolders, openFolder, openFile, say: setNote, openItem,
-    openClass: openClassByName, openTab, openEdit, commit, isAdmin: IS_ADMIN,
+    openClass: openClassByName, openTab, openEdit, commit, isAdmin: IS_ADMIN, tab,
   }), [remote, folders, reloadFolders, openFolder, openFile, setNote, openItem, openClassByName,
-    openTab, openEdit, commit, IS_ADMIN])
-  const api = { def, doc, commit, openTab, openEdit, openItem, setNote, picked, chosen, tab, rows, scope }
+    openTab, openEdit, commit, IS_ADMIN, tab])
+  const api = { def, doc, commit, openTab, openEdit, closeEdit: (id) => panes.close(id), openItem, setNote,
+    picked, setPicked, clearPicked, chosen, tab, rows, scope }
 
-  const cols = useMemo(() => L.colsOf(''), [L.colsOf])   // eslint-disable-line react-hooks/exhaustive-deps
-  const clsCols = useMemo(() => (cls ? L.colsOf('c:', classColumns(def, cls)) : []), [L.colsOf, cls, def])   // eslint-disable-line react-hooks/exhaustive-deps
+  // A column may belong to some tabs only (a group's core on that group's tab).
+  const cols = useMemo(() => L.colsOf('').filter((c) => !c.when || c.when(tab)), [L.colsOf, tab])   // eslint-disable-line react-hooks/exhaustive-deps
+  const clsCols = useMemo(() => (cls ? L.colsOf('c:', classColumns(def, cls)).filter((c) => !c.when || c.when(tab)) : []), [L.colsOf, cls, def, tab])   // eslint-disable-line react-hooks/exhaustive-deps
   const mergeCols = useMemo(() => [{ k: 'chk', w: 26, min: 26, fix: true }, ...clsCols], [clsCols])
   const classes = useMemo(() => {
     if (!cls) return []
@@ -272,14 +278,14 @@ export function RackService({ def: declared, slots = {} }) {
       next = recs.map((x) => (x.id === listId
         ? { ...x, [ik]: [...(x[ik] || []), ...add.filter((id) => !(x[ik] || []).includes(id))], updatedAt: now } : x))
     }
-    if (await commit({ [c.k]: next }, `${add.length}${def.unit}을(를) '${name}' ${c.label}에 넣었습니다.`)) clearPicked()
+    if (await commit({ [c.k]: next }, `${add.length}${def.unit}을(를) '${name}' ${c.noun}에 넣었습니다.`)) clearPicked()
   }
   async function takeOutOfList(c, listId) {
     const out = new Set(pickedKeys())
     const ik = c.list.ids
     const next = (doc[c.k] || []).map((x) => (x.id === listId
       ? { ...x, [ik]: (x[ik] || []).filter((id) => !out.has(id)), updatedAt: new Date().toISOString() } : x))
-    if (await commit({ [c.k]: next }, `${out.size}${def.unit}을(를) ${c.label}에서 뺐습니다.`)) clearPicked()
+    if (await commit({ [c.k]: next }, `${out.size}${def.unit}을(를) ${c.noun}에서 뺐습니다.`)) clearPicked()
   }
   // My lists first: they are the ones I am filling.
   const listsFor = (c) => [...(doc?.[c.k] || [])].sort((a, b) => (
@@ -316,17 +322,35 @@ export function RackService({ def: declared, slots = {} }) {
       const c = def.classes.find((x) => x.k === etab.of)
       const field = c && wornBy(def, c)
       if (!field) return null
+      if (c.stored && c.merge) {
+        // Records folded into one: the class says how (the items follow).
+        const rowsNow = classRows(def, doc, c, extra)
+        const live = (etab.names || []).filter((n) => rowsNow.some((r) => r.name === n))
+        const users = items.filter((r) => live.some((n) => wears(r, field, n)))
+        return (
+          <RackMerge names={etab.names || []} noun={c.noun} exists={rowsNow.map((r) => r.name)}
+            count={(t) => rowsNow.find((r) => r.name === t)?.count || 0}
+            users={users.map((r) => labelOf(def, r))}
+            onMerge={async (gone, to) => {
+              if (await commit(c.merge(doc, gone, to),
+                `${c.noun} ${gone.length + 1}개를 '${to}' 하나로 합쳤습니다 · ${users.length}${def.unit}`)) {
+                panes.close(etab.id); merge.off()
+              }
+            }}
+            onCancel={() => panes.close(etab.id)} />
+        )
+      }
       const exists = classRows(def, doc, c, extra).map((r) => r.name)
       const users = wearing(field, etab.names || [])
       return (
-        <RackMerge names={etab.names || []} noun={field.label || c.label} exists={exists}
+        <RackMerge names={etab.names || []} noun={field.label || c.noun} exists={exists}
           count={(t) => wearing(field, [t]).length}
           users={users.map((r) => labelOf(def, r))}
           moved={field.moved ? (to) => field.moved(users, etab.names || [], to) : []}
           movedWhy={field.movedWhy}
           onMerge={async (gone, to) => {
             if (await commit({ [def.item.key]: foldNames(field, gone, to) },
-              `${field.label || c.label} ${gone.length + 1}개를 '${to}' 하나로 합쳤습니다 · ${users.length}${def.unit}`)) {
+              `${field.label || c.noun} ${gone.length + 1}개를 '${to}' 하나로 합쳤습니다 · ${users.length}${def.unit}`)) {
               panes.close(etab.id); merge.off()
             }
           }}
@@ -339,7 +363,7 @@ export function RackService({ def: declared, slots = {} }) {
       if (c.stored) {
         const rec = etab.who ? findStored(c, etab.who) : null
         return (
-          <RackItemEditor def={def} doc={doc} rec={rec} fields={c.fields} listKey={c.k} noun={c.label} cls={c}
+          <RackItemEditor def={def} doc={doc} rec={rec} fields={c.fields} listKey={c.k} noun={c.noun} cls={c}
             ctx={ctx} onSave={commit} onCancel={() => panes.close(etab.id)}
             // A list is its maker's to delete, or a manager's.
             canDelete={IS_ADMIN || (!!c.list?.owner && !!rec && rec[c.list.owner] === ME)}
@@ -350,7 +374,7 @@ export function RackService({ def: declared, slots = {} }) {
       const field = wornBy(def, c)
       const names = classRows(def, doc, c, extra).map((r) => r.name)
       return (
-        <RackEditClass name={etab.who} noun={c.label} wears={`쓰는 ${def.item.noun}`} unit={def.unit}
+        <RackEditClass name={etab.who} noun={c.noun} wears={`쓰는 ${def.item.noun}`} unit={def.unit}
           exists={names} wearing={(gone) => wearing(field, gone).map((r) => ({ id: r.id, label: labelOf(def, r) }))}
           onOpen={openItem}
           onSave={async (gone, to, said) => {
@@ -397,7 +421,7 @@ export function RackService({ def: declared, slots = {} }) {
             /* Mustard: it is only here while a class tab is, and the colour is
                what says so. */
             <button type="button" className="rl-btn rl-tabonly" onClick={() => openClass(cls, null)}>
-              + 새 {cls.label}
+              + 새 {cls.noun}
             </button>
           ) : (
             <button type="button" className="rl-btn rl-go" onClick={() => openItem(null)}>
@@ -405,9 +429,9 @@ export function RackService({ def: declared, slots = {} }) {
             </button>
           )}
           {mergeable && (
-            <RackMergeButtons merge={merge} noun={clsField.label || cls.label}
+            <RackMergeButtons merge={merge} noun={cls.stored ? cls.noun : (clsField.label || cls.noun)}
               onOpen={(names) => openEdit({ id: `merge:${cls.k}`, kind: 'merge', of: cls.k, names,
-                label: `${clsField.label || cls.label} ${names.length}개 합치기` })} />
+                label: `${cls.stored ? cls.noun : (clsField.label || cls.noun)} ${names.length}개 합치기` })} />
           )}
           {slots.commands?.(api)}
           <button type="button" className="rl-btn" disabled={!picked.size} onClick={clearPicked}>clear</button>
@@ -419,8 +443,8 @@ export function RackService({ def: declared, slots = {} }) {
           {tab?.kind === 'items' && picked.size > 0 && listClasses.map((c) => (
             <select key={c.k} className="rl-btn rl-pick" value=""
               onChange={(e) => e.target.value && putInList(c, e.target.value)}>
-              <option value="">{c.label}에 넣기…</option>
-              <option value="+new">+ 새 {c.label}</option>
+              <option value="">{c.noun}에 넣기…</option>
+              <option value="+new">+ 새 {c.noun}</option>
               {listsFor(c).map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.name || l.id.slice(0, 8)} ({(l[c.list.ids] || []).length}){c.list.owner && l[c.list.owner] && l[c.list.owner] !== ME ? ` · ${l[c.list.owner]}` : ''}
@@ -468,13 +492,19 @@ export function RackService({ def: declared, slots = {} }) {
                   <FacetRows f={filter} labels={{ empty: '이 열에는 값이 없습니다.' }} />
                   {!filter.mode && rows.map((r, i) => {
                     const on = picked.has(r.id)
-                    const edited = panes.tabs.some((t) => t.kind === 'item' && t.who === r.id)
+                    const edited = panes.tabs.some((t) => (t.kind === 'item' && t.who === r.id) || t.ids?.includes(r.id))
                     const now = nowAt ? `${nowAt.on.has(r.id) ? ' rl-now' : ''}${nowAt.line === i ? ' rl-nowline' : ''}` : ''
                     return (
                       <RackRow key={r.id || i} cols={cols} tone={tone}
                         className={`rl-hit${on ? ' on' : ''}${edited ? ' rl-edited' : ''}${now}`}
                         onClick={(e) => hit(i, e.shiftKey)}
-                        onContextMenu={(e) => { e.preventDefault(); openItem(r.id) }}
+                        onContextMenu={(e) => {
+                          e.preventDefault()
+                          // Right-clicking INSIDE a selection means the selection:
+                          // the row is one of the many you picked.
+                          if (picked.size > 1 && picked.has(r.id)) openMany()
+                          else openItem(r.id)
+                        }}
                         cell={{
                           chk: <input type="checkbox" checked={on} tabIndex={-1} readOnly
                             aria-label={`${labelOf(def, r)} 선택`} />,
@@ -487,7 +517,11 @@ export function RackService({ def: declared, slots = {} }) {
                     <p className="rl-msg">{items.length ? `해당하는 ${def.item.noun}이(가) 없습니다.` : `아직 ${def.item.noun}이(가) 없습니다 — + 새 ${def.item.noun}`}</p>
                   )}
                 </RackTable>
-                {def.listing && (
+                {def.listing?.render && def.listing.render({
+                  list: chosen.length ? chosen : scope, picked: chosen.length > 0, doc, tab,
+                  say: setNote, open: outOpen, setOpen: setOutOpen,
+                })}
+                {def.listing && !def.listing.render && (
                   <RackListing list={chosen.length ? chosen : scope} picked={chosen.length > 0}
                     tokens={tokens} presets={def.listing.presets} unit={def.unit}
                     say={setNote} open={outOpen} setOpen={setOutOpen} />

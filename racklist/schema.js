@@ -59,6 +59,14 @@ import { portalUser } from './portal.js'
  * where today falls between what has begun and what has not.
  *   fold(rec, gone, to)        how merging names (tags) changes a record, when
  *                              more than the field itself moves (a main tag)
+ *   group: '한글 이름'          sit on one line with the fields beside it that
+ *                              say the same group (성 · 이름; first · middle · last)
+ *   col: { when: (tab) => bool }  a column only some tabs have (a group's core)
+ *
+ * Computed fields, cells and sorters see the tab they are drawn for (ctx.tab).
+ * `item.tie(tab, ctx) => (a, b) => n` is the order under every sort — the one
+ * the list is written in (an author list: core, then family name).
+ * `item.search(rec, q, ctx) => bool` replaces reading every field.
  *
  * A stored class may say:
  *   keyBy: 'id'                items point at its records by id (people), not name
@@ -67,6 +75,8 @@ import { portalUser } from './portal.js'
  *   onSave(rec, prev, doc) => patch    more to change when one is saved
  *   onDelete(rec, doc) => patch        … or deleted (and deleteWarn(rec, doc))
  *   countLabel                 the header of its count column
+ *   merge(doc, gone, to) => patch   folding several records into one (the
+ *                              items pointing at them follow) — a merge mode
  * and its fields may be computed (`get`) and drawn (`cell`) like an item's.
  *
  * A LIST is a stored class whose records hold items rather than being worn by
@@ -134,7 +144,7 @@ export function labelOf(def, rec) {
 const colOf = (f) => {
   const c = typeof f.col === 'object' ? f.col : { w: f.col }
   return { k: f.k, label: c.label || f.label, w: c.w || 120, min: c.min || 40, drop: c.drop,
-    num: f.type === 'number' || c.num, tone: f.tone }
+    num: f.type === 'number' || c.num, tone: f.tone, when: c.when }
 }
 
 /** The item table's columns: the checkbox, the number, then every field that
@@ -186,6 +196,7 @@ export function itemCells(def, doc, rec, extra = {}) {
 
 /** What the search box reads: every field that has not opted out. */
 export function itemSearch(def, doc, extra = {}) {
+  if (def.item.search) return (rec, q) => def.item.search(rec, q, { def, doc, ...extra })
   const fs = def.item.fields.filter((f) => f.search !== false)
   return (rec, q) => fs.some((f) => {
     const c = ctxFor(def, doc, f, extra)
@@ -281,7 +292,7 @@ export function fixedTabs(def) {
 }
 
 /** The items a tab lists, sorted: every one, or those wearing one class. */
-export function itemScope(def, doc, tab, sort, sorters) {
+export function itemScope(def, doc, tab, sort, sorters, tie) {
   if (tab?.kind !== 'items') return []
   let list = doc?.[def.item.key] || []
   const cls = tab.of ? def.classes.find((c) => c.k === tab.of) : null
@@ -301,7 +312,12 @@ export function itemScope(def, doc, tab, sort, sorters) {
     list = list.filter((r) => order.has(r.id))
     if (!sort) return list.sort((a, b) => order.get(a.id) - order.get(b.id))
   }
-  return [...list].sort(byKeys(asSorts(sort).length ? sort : def.item.order, sorters))
+  // Underneath every column sort is the order the list is written in — the
+  // service's own (tie), or its default order — so equal rows never fall into
+  // whatever order the document happens to keep them in. The 나열 prints the
+  // rows in this order too: it lists what the table shows, as the table shows it.
+  const written = tie || byKeys(def.item.order, sorters)
+  return [...list].sort(byKeys(asSorts(sort).length ? sort : def.item.order, sorters, written))
 }
 
 // ─── other services ───────────────────────────────────────────────────────

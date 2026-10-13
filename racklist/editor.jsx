@@ -30,6 +30,17 @@ import { newId } from './portal.js'
  * Deleting a record also unhooks every link in this document that pointed at
  * it, so a ref never points at nothing.
  */
+/** Fields in a row with the same `group` share one line of the form. */
+function segments(fields) {
+  const out = []
+  for (const fl of fields) {
+    const last = out[out.length - 1]
+    if (fl.group && last?.group === fl.group) last.fields.push(fl)
+    else out.push({ group: fl.group || '', fields: [fl] })
+  }
+  return out
+}
+
 /** Taking items out of the document, and every trace of them with them: links
  *  from other items (refs to this list, and any type that can let go of an id
  *  — a citation row keeps its text), and their places in lists. */
@@ -150,18 +161,25 @@ export function RackItemEditor({
         deleteWarn={own.deleteWarn ? own.deleteWarn(f, doc) : undefined}
         extra={actions?.(f, setF)} />
       <div className="rl-rec">
-        {shown.map((fl) => {
-          const T = typeOf(fl)
-          const c = ctxFor(def, doc, fl, { ...extra, rec: f, draft })
-          const set = (v) => setF((s) => ({ ...s, [fl.k]: v }))
-          const props = { value: fl.get ? valueOf(fl, f, c) : f[fl.k], onChange: set, field: fl, ctx: c,
-            rec: f, patch: patchF, draft }
+        {segments(shown).map((seg) => {
+          // One labelled line per field — or per group of fields that say one
+          // thing between them (성 · 이름), each widget then named by its own label.
+          const widget = (fl) => {
+            const T = typeOf(fl)
+            const c = ctxFor(def, doc, fl, { ...extra, rec: f, draft })
+            const set = (v) => setF((s) => ({ ...s, [fl.k]: v }))
+            const field = seg.group ? { placeholder: fl.label, ...fl } : fl
+            const props = { value: fl.get ? valueOf(fl, f, c) : f[fl.k], onChange: set, field, ctx: c,
+              rec: f, patch: patchF, draft }
+            return fl.get ? <T.Show key={fl.k} {...props} />
+              : typeof fl.edit === 'function' ? <span key={fl.k} style={{ display: 'contents' }}>{fl.edit(props)}</span>
+                : <T.Edit key={fl.k} {...props} />
+          }
+          const hints = seg.fields.filter((fl) => fl.hint && fl.type !== 'check').map((fl) => fl.hint)
           return (
-            <RackField key={fl.k} label={fl.label}>
-              {fl.get ? <T.Show {...props} />
-                : typeof fl.edit === 'function' ? fl.edit(props)
-                  : <T.Edit {...props} />}
-              {fl.hint && fl.type !== 'check' && <span className="rl-hint">{fl.hint}</span>}
+            <RackField key={seg.fields[0].k} label={seg.group || seg.fields[0].label}>
+              {seg.fields.map(widget)}
+              {hints.map((h) => <span key={h} className="rl-hint">{h}</span>)}
             </RackField>
           )
         })}
