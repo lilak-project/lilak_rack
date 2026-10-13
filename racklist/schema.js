@@ -1,6 +1,7 @@
 import { asSorts, byKeys } from './sort.js'
 import { useEffect, useMemo, useState } from 'react'
 import { typeOf, refTarget, remoteDoc, refLabelOf } from './types.jsx'
+import { portalUser } from './portal.js'
 
 /**
  * A service, declared.
@@ -67,17 +68,37 @@ import { typeOf, refTarget, remoteDoc, refLabelOf } from './types.jsx'
  *   onDelete(rec, doc) => patch        … or deleted (and deleteWarn(rec, doc))
  *   countLabel                 the header of its count column
  * and its fields may be computed (`get`) and drawn (`cell`) like an item's.
+ *
+ * A LIST is a stored class whose records hold items rather than being worn by
+ * them — a set of assets going somewhere, the papers for a talk:
+ *   { k: 'lists', label: 'lists', list: { ids: 'ids', owner: 'user' }, fields: [ name, … ] }
+ * Its tab lists the lists; a list opens as a tab of its items, in its order;
+ * the selection can be put in one or taken out. `owner` (optional) is filled
+ * with whoever made it, and only they or a manager may delete it.
  */
 export function defineRack(def) {
   const item = def.item || {}
   const fields = (item.fields || []).map((f) => ({ label: f.k, ...f }))
-  const classes = (def.classes || []).map((c) => ({
-    label: c.k, keyBy: 'name', ...c,
-    // A class with fields of its own is a list of records in the document; one
-    // without is a name the items wear (its list is what they use).
-    stored: !c.field,
-    fields: (c.fields || [{ k: 'name', label: '이름', type: 'text', col: 200 }]).map((f) => ({ label: f.k, ...f })),
-  }))
+  const classes = (def.classes || []).map((c) => {
+    let fields = (c.fields || [{ k: 'name', label: '이름', type: 'text', col: 200 }]).map((f) => ({ label: f.k, ...f }))
+    // A list holds its items: the field that does is the kit's, said or not.
+    if (c.list && !fields.some((f) => f.k === c.list.ids)) {
+      fields = [...fields, { k: c.list.ids, label: '항목', type: 'members' }]
+    }
+    // A list's owner is whoever made it.
+    const owner = c.list?.owner
+    const fill = owner ? (r, doc) => {
+      const out = c.fill ? c.fill(r, doc) : r
+      return out[owner] ? out : { ...out, [owner]: portalUser()?.email || '' }
+    } : c.fill
+    return {
+      label: c.k, keyBy: c.list ? 'id' : 'name', ...c, fill,
+      // A class with fields of its own is a list of records in the document; one
+      // without is a name the items wear (its list is what they use).
+      stored: !c.field,
+      fields,
+    }
+  })
   return {
     ...def,
     unit: def.unit || '개',
@@ -220,6 +241,8 @@ export function classRows(def, doc, cls, extra = {}) {
   const field = wornBy(def, cls)
   const items = doc?.[def.item.key] || []
   let recs
+  // A list counts what it holds, not who wears it.
+  if (cls.list) return (doc?.[cls.k] || []).map((r) => ({ ...r, key: r.id, count: (r[cls.list.ids] || []).length }))
   if (cls.stored) recs = (doc?.[cls.k] || []).map((r) => ({ ...r, key: r[cls.keyBy] }))
   else if (isRef(field)) {
     const seen = new Map()
@@ -261,7 +284,15 @@ export function fixedTabs(def) {
 export function itemScope(def, doc, tab, sort, sorters) {
   if (tab?.kind !== 'items') return []
   let list = doc?.[def.item.key] || []
-  if (tab.of && (tab.key || tab.name)) {
+  const cls = tab.of ? def.classes.find((c) => c.k === tab.of) : null
+  if (cls?.list) {
+    // A list's tab: its items, in the order it holds them.
+    const rec = (doc?.[cls.k] || []).find((r) => r.id === tab.key)
+    const idk = def.item.id || 'id'
+    const byId = new Map(list.map((r) => [r[idk], r]))
+    list = (rec?.[cls.list.ids] || []).map((id) => byId.get(id)).filter(Boolean)
+    if (!asSorts(sort).length) return list
+  } else if (tab.of && (tab.key || tab.name)) {
     const field = wornBy(def, def.classes.find((c) => c.k === tab.of) || {})
     if (field) list = list.filter((r) => wears(r, field, tab.key || tab.name))
   }

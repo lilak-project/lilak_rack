@@ -490,3 +490,41 @@ registerType('refs', {
   Edit: (p) => <RefEdit {...p} field={{ ...p.field, many: true }} />,
   tidy: (v) => list(v).filter((l) => l?.id || String(l?.label || '').trim()),
 })
+
+// ─── a list's items ───────────────────────────────────────────────────────
+/** What a LIST holds (a class with `list: { ids }`): item ids, in order. Each
+ *  opens its item; × takes it out of the list — the item stays. */
+const itemLabel = (def, r) => {
+  const l = def?.item?.label
+  return str(typeof l === 'function' ? l(r) : r?.[l || def?.item?.fields?.[0]?.k]) || str(r?.id).slice(0, 8)
+}
+registerType('members', {
+  empty: () => [],
+  text: (v) => (list(v).length ? String(list(v).length) : ''),
+  sort: (v) => list(v).length || null,
+  cell: (v) => list(v).length || D,
+  Edit: ({ value, onChange, ctx }) => {
+    const def = ctx.def
+    const idk = def?.item?.id || 'id'
+    const byId = new Map((ctx.doc?.[def?.item?.key] || []).map((r) => [r[idk], r]))
+    const ids = list(value)
+    return (
+      <div className="rl-rows">
+        {ids.length === 0 && <span className="rl-hint">비어 있습니다 — 표에서 고른 뒤 "목록에 넣기"로 담습니다.</span>}
+        {ids.map((id) => {
+          const r = byId.get(id)
+          return (
+            <div key={id} className="rl-rrow">
+              {r ? <button type="button" className="rl-lnk" onClick={() => ctx.openItem?.(r.id)}>{itemLabel(def, r)}</button>
+                : <span className="rl-hint">(없는 항목 {id})</span>}
+              <button type="button" className="rl-x" title="목록에서 빼기 (항목은 그대로)"
+                onClick={() => onChange(ids.filter((x) => x !== id))}>×</button>
+            </div>
+          )
+        })}
+        {ids.length > 0 && <span className="rl-hint">{ids.length}개</span>}
+      </div>
+    )
+  },
+  tidy: (v) => [...new Set(list(v))],
+})

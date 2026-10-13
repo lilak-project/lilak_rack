@@ -1,7 +1,8 @@
 export { useRackList } from './list.js'
 // The declared service: a definition in, the whole screen out.
 export { RackService } from './service.jsx'
-export { RackItemEditor } from './editor.jsx'
+export { RackItemEditor, dropItems } from './editor.jsx'
+export { RackBulkEditor, bulkFields } from './bulk.jsx'
 export { RackListing } from './listing.jsx'
 export { RackFolder, RackFilePane, RackSettings, useFolders, fileSrc, fileUrl, scanFiles, onDesktop, copyText } from './files.jsx'
 export { registerType, typeOf, remoteDoc, forgetRemote, useRefOptions } from './types.jsx'

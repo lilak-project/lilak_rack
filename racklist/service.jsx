@@ -6,6 +6,7 @@ import { FilterBar, FacetRows } from './filter.jsx'
 import { RackListing } from './listing.jsx'
 import { RackItemEditor } from './editor.jsx'
 import { useMergeMode, RackMergeButtons, RackMerge } from './merge.jsx'
+import { RackBulkEditor } from './bulk.jsx'
 import { useRackList } from './list.js'
 import { useRackKeys, useToggleKey } from './hooks.js'
 import { typeOf } from './types.jsx'
@@ -16,7 +17,7 @@ import {
   classRows, wornBy, wears, isRef, fixedTabs, itemTabId, itemScope, labelOf, useRemoteDocs, valueOf,
   EMPTY_CELL as D,
 } from './schema.js'
-import { PORTAL_PROJECT, brandStyle, isManager, fetchDoc, putDoc } from './portal.js'
+import { PORTAL_PROJECT, brandStyle, isManager, portalUser, fetchDoc, putDoc, newId } from './portal.js'
 
 /**
  * <RackService def={…} /> — a whole rack-list service from its declaration.
@@ -49,6 +50,7 @@ export function RackService({ def: declared, slots = {} }) {
   const [folders, reloadFolders] = useFolders(def)
   const folderField = useMemo(() => def.item.fields.find((f) => f.type === 'folder'), [def])
   const IS_ADMIN = useMemo(() => isManager(), [])
+  const ME = useMemo(() => portalUser()?.email || '', [])
   const FIRST = itemTabId(def)
 
   const FIXED = useMemo(() => [
@@ -240,9 +242,60 @@ export function RackService({ def: declared, slots = {} }) {
     return Array.isArray(v) ? v.some((x) => gone.includes(x)) : gone.includes(v)
   })
 
+  // ── the selection: edit it all at once, or put it in a list ──────────────
+  const listClasses = def.classes.filter((c) => c.list)
+  // The list whose tab this is, when it is one.
+  const inList = tab?.of ? listClasses.find((c) => c.k === tab.of) : null
+  const openMany = () => {
+    const ids = items.filter((r) => picked.has(r.id)).map((r) => r.id)
+    if (!ids.length) return
+    panes.close('many')
+    setTimeout(() => openEdit({ id: 'many', kind: 'many', ids, label: `${ids.length}${def.unit} 한꺼번에` }), 0)
+  }
+  const pickedKeys = () => {
+    const idk = def.item.id || 'id'
+    return items.filter((r) => picked.has(r.id)).map((r) => r[idk])
+  }
+  async function putInList(c, listId) {
+    const add = pickedKeys()
+    if (!add.length) return
+    const ik = c.list.ids
+    const now = new Date().toISOString()
+    const recs = doc[c.k] || []
+    let next, name
+    if (listId === '+new') {
+      name = `${now.slice(0, 10)}-${recs.length + 1}`
+      next = [{ id: newId(), name, [ik]: add, ...(c.list.owner ? { [c.list.owner]: ME } : {}), createdAt: now, updatedAt: now }, ...recs]
+    } else {
+      const l = recs.find((x) => x.id === listId)
+      name = l?.name || ''
+      next = recs.map((x) => (x.id === listId
+        ? { ...x, [ik]: [...(x[ik] || []), ...add.filter((id) => !(x[ik] || []).includes(id))], updatedAt: now } : x))
+    }
+    if (await commit({ [c.k]: next }, `${add.length}${def.unit}을(를) '${name}' ${c.label}에 넣었습니다.`)) clearPicked()
+  }
+  async function takeOutOfList(c, listId) {
+    const out = new Set(pickedKeys())
+    const ik = c.list.ids
+    const next = (doc[c.k] || []).map((x) => (x.id === listId
+      ? { ...x, [ik]: (x[ik] || []).filter((id) => !out.has(id)), updatedAt: new Date().toISOString() } : x))
+    if (await commit({ [c.k]: next }, `${out.size}${def.unit}을(를) ${c.label}에서 뺐습니다.`)) clearPicked()
+  }
+  // My lists first: they are the ones I am filling.
+  const listsFor = (c) => [...(doc?.[c.k] || [])].sort((a, b) => (
+    (c.list.owner ? (b[c.list.owner] === ME) - (a[c.list.owner] === ME) : 0)
+    || String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || ''))))
+
   function editorFor(etab) {
     if (slots.editors?.[etab.kind]) return slots.editors[etab.kind](etab, api)
     if (etab.kind === 'folder') return <RackFolder key={etab.who} name={etab.who} say={setNote} />
+    if (etab.kind === 'many') {
+      return (
+        <RackBulkEditor def={def} doc={doc} ids={etab.ids || []} ctx={ctx} onSave={commit}
+          canDelete={IS_ADMIN} onCancel={() => panes.close(etab.id)}
+          onDeleted={() => { panes.close(etab.id); clearPicked() }} />
+      )
+    }
     if (etab.kind === 'file') {
       const rec = items.find((r) => r.id === etab.who)
       return <RackFilePane value={rec?.[etab.field]} say={setNote} />
@@ -287,7 +340,9 @@ export function RackService({ def: declared, slots = {} }) {
         const rec = etab.who ? findStored(c, etab.who) : null
         return (
           <RackItemEditor def={def} doc={doc} rec={rec} fields={c.fields} listKey={c.k} noun={c.label} cls={c}
-            ctx={ctx} onSave={commit} canDelete={IS_ADMIN} onCancel={() => panes.close(etab.id)}
+            ctx={ctx} onSave={commit} onCancel={() => panes.close(etab.id)}
+            // A list is its maker's to delete, or a manager's.
+            canDelete={IS_ADMIN || (!!c.list?.owner && !!rec && rec[c.list.owner] === ME)}
             onCreated={(r) => { panes.close(etab.id); openClass(c, r) }}
             onDeleted={() => panes.close(etab.id)} />
         )
@@ -357,6 +412,26 @@ export function RackService({ def: declared, slots = {} }) {
           {slots.commands?.(api)}
           <button type="button" className="rl-btn" disabled={!picked.size} onClick={clearPicked}>clear</button>
           {picked.size > 0 && <span className="rl-n">{picked.size} 선택</span>}
+          {tab?.kind === 'items' && picked.size > 1 && (
+            <button type="button" className="rl-btn" title="고른 것들의 같은 칸을 한꺼번에 바꿉니다"
+              onClick={openMany}>선택 편집 ({picked.size})</button>
+          )}
+          {tab?.kind === 'items' && picked.size > 0 && listClasses.map((c) => (
+            <select key={c.k} className="rl-btn rl-pick" value=""
+              onChange={(e) => e.target.value && putInList(c, e.target.value)}>
+              <option value="">{c.label}에 넣기…</option>
+              <option value="+new">+ 새 {c.label}</option>
+              {listsFor(c).map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name || l.id.slice(0, 8)} ({(l[c.list.ids] || []).length}){c.list.owner && l[c.list.owner] && l[c.list.owner] !== ME ? ` · ${l[c.list.owner]}` : ''}
+                </option>
+              ))}
+            </select>
+          ))}
+          {inList && picked.size > 0 && (
+            <button type="button" className="rl-btn" title={`이 ${inList.label}에서만 뺍니다 — 항목은 그대로입니다`}
+              onClick={() => takeOutOfList(inList, tab.key)}>{inList.label}에서 빼기 ({picked.size})</button>
+          )}
           <span className="rl-gap" />
           {L.opened > 0 && (
             <button type="button" className="rl-btn" title="열어둔 탭을 모두 닫습니다" onClick={L.closeOpened}>

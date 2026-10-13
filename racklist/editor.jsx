@@ -30,6 +30,41 @@ import { newId } from './portal.js'
  * Deleting a record also unhooks every link in this document that pointed at
  * it, so a ref never points at nothing.
  */
+/** Taking items out of the document, and every trace of them with them: links
+ *  from other items (refs to this list, and any type that can let go of an id
+ *  — a citation row keeps its text), and their places in lists. */
+export function dropItems(def, doc, recs) {
+  const key = def.item.key
+  const gone = new Set(recs.map((r) => r.id))
+  let items = (doc[key] || []).filter((x) => !gone.has(x.id))
+  const hooked = def.item.fields.filter((fl) => typeOf(fl).unlink
+    || ((fl.type === 'ref' || fl.type === 'refs') && (!fl.to || fl.to === 'self' || fl.to === key)))
+  if (hooked.length) {
+    items = items.map((it) => {
+      let out = it
+      for (const fl of hooked) {
+        const T = typeOf(fl)
+        for (const id of gone) {
+          const v = out[fl.k]
+          if (T.unlink) { const next = T.unlink(v, id); if (next !== v) out = { ...out, [fl.k]: next } }
+          else if (Array.isArray(v) && v.some((l) => l?.id === id)) out = { ...out, [fl.k]: v.filter((l) => l?.id !== id) }
+          else if (v?.id === id) out = { ...out, [fl.k]: null }
+        }
+      }
+      return out
+    })
+  }
+  const patch = { [key]: items }
+  const idk = def.item.id || 'id'
+  const goneKeys = new Set(recs.map((r) => r[idk]))
+  for (const c of def.classes.filter((x) => x.list)) {
+    patch[c.k] = (doc[c.k] || []).map((l) => (
+      (l[c.list.ids] || []).some((id) => goneKeys.has(id))
+        ? { ...l, [c.list.ids]: l[c.list.ids].filter((id) => !goneKeys.has(id)) } : l))
+  }
+  return patch
+}
+
 export function RackItemEditor({
   def, doc, rec, fields: fieldsIn, listKey, noun, cls, ctx: extra = {},
   onSave, onCreated, onDeleted, onRenamed, onCancel, canDelete = true, actions,
@@ -94,26 +129,7 @@ export function RackItemEditor({
     if (await onSave(patch, `${what} '${label}' 저장됨`)) onRenamed?.(r)
   }
   async function remove() {
-    const patch = { [key]: (doc[key] || []).filter((x) => !same(x)) }
-    // Links to it in this document go with it: refs to this list, and any
-    // type that can let go of an id (a citation row keeps its text).
-    if (isItem) {
-      const hooked = def.item.fields.filter((fl) => typeOf(fl).unlink
-        || ((fl.type === 'ref' || fl.type === 'refs') && (!fl.to || fl.to === 'self' || fl.to === key)))
-      if (hooked.length) {
-        patch[key] = patch[key].map((it) => {
-          let out = it
-          for (const fl of hooked) {
-            const v = it[fl.k]
-            const T = typeOf(fl)
-            if (T.unlink) { const next = T.unlink(v, f.id); if (next !== v) out = { ...out, [fl.k]: next } }
-            else if (Array.isArray(v) && v.some((l) => l?.id === f.id)) out = { ...out, [fl.k]: v.filter((l) => l?.id !== f.id) }
-            else if (v?.id === f.id) out = { ...out, [fl.k]: null }
-          }
-          return out
-        })
-      }
-    }
+    const patch = isItem ? dropItems(def, doc, [f]) : { [key]: (doc[key] || []).filter((x) => !same(x)) }
     Object.assign(patch, own.onDelete?.(f, { ...doc, ...patch }) || {})
     if (await onSave(patch, `${what} '${label}' 삭제됨`)) onDeleted?.(f)
   }
