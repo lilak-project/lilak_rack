@@ -1,3 +1,4 @@
+import { asSorts, byKeys } from './sort.js'
 import { useEffect, useMemo, useState } from 'react'
 import { typeOf, refTarget, remoteDoc, refLabelOf } from './types.jsx'
 
@@ -269,16 +270,7 @@ export function itemScope(def, doc, tab, sort, sorters) {
     list = list.filter((r) => order.has(r.id))
     if (!sort) return list.sort((a, b) => order.get(a.id) - order.get(b.id))
   }
-  const o = sort || def.item.order
-  const get = sorters[o.k] || (() => '')
-  const dir = o.dir || 1
-  return [...list].sort((a, b) => {
-    const x = get(a), y = get(b)
-    const xe = x === null || x === undefined || x === '', ye = y === null || y === undefined || y === ''
-    if (xe || ye) return xe && ye ? 0 : (xe ? 1 : -1)
-    if (typeof x === 'number' && typeof y === 'number') return (x - y) * dir
-    return String(x).localeCompare(String(y), 'ko') * dir
-  })
+  return [...list].sort(byKeys(asSorts(sort).length ? sort : def.item.order, sorters))
 }
 
 // ─── other services ───────────────────────────────────────────────────────

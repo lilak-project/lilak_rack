@@ -1,3 +1,4 @@
+import { asSorts } from './sort.js'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 /**
@@ -7,6 +8,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
  * way down, whatever the reader drags it to. Nothing here knows what the rows
  * are about — cells arrive as a { key: value } map.
  */
+const sortRank = (sort, k) => asSorts(sort).findIndex((s) => s.k === k)
+
 export function RackTable({ cols, onDrag, head, sort, onSort, facet, children }) {
   const tmpl = `${cols.map((c) => `${c.w}px`).join(' ')} 1fr`
   // When the table is wider than the room it has — a narrow window, or the
@@ -82,7 +85,15 @@ export function RackTable({ cols, onDrag, head, sort, onSort, facet, children })
               // turns over.
               <button type="button" className="rl-sort" onClick={() => onSort(c.k)}>
                 {c.label}
-                {sort?.k === c.k && <i className="rl-arrow">{sort.dir > 0 ? '↑' : '↓'}</i>}
+                {/* The one it is ordered by wears the arrow; the ones it falls
+                    back on wear their place in the stack, so a column you
+                    sorted three clicks ago still says it is doing something. */}
+                {sortRank(sort, c.k) === 0 && (
+                  <i className="rl-arrow">{asSorts(sort)[0].dir > 0 ? '↑' : '↓'}</i>
+                )}
+                {sortRank(sort, c.k) > 0 && (
+                  <i className="rl-arrow rl-dim">{sortRank(sort, c.k) + 1}</i>
+                )}
               </button>
             ) : c.label}
             {!c.fix && <i className="rl-grip" onMouseDown={(e) => {

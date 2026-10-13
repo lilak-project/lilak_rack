@@ -10,7 +10,7 @@ import { useRackList } from './list.js'
 import { useRackKeys, useToggleKey } from './hooks.js'
 import { typeOf } from './types.jsx'
 import { useFolders, RackFolder, RackFilePane, RackSettings, hasRoots } from './files.jsx'
-import { bySome } from './sort.js'
+import { asSorts, bumpSort, bySome } from './sort.js'
 import {
   defineRack, itemColumns, classColumns, itemSorters, itemCells, itemSearch, itemTokens,
   classRows, wornBy, wears, isRef, fixedTabs, itemTabId, itemScope, labelOf, useRemoteDocs, valueOf,
@@ -199,13 +199,13 @@ export function RackService({ def: declared, slots = {} }) {
 
   const showEdit = L.showEdit && !!doc
   const showList = !showEdit || L.showList
-  const order = sort || def.item.order
+  const order = asSorts(sort).length ? asSorts(sort) : asSorts(def.item.order)
 
   // Today, when the table is in date order: what is on now is lit, and a line
   // runs where today falls — between what has begun and what has not.
   const nowAt = useMemo(() => {
     const n = def.item.now
-    if (!n || order?.k !== n.start) return null
+    if (!n || order[0]?.k !== n.start) return null
     const today = new Date().toLocaleDateString('sv-SE')      // YYYY-MM-DD, local
     const day = (r, k) => String(r?.[k] || '').slice(0, 10)
     const on = new Set()
@@ -388,10 +388,7 @@ export function RackService({ def: declared, slots = {} }) {
               <>
                 <RackTable cols={cols} onDrag={drag('')} facet={filter.tableFacet}
                   sort={order}
-                  onSort={(k) => setSort((s2) => {
-                    const now = s2 || def.item.order
-                    return now?.k === k ? { k, dir: -now.dir } : { k, dir: 1 }
-                  })}
+                  onSort={(k) => setSort((s2) => bumpSort(asSorts(s2).length ? s2 : def.item.order, k))}
                   head={filter.mode ? null : { all: allPicked, some: somePicked, onAll: toggleAll }}>
                   <FacetRows f={filter} labels={{ empty: '이 열에는 값이 없습니다.' }} />
                   {!filter.mode && rows.map((r, i) => {
