@@ -81,7 +81,13 @@ export function RackService({ def: declared, slots = {} }) {
   const { tab, tabs, openTab, closeTab, rows, scope, filter, panes, split, findRef, drag } = L
   const { sort, setSort, clsSort, setClsSort, query, setQuery, note, setNote, err, setErr } = L
   const { picked, setPicked, hit, all: allPicked, some: somePicked, toggleAll, clear: clearPicked, chosen } = L
-  useToggleKey(toggleAll)
+  // ⌘Enter: whatever the search has left on screen, take it all — or put it
+  // all back — and say which.
+  useToggleKey(() => {
+    if (!rows.length) return
+    toggleAll()
+    setNote(allPicked ? `${rows.length}${def.unit} 선택 해제` : `${rows.length}${def.unit} 선택`)
+  })
 
   const items = doc?.[def.item.key] || []
   const cls = tab?.kind === 'classes' ? def.classes.find((c) => c.k === tab.of) : null
