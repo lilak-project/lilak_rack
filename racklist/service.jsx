@@ -524,7 +524,7 @@ export function RackService({ def: declared, slots = {} }) {
                     const edited = panes.tabs.some((t) => (t.kind === 'item' && t.who === rid) || t.ids?.includes(rid))
                     const now = nowAt ? `${nowAt.on.has(rid) ? ' rl-now' : ''}${nowAt.line === i ? ' rl-nowline' : ''}` : ''
                     return (
-                      <RackRow key={rid || i} cols={cols} tone={tone}
+                      <RackRow key={rid || i} cols={cols} tone={tone} mark={query.trim()}
                         className={`rl-hit${on ? ' on' : ''}${edited ? ' rl-edited' : ''}${now}`}
                         onClick={(e) => hit(i, e.shiftKey)}
                         onContextMenu={(e) => {
@@ -565,7 +565,7 @@ export function RackService({ def: declared, slots = {} }) {
                 {classes.map((r, i) => {
                   const on = merge.mode && merge.has(r.name)
                   return (
-                    <RackRow key={r.id || r.key || r.name} cols={merge.mode ? mergeCols : clsCols} tone={tone}
+                    <RackRow key={r.id || r.key || r.name} cols={merge.mode ? mergeCols : clsCols} tone={tone} mark={query.trim()}
                       className={`rl-hit${on ? ' on' : ''}`}
                       onClick={() => (merge.mode ? merge.toggle(r.name)
                         : openTab({ id: `${cls.k}:${r.key || r.name}`, kind: 'items', of: cls.k,

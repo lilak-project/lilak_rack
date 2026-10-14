@@ -109,10 +109,28 @@ export function RackTable({ cols, onDrag, head, sort, onSort, facet, children })
   )
 }
 
-/** One line. `tone` marks a column's colour class by key, e.g.
+/** The words the search box asked for, lit where a cell shows them. */
+function lit(text, q) {
+  const low = text.toLowerCase()
+  const k = q.toLowerCase()
+  if (!k || !low.includes(k)) return text
+  const out = []
+  let i = 0
+  for (let j = low.indexOf(k); j >= 0; j = low.indexOf(k, i)) {
+    if (j > i) out.push(text.slice(i, j))
+    out.push(<mark key={j} className="rl-hl">{text.slice(j, j + k.length)}</mark>)
+    i = j + k.length
+  }
+  if (i < text.length) out.push(text.slice(i))
+  return out
+}
+
+/** One line. `mark` lights the search's words in the cells that show them.
+ *  `tone` marks a column's colour class by key, e.g.
  *  { name: 'ink', journal: 'dim' } — the service says which, not this file. */
-export function RackRow({ cols, cell, tone = {}, className, onClick, onContextMenu }) {
+export function RackRow({ cols, cell, tone = {}, className, onClick, onContextMenu, mark }) {
   const tmpl = `${cols.map((c) => `${c.w}px`).join(' ')} 1fr`
+  const show = (v) => (mark && typeof v === 'string' ? lit(v, mark) : v)
   return (
     <div className={`rl-row ${className || ''}`} style={{ gridTemplateColumns: tmpl }}
       onClick={onClick} onContextMenu={onContextMenu}>
@@ -121,7 +139,7 @@ export function RackRow({ cols, cell, tone = {}, className, onClick, onContextMe
           className={`${c.k === 'num' ? 'rl-gut' : 'rl-c'}`
             + `${c.k === 'chk' ? ' rl-chk' : ''}${c.num ? ' rl-num' : ''}`
             + `${tone[c.k] ? ` rl-${tone[c.k]}` : ''}`}>
-          {cell[c.k]}
+          {show(cell[c.k])}
         </span>
       ))}
       <span className="rl-c" />

@@ -200,12 +200,42 @@ export function itemCells(def, doc, rec, extra = {}) {
 
 /** What the search box reads: every field that has not opted out. */
 export function itemSearch(def, doc, extra = {}) {
-  if (def.item.search) return (rec, q) => def.item.search(rec, q, { def, doc, ...extra })
+  const linked = linkedText(def, doc, extra)
+  // …and, one step further, the words of the records it points at.
+  const far = (rec, q) => linked.some(({ keys, text }) => keys(rec).some((k) => text.get(k)?.includes(q)))
+  if (def.item.search) return (rec, q) => def.item.search(rec, q, { def, doc, ...extra }) || far(rec, q)
   const fs = def.item.fields.filter((f) => f.search !== false)
   return (rec, q) => fs.some((f) => {
     const c = ctxFor(def, doc, f, extra)
     return typeOf(f).text(valueOf(f, rec, c), c).toLowerCase().includes(q)
-  })
+  }) || far(rec, q)
+}
+
+/** The words of a record, for the search box: its own strings and lists of
+ *  strings — not a photo's data URL, not a page of text. */
+const recWords = (r) => Object.values(r || {}).flat()
+  .filter((v) => typeof v === 'string' && v.length < 400 && !v.startsWith('data:')).join(' ').toLowerCase()
+
+/** What an item points at, one step away, as searchable words: the record of
+ *  a stored class it wears (a place's city, a journal's full name, an author's
+ *  every spelling) and a record in another service it links to (a paper's
+ *  title). Not further — a paper's authors' affiliations are not this item's —
+ *  and not its own kind (a cited paper is another paper, not words of this one),
+ *  nor the lists that hold it. */
+function linkedText(def, doc, extra = {}) {
+  const out = []
+  for (const c of def.classes.filter((x) => x.stored && !x.list)) {
+    const f = wornBy(def, c)
+    if (!f) continue
+    out.push({ keys: (r) => worn(r, f), text: new Map((doc?.[c.k] || []).map((r) => [String(r[c.keyBy]), recWords(r)])) })
+  }
+  for (const f of def.item.fields.filter(isRef)) {
+    const t = refTarget(f, def)
+    if (t.local) continue
+    const src = extra.remote?.[`${t.svc}/${t.proj}`]?.[t.item] || []
+    out.push({ keys: (r) => worn(r, f), text: new Map(src.map((r) => [`id:${r.id}`, recWords(r)])) })
+  }
+  return out
 }
 
 /** The listing's tokens: one per field, by its label AND its key, so a rule

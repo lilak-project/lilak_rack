@@ -710,3 +710,7 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
   border: 0; background: rgba(15, 23, 42, .72); cursor: zoom-out;
 }
 .rl-lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+/* The search box's words, where a row shows them. */
+.rl-hl { background: #fde68a; color: inherit; padding: 0; border-radius: 2px; }
+.rl-hit.on .rl-hl { background: #fcd34d; }
