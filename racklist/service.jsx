@@ -74,7 +74,11 @@ export function RackService({ def: declared, slots = {} }) {
   const tone = useMemo(() => Object.fromEntries([...def.item.fields, ...def.classes.flatMap((c) => c.fields)]
     .filter((f) => f.tone).map((f) => [f.k, f.tone])), [def])
 
-  const L = useRackList({
+  // What an item is known by: `id`, or the key a service already had (an
+  // asset's 자산번호). Lists hold these; the selection and the editors use them.
+  const IDK = def.item.id || 'id'
+  const idOf = useCallback((r) => r?.[IDK], [IDK])
+  const L = useRackList({ idOf,
     key: def.key, fixed: FIXED, firstTab: FIRST, scopeOf, search,
     sorters: sortersFor, cols: colSets, clsSort: def.classSort || { k: 'count', dir: -1 },
   })
@@ -117,7 +121,7 @@ export function RackService({ def: declared, slots = {} }) {
     })
     panes.keep((t) => {
       if (!t.who) return true
-      if (t.kind === 'item' || t.kind === 'file') return items.some((r) => r.id === t.who)
+      if (t.kind === 'item' || t.kind === 'file') return items.some((r) => idOf(r) === t.who)
       if (t.kind === 'class') {
         const c = def.classes.find((x) => x.k === t.of)
         return t.stored ? !!(c && (doc[t.of] || []).some((r) => (r.id ? r.id === t.who : r[c.keyBy] === t.who))) : true
@@ -150,7 +154,7 @@ export function RackService({ def: declared, slots = {} }) {
   // the document this closure sees does not have it yet, and the tab would be
   // named "새 …" for a record that has a name.
   const openItem = useCallback((id, rec) => {
-    const r = rec || (doc?.[def.item.key] || []).find((x) => x.id === id)
+    const r = rec || (doc?.[def.item.key] || []).find((x) => idOf(x) === id)
     openEdit({ id: `item:${id || 'new'}`, kind: 'item', who: id || null,
       label: r ? labelOf(def, r) : `새 ${def.item.noun}` })
   }, [doc, def, openEdit])
@@ -184,8 +188,8 @@ export function RackService({ def: declared, slots = {} }) {
     openEdit({ id: `folder:${name}`, kind: 'folder', who: name, label: `📁 ${r ? labelOf(def, r) : name}` })
   }, [def, folderField, items, openEdit])
   /** A record's file, read in a pane. */
-  const openFile = useCallback((rec, field) => openEdit({ id: `file:${rec.id}:${field.k}`, kind: 'file',
-    who: rec.id, field: field.k, label: `📄 ${labelOf(def, rec)}` }), [def, openEdit])
+  const openFile = useCallback((rec, field) => openEdit({ id: `file:${idOf(rec)}:${field.k}`, kind: 'file',
+    who: idOf(rec), field: field.k, label: `📄 ${labelOf(def, rec)}` }), [def, openEdit, idOf])
   const ctx = useMemo(() => ({
     remote, folders, reloadFolders, openFolder, openFile, say: setNote, openItem,
     openClass: openClassByName, openTab, openEdit, commit, isAdmin: IS_ADMIN, tab,
@@ -227,7 +231,7 @@ export function RackService({ def: declared, slots = {} }) {
     rows.forEach((r, i) => {
       const s = day(r, n.start)
       if (!s) return
-      if (s <= today && today <= (day(r, n.end) || s)) on.add(r.id)
+      if (s <= today && today <= (day(r, n.end) || s)) on.add(idOf(r))
       const begun = s <= today
       if (prev !== null && prev !== begun && line < 0) line = i
       prev = begun
@@ -259,14 +263,14 @@ export function RackService({ def: declared, slots = {} }) {
   // The list whose tab this is, when it is one.
   const inList = tab?.of ? listClasses.find((c) => c.k === tab.of) : null
   const openMany = () => {
-    const ids = items.filter((r) => picked.has(r.id)).map((r) => r.id)
+    const ids = items.filter((r) => picked.has(idOf(r))).map(idOf)
     if (!ids.length) return
     panes.close('many')
     setTimeout(() => openEdit({ id: 'many', kind: 'many', ids, label: `${ids.length}${def.unit} 한꺼번에` }), 0)
   }
   const pickedKeys = () => {
     const idk = def.item.id || 'id'
-    return items.filter((r) => picked.has(r.id)).map((r) => r[idk])
+    return items.filter((r) => picked.has(idOf(r))).map((r) => r[idk])
   }
   async function putInList(c, listId) {
     const add = pickedKeys()
@@ -276,15 +280,28 @@ export function RackService({ def: declared, slots = {} }) {
     const recs = doc[c.k] || []
     let next, name
     if (listId === '+new') {
-      name = `${now.slice(0, 10)}-${recs.length + 1}`
-      next = [{ id: newId(), name, [ik]: add, ...(c.list.owner ? { [c.list.owner]: ME } : {}), createdAt: now, updatedAt: now }, ...recs]
+      // Named for the day it was made — and -2, -3 when that day has one.
+      const used = new Set(recs.map((r) => r.name))
+      name = now.slice(0, 10)
+      for (let n = 2; used.has(name); n += 1) name = `${now.slice(0, 10)}-${n}`
+      // A new list starts with its fields' defaults, as one made in its editor does.
+      const blank = Object.fromEntries(c.fields.filter((f) => !f.get && f.store !== false && f.k !== ik)
+        .map((f) => [f.k, f.default ?? typeOf(f).empty()]))
+      next = [{ ...blank, id: newId(), name, [ik]: add, ...(c.list.owner ? { [c.list.owner]: ME } : {}), createdAt: now, updatedAt: now }, ...recs]
     } else {
       const l = recs.find((x) => x.id === listId)
       name = l?.name || ''
       next = recs.map((x) => (x.id === listId
         ? { ...x, [ik]: [...(x[ik] || []), ...add.filter((id) => !(x[ik] || []).includes(id))], updatedAt: now } : x))
     }
-    if (await commit({ [c.k]: next }, `${add.length}${def.unit}을(를) '${name}' ${c.noun}에 넣었습니다.`)) clearPicked()
+    if (await commit({ [c.k]: next }, `${add.length}${def.unit}을(를) '${name}' ${c.noun}에 넣었습니다.`)) {
+      clearPicked()
+      // A list just made is opened: its items, beside what to do with them.
+      if (listId === '+new') {
+        const id = next[0].id
+        openTab({ id: `${c.k}:${id}`, kind: 'items', of: c.k, key: id, name, label: name })
+      }
+    }
   }
   async function takeOutOfList(c, listId) {
     const out = new Set(pickedKeys())
@@ -309,18 +326,18 @@ export function RackService({ def: declared, slots = {} }) {
       )
     }
     if (etab.kind === 'file') {
-      const rec = items.find((r) => r.id === etab.who)
+      const rec = items.find((r) => idOf(r) === etab.who)
       return <RackFilePane value={rec?.[etab.field]} say={setNote} />
     }
     if (etab.kind === 'item') {
-      const rec = etab.who ? items.find((r) => r.id === etab.who) : null
+      const rec = etab.who ? items.find((r) => idOf(r) === etab.who) : null
       return (
         <RackItemEditor def={def} doc={doc} rec={rec} ctx={ctx} onSave={commit}
           canDelete={IS_ADMIN} onCancel={() => panes.close(etab.id)}
-          onCreated={(r) => { panes.close(etab.id); openItem(r.id, r) }}
+          onCreated={(r) => { panes.close(etab.id); openItem(idOf(r), r) }}
           onDeleted={(r) => {
             panes.close(etab.id)
-            setPicked((s) => { if (!s.has(r.id)) return s; const n = new Set(s); n.delete(r.id); return n })
+            setPicked((s) => { if (!s.has(idOf(r))) return s; const n = new Set(s); n.delete(idOf(r)); return n })
           }} />
       )
     }
@@ -371,6 +388,7 @@ export function RackService({ def: declared, slots = {} }) {
         return (
           <RackItemEditor def={def} doc={doc} rec={rec} fields={c.fields} listKey={c.k} noun={c.noun} cls={c}
             ctx={ctx} onSave={commit} onCancel={() => panes.close(etab.id)}
+            actions={c.actions ? (f, setF) => c.actions(f, setF, { ...ctx, doc, rec }) : undefined}
             // A list is its maker's to delete, or a manager's.
             canDelete={IS_ADMIN || (!!c.list?.owner && !!rec && rec[c.list.owner] === ME)}
             onCreated={(r) => { panes.close(etab.id); openClass(c, r) }}
@@ -381,7 +399,7 @@ export function RackService({ def: declared, slots = {} }) {
       const names = classRows(def, doc, c, extra).map((r) => r.name)
       return (
         <RackEditClass name={etab.who} noun={c.noun} wears={`쓰는 ${def.item.noun}`} unit={def.unit}
-          exists={names} wearing={(gone) => wearing(field, gone).map((r) => ({ id: r.id, label: labelOf(def, r) }))}
+          exists={names} wearing={(gone) => wearing(field, gone).map((r) => ({ id: idOf(r), label: labelOf(def, r) }))}
           onOpen={openItem}
           onSave={async (gone, to, said) => {
             if (await commit({ [def.item.key]: foldNames(field, gone, to) }, said)) panes.close(etab.id)
@@ -458,6 +476,10 @@ export function RackService({ def: declared, slots = {} }) {
               ))}
             </select>
           ))}
+          {inList && (
+            <button type="button" className="rl-btn rl-tabonly"
+              onClick={() => { const l = findStored(inList, tab.key); if (l) openClass(inList, l) }}>{inList.noun} 편집</button>
+          )}
           {inList && picked.size > 0 && (
             <button type="button" className="rl-btn" title={`이 ${inList.label}에서만 뺍니다 — 항목은 그대로입니다`}
               onClick={() => takeOutOfList(inList, tab.key)}>{inList.label}에서 빼기 ({picked.size})</button>
@@ -497,19 +519,20 @@ export function RackService({ def: declared, slots = {} }) {
                   head={filter.mode ? null : { all: allPicked, some: somePicked, onAll: toggleAll }}>
                   <FacetRows f={filter} labels={{ empty: '이 열에는 값이 없습니다.' }} />
                   {!filter.mode && rows.map((r, i) => {
-                    const on = picked.has(r.id)
-                    const edited = panes.tabs.some((t) => (t.kind === 'item' && t.who === r.id) || t.ids?.includes(r.id))
-                    const now = nowAt ? `${nowAt.on.has(r.id) ? ' rl-now' : ''}${nowAt.line === i ? ' rl-nowline' : ''}` : ''
+                    const rid = idOf(r)
+                    const on = picked.has(rid)
+                    const edited = panes.tabs.some((t) => (t.kind === 'item' && t.who === rid) || t.ids?.includes(rid))
+                    const now = nowAt ? `${nowAt.on.has(rid) ? ' rl-now' : ''}${nowAt.line === i ? ' rl-nowline' : ''}` : ''
                     return (
-                      <RackRow key={r.id || i} cols={cols} tone={tone}
+                      <RackRow key={rid || i} cols={cols} tone={tone}
                         className={`rl-hit${on ? ' on' : ''}${edited ? ' rl-edited' : ''}${now}`}
                         onClick={(e) => hit(i, e.shiftKey)}
                         onContextMenu={(e) => {
                           e.preventDefault()
                           // Right-clicking INSIDE a selection means the selection:
                           // the row is one of the many you picked.
-                          if (picked.size > 1 && picked.has(r.id)) openMany()
-                          else openItem(r.id)
+                          if (picked.size > 1 && picked.has(rid)) openMany()
+                          else openItem(rid)
                         }}
                         cell={{
                           chk: <input type="checkbox" checked={on} tabIndex={-1} readOnly

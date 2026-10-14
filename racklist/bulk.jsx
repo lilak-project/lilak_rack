@@ -31,7 +31,8 @@ const list = (v) => (Array.isArray(v) ? v : (v === null || v === undefined || v 
 const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 
 export function RackBulkEditor({ def, doc, ids, ctx = {}, onSave, onCancel, canDelete, onDeleted }) {
-  const recs = useMemo(() => (doc[def.item.key] || []).filter((r) => ids.includes(r.id)), [doc, def, ids])
+  const idk = def.item.id || 'id'
+  const recs = useMemo(() => (doc[def.item.key] || []).filter((r) => ids.includes(r[idk])), [doc, def, ids, idk])
   const fields = useMemo(() => bulkFields(def), [def])
 
   /** For each field, what they all have — and for many-valued ones, also what
@@ -94,7 +95,7 @@ export function RackBulkEditor({ def, doc, ids, ctx = {}, onSave, onCancel, canD
       out = def.item.fill ? def.item.fill(out, doc) : out
       return { ...out, updatedAt: now }
     }
-    const items = (doc[def.item.key] || []).map((r) => (ids.includes(r.id) ? change(r) : r))
+    const items = (doc[def.item.key] || []).map((r) => (ids.includes(r[idk]) ? change(r) : r))
     const n = items.filter((r, i) => r !== doc[def.item.key][i]).length
     // save saves: the selection is still the selection, and the next thing to
     // set for all of them is in the form you are looking at.
@@ -117,7 +118,7 @@ export function RackBulkEditor({ def, doc, ids, ctx = {}, onSave, onCancel, canD
             <span className="rl-hint">{recs.length}{def.unit}</span>
             <div className="rl-rrow" style={{ flexWrap: 'wrap' }}>
               {recs.slice(0, 20).map((r) => (
-                <button key={r.id} type="button" className="rl-tag rl-lnk" onClick={() => ctx.openItem?.(r.id)}>
+                <button key={r[idk]} type="button" className="rl-tag rl-lnk" onClick={() => ctx.openItem?.(r[idk])}>
                   {labelOf(def, r)}
                 </button>
               ))}

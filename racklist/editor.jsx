@@ -46,8 +46,11 @@ function segments(fields) {
  *  — a citation row keeps its text), and their places in lists. */
 export function dropItems(def, doc, recs) {
   const key = def.item.key
-  const gone = new Set(recs.map((r) => r.id))
-  let items = (doc[key] || []).filter((x) => !gone.has(x.id))
+  // The records themselves are what go — not "whatever has this id", which is
+  // every record when they have none (assets are known by their 자산번호).
+  const drop = new Set(recs)
+  const gone = new Set(recs.map((r) => r.id).filter(Boolean))     // what links point at
+  let items = (doc[key] || []).filter((x) => !drop.has(x))
   const hooked = def.item.fields.filter((fl) => typeOf(fl).unlink
     || ((fl.type === 'ref' || fl.type === 'refs') && (!fl.to || fl.to === 'self' || fl.to === key)))
   if (hooked.length) {
@@ -140,7 +143,7 @@ export function RackItemEditor({
     if (await onSave(patch, `${what} '${label}' 저장됨`)) onRenamed?.(r)
   }
   async function remove() {
-    const patch = isItem ? dropItems(def, doc, [f]) : { [key]: (doc[key] || []).filter((x) => !same(x)) }
+    const patch = isItem ? dropItems(def, doc, [rec]) : { [key]: (doc[key] || []).filter((x) => !same(x)) }
     Object.assign(patch, own.onDelete?.(f, { ...doc, ...patch }) || {})
     if (await onSave(patch, `${what} '${label}' 삭제됨`)) onDeleted?.(f)
   }

@@ -75,6 +75,9 @@ import { portalUser } from './portal.js'
  *   onSave(rec, prev, doc) => patch    more to change when one is saved
  *   onDelete(rec, doc) => patch        … or deleted (and deleteWarn(rec, doc))
  *   countLabel                 the header of its count column
+ *   noun                       one of them, in buttons and notes (+ 새 그룹)
+ *   actions(rec, setRec, ctx) => node   buttons of its own on its editor's bar
+ *                              (a list's 위치 적용) — ctx has doc, commit, isAdmin, say
  *   merge(doc, gone, to) => patch   folding several records into one (the
  *                              items pointing at them follow) — a merge mode
  * and its fields may be computed (`get`) and drawn (`cell`) like an item's.
@@ -84,7 +87,8 @@ import { portalUser } from './portal.js'
  *   { k: 'lists', label: 'lists', list: { ids: 'ids', owner: 'user' }, fields: [ name, … ] }
  * Its tab lists the lists; a list opens as a tab of its items, in its order;
  * the selection can be put in one or taken out. `owner` (optional) is filled
- * with whoever made it, and only they or a manager may delete it.
+ * with whoever made it, and only they or a manager may delete it. `show:
+ * (item) => string` is what its editor says beside each item it holds.
  */
 export function defineRack(def) {
   const item = def.item || {}
@@ -93,7 +97,7 @@ export function defineRack(def) {
     let fields = (c.fields || [{ k: 'name', label: '이름', type: 'text', col: 200 }]).map((f) => ({ label: f.k, ...f }))
     // A list holds its items: the field that does is the kit's, said or not.
     if (c.list && !fields.some((f) => f.k === c.list.ids)) {
-      fields = [...fields, { k: c.list.ids, label: '항목', type: 'members' }]
+      fields = [...fields, { k: c.list.ids, label: '항목', type: 'members', show: c.list.show }]
     }
     // A list's owner is whoever made it.
     const owner = c.list?.owner
@@ -309,8 +313,10 @@ export function itemScope(def, doc, tab, sort, sorters, tie) {
   }
   if (tab.ids) {
     const order = new Map(tab.ids.map((id, i) => [id, i]))
-    list = list.filter((r) => order.has(r.id))
-    if (!sort) return list.sort((a, b) => order.get(a.id) - order.get(b.id))
+    const idk = def.item.id || 'id'
+    list = list.filter((r) => order.has(r[idk]))
+    // Its own order (a reference list by citation number) until a column is pressed.
+    if (!asSorts(sort).length) return list.sort((a, b) => order.get(a[idk]) - order.get(b[idk]))
   }
   // Underneath every column sort is the order the list is written in — the
   // service's own (tie), or its default order — so equal rows never fall into

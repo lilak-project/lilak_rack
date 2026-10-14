@@ -503,7 +503,7 @@ registerType('members', {
   text: (v) => (list(v).length ? String(list(v).length) : ''),
   sort: (v) => list(v).length || null,
   cell: (v) => list(v).length || D,
-  Edit: ({ value, onChange, ctx }) => {
+  Edit: ({ value, onChange, ctx, field }) => {
     const def = ctx.def
     const idk = def?.item?.id || 'id'
     const byId = new Map((ctx.doc?.[def?.item?.key] || []).map((r) => [r[idk], r]))
@@ -515,8 +515,9 @@ registerType('members', {
           const r = byId.get(id)
           return (
             <div key={id} className="rl-rrow">
-              {r ? <button type="button" className="rl-lnk" onClick={() => ctx.openItem?.(r.id)}>{itemLabel(def, r)}</button>
+              {r ? <button type="button" className="rl-lnk rl-mono" onClick={() => ctx.openItem?.(id)}>{itemLabel(def, r)}</button>
                 : <span className="rl-hint">(없는 항목 {id})</span>}
+              {r && field.show && <span className="rl-hint">{field.show(r)}</span>}
               <button type="button" className="rl-x" title="목록에서 빼기 (항목은 그대로)"
                 onClick={() => onChange(ids.filter((x) => x !== id))}>×</button>
             </div>
@@ -527,4 +528,71 @@ registerType('members', {
     )
   },
   tidy: (v) => [...new Set(list(v))],
+})
+
+// ─── a photo ──────────────────────────────────────────────────────────────
+/** One picture, kept in the document as a data URL — so a picked file is
+ *  shrunk first (1280px, jpeg 0.82): the document is sent whole on every save,
+ *  and a 4MB phone photo would be paid for on every keystroke after it.
+ *  `capture` hands a phone its camera; a desktop gets the file picker.
+ *  Several photos of one record are several fields: { group: '사진' } puts
+ *  them side by side. */
+const SHOT_MAX = 1280
+const SHOT_CAP = 600 * 1024
+function shrink(file) {
+  return new Promise((res, rej) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const s = Math.min(1, SHOT_MAX / Math.max(img.width, img.height))
+      const c = document.createElement('canvas')
+      c.width = Math.round(img.width * s)
+      c.height = Math.round(img.height * s)
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+      res(c.toDataURL('image/jpeg', 0.82))
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('읽지 못했습니다.')) }
+    img.src = url
+  })
+}
+function Shot({ value, onChange, field, ctx }) {
+  const [big, setBig] = useState(false)
+  const pick = useRef(null)
+  async function take(file) {
+    if (!file) return
+    try {
+      const data = await shrink(file)
+      if (data.length > SHOT_CAP * 1.4) { ctx.say?.('사진이 너무 큽니다.'); return }
+      onChange(data)
+    } catch (e) { ctx.say?.(String(e.message || e)) }
+  }
+  return (
+    <span className="rl-shot">
+      {value ? (
+        <button type="button" className="rl-shot-img" title="크게 보기" onClick={() => setBig(true)}>
+          <img src={value} alt={field.label} />
+        </button>
+      ) : <span className="rl-shot-img is-empty">없음</span>}
+      <span className="rl-shot-line">
+        <span className="rl-hint">{field.placeholder || field.label}</span>
+        <button type="button" className="rl-btn" onClick={() => pick.current?.click()}>{value ? '바꾸기' : '추가'}</button>
+        {value && <button type="button" className="rl-x" title="지우기" onClick={() => onChange('')}>×</button>}
+      </span>
+      <input ref={pick} type="file" accept="image/*" capture="environment" hidden
+        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; take(f) }} />
+      {big && (
+        <button type="button" className="rl-lightbox" onClick={() => setBig(false)} title="닫기">
+          <img src={value} alt="" />
+        </button>
+      )}
+    </span>
+  )
+}
+registerType('image', {
+  text: () => '',                       // a data URL is not words to search
+  sort: (v) => (v ? 1 : null),
+  cell: (v) => (v ? '▣' : D),
+  Edit: (p) => <Shot {...p} />,
+  tidy: (v) => v || '',
 })
