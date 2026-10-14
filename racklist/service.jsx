@@ -17,7 +17,7 @@ import {
   classRows, wornBy, wears, isRef, fixedTabs, itemTabId, itemScope, labelOf, useRemoteDocs, valueOf,
   EMPTY_CELL as D,
 } from './schema.js'
-import { PORTAL_PROJECT, brandStyle, isManager, portalUser, fetchDoc, putDoc, newId } from './portal.js'
+import { PORTAL_PROJECT, brandStyle, isManager, portalUser, fetchDoc, putDoc, newId, takeOpenRequest } from './portal.js'
 
 /**
  * <RackService def={…} /> — a whole rack-list service from its declaration.
@@ -105,6 +105,10 @@ export function RackService({ def: declared, slots = {} }) {
     if (!PORTAL_PROJECT) { setErr('이 앱은 LILAK 포털을 통해 열어야 합니다.'); return }
     fetchDoc().then(setDoc).catch((e) => setErr(String(e.message || e)))
   }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+  // Sent here from another service (#open=<id>): open that record once the
+  // document is in.
+  const [asked] = useState(() => takeOpenRequest())
+  const [answered, setAnswered] = useState(false)
   // A tab for a class record that is gone goes with it; so does an editor for
   // a record that is gone.
   useEffect(() => {
@@ -190,6 +194,12 @@ export function RackService({ def: declared, slots = {} }) {
   /** A record's file, read in a pane. */
   const openFile = useCallback((rec, field) => openEdit({ id: `file:${idOf(rec)}:${field.k}`, kind: 'file',
     who: idOf(rec), field: field.k, label: `📄 ${labelOf(def, rec)}` }), [def, openEdit, idOf])
+  useEffect(() => {
+    if (!doc || !asked || answered) return
+    setAnswered(true)
+    if (items.some((r) => idOf(r) === asked)) openItem(asked)
+    else setNote('열려던 항목을 찾지 못했습니다.')
+  }, [doc, asked, answered])   // eslint-disable-line react-hooks/exhaustive-deps
   const ctx = useMemo(() => ({
     remote, folders, reloadFolders, openFolder, openFile, say: setNote, openItem,
     openClass: openClassByName, openTab, openEdit, commit, isAdmin: IS_ADMIN, tab,

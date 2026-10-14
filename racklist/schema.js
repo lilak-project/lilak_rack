@@ -1,6 +1,6 @@
 import { asSorts, byKeys } from './sort.js'
 import { useEffect, useMemo, useState } from 'react'
-import { typeOf, refTarget, remoteDoc, refLabelOf } from './types.jsx'
+import { typeOf, refTarget, remoteDoc, refLabelOf, backlinksOf } from './types.jsx'
 import { portalUser } from './portal.js'
 
 /**
@@ -92,7 +92,9 @@ import { portalUser } from './portal.js'
  */
 export function defineRack(def) {
   const item = def.item || {}
-  const fields = (item.fields || []).map((f) => ({ label: f.k, ...f }))
+  // A backlinks field is computed from the other service's links.
+  const fields = (item.fields || []).map((f) => ({ label: f.k,
+    ...(f.type === 'backlinks' && !f.get ? { get: (r, ctx) => backlinksOf(r, f, ctx) } : {}), ...f }))
   const classes = (def.classes || []).map((c) => {
     let fields = (c.fields || [{ k: 'name', label: '이름', type: 'text', col: 200 }]).map((f) => ({ label: f.k, ...f }))
     // A list holds its items: the field that does is the kit's, said or not.
@@ -362,8 +364,9 @@ export function itemScope(def, doc, tab, sort, sorters, tie) {
 export function useRemoteDocs(def) {
   const targets = useMemo(() => {
     const all = [...def.item.fields, ...def.classes.flatMap((c) => c.fields || [])]
-      .filter((f) => f.type === 'ref' || f.type === 'refs')
-      .map((f) => refTarget(f, def)).filter((t) => !t.local && t.svc)
+      .filter((f) => f.type === 'ref' || f.type === 'refs' || f.type === 'backlinks')
+      .map((f) => (f.type === 'backlinks' ? { svc: f.from.svc, proj: f.from.proj } : refTarget(f, def)))
+      .filter((t) => !t.local && t.svc)
     return [...new Map(all.map((t) => [`${t.svc}/${t.proj}`, t])).values()]
   }, [def])
   const [docs, setDocs] = useState({})

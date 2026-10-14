@@ -78,3 +78,21 @@ export async function putDoc(baseVersion, body) {
   if (!r.ok) throw new Error(`PUT /api/data → ${r.status}`)
   return { doc: await r.json() }
 }
+
+/** Open a record in ANOTHER service. Inside the portal's panel the portal is
+ *  asked to switch to that service and hand it the record; on a page of its
+ *  own, the browser goes there. The service opened reads `#open=<id>`. */
+export function openInService(svc, proj, id) {
+  const msg = { type: 'lilak:open', svc, proj, id }
+  if (typeof window === 'undefined') return
+  if (window.parent && window.parent !== window) { window.parent.postMessage(msg, window.location.origin); return }
+  window.location.href = `/pp/${svc}/${proj}/#open=${encodeURIComponent(id)}`
+}
+/** The record this page was asked to open, if any (and the ask is consumed). */
+export function takeOpenRequest() {
+  if (typeof window === 'undefined') return ''
+  const m = /#open=([^&]+)/.exec(window.location.hash || '')
+  if (!m) return ''
+  try { window.history.replaceState(null, '', window.location.pathname + window.location.search) } catch { /* fine */ }
+  return decodeURIComponent(m[1])
+}

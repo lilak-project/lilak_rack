@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RackTextRows } from './fields.jsx'
-import { authHeaders } from './portal.js'
+import { authHeaders, openInService } from './portal.js'
 
 /**
  * Field types — what a property of an [항목] IS, said once.
@@ -452,7 +452,11 @@ function RefEdit({ value, onChange, field, ctx }) {
             title={l.id ? '' : '연결된 항목 없이 이름만'}>
             {t.local && l.id && ctx.openItem
               ? <button type="button" className="rl-lnk" onClick={() => ctx.openItem(l.id)}>{name(l)}</button>
-              : name(l)}
+              // A record in another service: press it and you are there.
+              : !t.local && l.id
+                ? <button type="button" className="rl-lnk" title={`${t.svc} 에서 열기`}
+                  onClick={() => openInService(l.svc || t.svc, l.proj || t.proj, l.id)}>{name(l)}</button>
+                : name(l)}
             <button type="button" className="rl-x" title="연결 끊기"
               onClick={() => onChange(field.many ? links.filter((x) => x !== l) : null)}>×</button>
           </span>
@@ -483,10 +487,30 @@ registerType('ref', {
   Edit: (p) => <RefEdit {...p} />,
   tidy: (v) => v || null,
 })
+/** The table's cell for links: their names — and a link into another service
+ *  is pressable there too. */
+function refCell(v, ctx) {
+  const links = list(v).filter((l) => l?.id || l?.label)
+  if (!links.length) return D
+  const t = refTarget(ctx.field, ctx.def)
+  if (t.local) return links.map((l) => refLabelOf(l, ctx.field, ctx)).filter(Boolean).join(', ')
+  return links.map((l, i) => (
+    <span key={l.id || `n${i}`}>
+      {i > 0 && ', '}
+      {l.id ? (
+        <button type="button" className="rl-lnk" title={`${t.svc} 에서 열기`}
+          onClick={(e) => { e.stopPropagation(); openInService(l.svc || t.svc, l.proj || t.proj, l.id) }}>
+          {refLabelOf(l, ctx.field, ctx)}
+        </button>
+      ) : refLabelOf(l, ctx.field, ctx)}
+    </span>
+  ))
+}
+
 registerType('refs', {
   empty: () => [],
   text(v, ctx) { return list(v).map((l) => refLabelOf(l, ctx.field, ctx)).filter(Boolean).join(', ') },
-  cell(v, ctx) { const n = list(v).length; return n ? `${this.text(v, ctx)}` : D },
+  cell: refCell,
   Edit: (p) => <RefEdit {...p} field={{ ...p.field, many: true }} />,
   tidy: (v) => list(v).filter((l) => l?.id || String(l?.label || '').trim()),
 })
@@ -595,4 +619,56 @@ registerType('image', {
   cell: (v) => (v ? '▣' : D),
   Edit: (p) => <Shot {...p} />,
   tidy: (v) => v || '',
+})
+
+// ─── who points here, from elsewhere ──────────────────────────────────────
+/** The reverse of a link into another service: the records THERE that point at
+ *  this one. Declared on the side being pointed at, as a computed field:
+ *
+ *    { k: 'usedBy', label: '활동', type: 'backlinks',
+ *      from: { svc: 'academic_activities', proj: 'activities', item: 'activities',
+ *              field: 'papers', label: 'name' } }
+ *
+ *  Nothing is stored here: the other service's links are the only copy, so the
+ *  two can never disagree. Each one opens that record there. */
+export function backlinksOf(rec, field, ctx) {
+  const f = field.from || {}
+  const src = ctx.remote?.[`${f.svc}/${f.proj}`]?.[f.item] || []
+  const me = ctx.def?.name
+  const id = rec?.id
+  if (!id) return []
+  const label = labelWith(f.label)
+  return src.filter((x) => list(x[f.field]).some((l) => l?.id === id && (!l.svc || l.svc === me)))
+    .map((x) => ({ svc: f.svc, proj: f.proj, id: x.id, label: label(x) }))
+}
+registerType('backlinks', {
+  text: (v) => list(v).map((l) => l.label).join(', '),
+  sort: (v) => list(v).length || null,
+  cell: (v) => {
+    const links = list(v)
+    if (!links.length) return D
+    return links.map((l, i) => (
+      <span key={l.id}>
+        {i > 0 && ', '}
+        <button type="button" className="rl-lnk" title={`${l.svc} 에서 열기`}
+          onClick={(e) => { e.stopPropagation(); openInService(l.svc, l.proj, l.id) }}>{l.label}</button>
+      </span>
+    ))
+  },
+  Show: ({ value }) => {
+    const links = list(value)
+    if (!links.length) return <span className="rl-hint">없음</span>
+    return (
+      <div className="rl-rows">
+        <div className="rl-rrow" style={{ flexWrap: 'wrap' }}>
+          {links.map((l) => (
+            <span key={l.id} className="rl-tag">
+              <button type="button" className="rl-lnk" title={`${l.svc} 에서 열기`}
+                onClick={() => openInService(l.svc, l.proj, l.id)}>{l.label}</button>
+            </span>
+          ))}
+        </div>
+      </div>
+    )
+  },
 })
