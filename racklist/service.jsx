@@ -358,8 +358,8 @@ export function RackService({ def: declared, slots = {} }) {
       if (c.stored && c.merge) {
         // Records folded into one: the class says how (the items follow).
         const rowsNow = classRows(def, doc, c, extra)
-        const live = (etab.names || []).filter((n) => rowsNow.some((r) => r.name === n))
-        const users = items.filter((r) => live.some((n) => wears(r, field, n)))
+        const live = rowsNow.filter((r) => (etab.names || []).includes(r.name)).map((r) => r.key)
+        const users = items.filter((r) => live.some((k) => wears(r, field, k)))
         return (
           <RackMerge names={etab.names || []} noun={c.noun} exists={rowsNow.map((r) => r.name)}
             count={(t) => rowsNow.find((r) => r.name === t)?.count || 0}

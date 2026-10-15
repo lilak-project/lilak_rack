@@ -69,7 +69,9 @@ import { portalUser } from './portal.js'
  * `item.search(rec, q, ctx) => bool` replaces reading every field.
  *
  * A stored class may say:
- *   keyBy: 'id'                items point at its records by id (people), not name
+ *   keyBy: 'name'              items point at its records by name (the default is
+ *                              by id: a rename then changes one record, not every
+ *                              item — which is what lets two servers be synced)
  *   rowLabel: (rec) => string  what its row and tab are called
  *   fill(rec, doc) / check(rec, doc, prev) => '' | why not
  *   onSave(rec, prev, doc) => patch    more to change when one is saved
@@ -108,7 +110,7 @@ export function defineRack(def) {
       return out[owner] ? out : { ...out, [owner]: portalUser()?.email || '' }
     } : c.fill
     return {
-      label: c.k, keyBy: c.list ? 'id' : 'name', ...c, fill,
+      label: c.k, keyBy: 'id', ...c, fill,
       // A class with fields of its own is a list of records in the document; one
       // without is a name the items wear (its list is what they use).
       stored: !c.field,

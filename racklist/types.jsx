@@ -167,8 +167,23 @@ function namesFor(field, ctx) {
   const recs = field.of ? (ctx.doc?.[field.of] || []) : []
   const fromClass = recs.map((r) => r.name).filter(Boolean)
   const items = ctx.doc?.[ctx.def?.item?.key] || []
-  const used = items.flatMap((r) => list(r[field.k]))
+  const used = items.flatMap((r) => list(r[field.k])).map((v) => nameOf(field, ctx, v))
   return [...new Set([...fromClass, ...used.map(str).filter(Boolean)])].sort((a, b) => a.localeCompare(b, 'ko'))
+}
+
+/** The class record a value points at: by id — or, for a name typed before
+ *  it had a record (or data from before ids), by name. */
+export function classRec(field, ctx, v) {
+  if (!field?.of || v === null || v === undefined || v === '') return null
+  const recs = ctx.doc?.[field.of] || []
+  return recs.find((r) => r.id && r.id === v) || recs.find((r) => r.name === v) || null
+}
+/** What a value is called: its record's name, or the text itself. */
+export const nameOf = (field, ctx, v) => classRec(field, ctx, v)?.name || str(v)
+/** What to store for a name typed or picked: the record's id when it has one. */
+const storedFor = (field, ctx, t) => {
+  const rec = field?.of && (ctx.doc?.[field.of] || []).find((r) => r.name === t)
+  return rec?.id || t
 }
 
 /** Chips, a box to add one, and the names in use on offer. Leaving the box is
@@ -180,7 +195,7 @@ function Chips({ value, onChange, field, ctx, single }) {
   const options = useMemo(() => namesFor(field, ctx), [field, ctx])
   const id = `rl-dl-${field.k}`
   const put = () => {
-    const t = add.trim()
+    const t = storedFor(field, ctx, add.trim())
     if (!t) return
     if (single) onChange(t)
     else if (!vals.includes(t)) onChange([...vals, t])
@@ -191,9 +206,10 @@ function Chips({ value, onChange, field, ctx, single }) {
       <div className="rl-rrow">
         {vals.map((t) => (
           <span key={t} className="rl-tag">
-            {/* A name that is a record of a stored class opens that record. */}
-            {field.of && ctx.openClass && (ctx.doc?.[field.of] || []).some((r) => r.name === t)
-              ? <button type="button" className="rl-lnk" onClick={() => ctx.openClass(field.of, t)}>{t}</button>
+            {/* A value that is a record of a stored class opens that record. */}
+            {ctx.openClass && classRec(field, ctx, t)
+              ? <button type="button" className="rl-lnk" onClick={() => ctx.openClass(field.of, classRec(field, ctx, t).id || t)}>
+                {nameOf(field, ctx, t)}</button>
               : t}
             <button type="button" className="rl-x" title="떼기"
               onClick={() => onChange(single ? '' : vals.filter((x) => x !== t))}>×</button>
@@ -227,8 +243,8 @@ registerType('tags', {
  *  list of. A name not in it is allowed and stays text until it is added. */
 registerType('class', {
   text(v, ctx) {
-    const rec = (ctx.doc?.[ctx.field.of] || []).find((r) => r.name === v)
-    return str(ctx.field.show && rec ? rec[ctx.field.show] || v : v)
+    const rec = classRec(ctx.field, ctx, v)
+    return rec ? str((ctx.field.show && rec[ctx.field.show]) || rec.name || v) : str(v)
   },
   Edit: (p) => <Chips {...p} single />,
   tidy: (v) => str(v).trim(),
@@ -237,7 +253,7 @@ registerType('class', {
 /** Several names from a class. */
 registerType('classes', {
   empty: () => [],
-  text: (v) => nonBlank(v).join(', '),
+  text: (v, ctx) => nonBlank(v).map((x) => (ctx ? nameOf(ctx.field, ctx, x) : x)).join(', '),
   Edit: (p) => <Chips {...p} />,
   tidy: (v) => [...new Set(nonBlank(v))],
 })

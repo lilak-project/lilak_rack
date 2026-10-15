@@ -144,6 +144,17 @@ export function RackItemEditor({
   }
   async function remove() {
     const patch = isItem ? dropItems(def, doc, [rec]) : { [key]: (doc[key] || []).filter((x) => !same(x)) }
+    // Items pointing at it by id keep its name, as text — the way a name
+    // typed before it had a record reads.
+    const field = !isItem && cls?.keyBy === 'id' && rec?.id && wornBy(def, cls)
+    if (field && (field.type === 'class' || field.type === 'classes')) {
+      const as = (v) => (v === rec.id ? rec.name || '' : v)
+      patch[def.item.key] = (doc[def.item.key] || []).map((it) => {
+        const v = it[field.k]
+        if (Array.isArray(v)) return v.includes(rec.id) ? { ...it, [field.k]: v.map(as) } : it
+        return v === rec.id ? { ...it, [field.k]: as(v) } : it
+      })
+    }
     Object.assign(patch, own.onDelete?.(f, { ...doc, ...patch }) || {})
     if (await onSave(patch, `${what} '${label}' 삭제됨`)) onDeleted?.(f)
   }
