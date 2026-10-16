@@ -714,3 +714,10 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
 /* The search box's words, where a row shows them. */
 .rl-hl { background: #fde68a; color: inherit; padding: 0; border-radius: 2px; }
 .rl-hit.on .rl-hl { background: #fcd34d; }
+
+/* The title bar's ↻: this service again, the portal left as it is. */
+.rl-reload {
+  margin-left: 6px; padding: 0 4px; border: 0; background: none; cursor: pointer;
+  color: inherit; font: inherit; font-size: 15px; line-height: 1; opacity: .7;
+}
+.rl-reload:hover { opacity: 1; }
