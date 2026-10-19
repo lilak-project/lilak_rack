@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { RackTable, RackRow, RackTabs } from './table.jsx'
 import { RackPaneStrip } from './panes.jsx'
+import { RackBar } from './bar.jsx'
 import { RackEditClass } from './classedit.jsx'
 import { FilterBar, FacetRows } from './filter.jsx'
 import { RackListing } from './listing.jsx'
@@ -172,18 +173,6 @@ export function RackService({ def: declared, slots = {} }) {
     : { id: `class:${c.k}:${rec.name}`, kind: 'class', of: c.k, stored: false, who: rec.name, label: rec.name }),
   [openEdit])
 
-  // ⌘R / Ctrl+R reloads this service only — inside the portal, the panel, not
-  // the portal. ⇧⌘R is left to the browser: everything, the hard way.
-  useEffect(() => {
-    const on = (e) => {
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'r') {
-        e.preventDefault()
-        window.location.reload()
-      }
-    }
-    window.addEventListener('keydown', on)
-    return () => window.removeEventListener('keydown', on)
-  }, [])
   useRackKeys({
     onNew: () => (cls?.stored ? openClass(cls, null) : openItem(null)),
     onClose: () => { const cur = panes.current(panes.cols[0]); if (cur) panes.close(cur.id) },
@@ -455,16 +444,7 @@ export function RackService({ def: declared, slots = {} }) {
   return (
     <div className="rl" style={brandStyle()}>
       <section className="rl-mod">
-        <header className="rl-bar">
-          <b>{def.title}</b>
-          <span className="rl-n">{doc ? `${items.length}${def.unit}` : ''}</span>
-          <span className="rl-sp" />
-          <span className="rl-n">{PORTAL_PROJECT}</span>
-          {/* This service again — after a sync or a new build — without the
-              portal around it reloading too. ⌘R does the same. */}
-          <button type="button" className="rl-reload" title="이 서비스만 새로고침 (⌘R)"
-            onClick={() => window.location.reload()}>↻</button>
-        </header>
+        <RackBar title={def.title} count={doc ? `${items.length}${def.unit}` : ''} />
 
         <div className="rl-cmd">
           {cls?.stored ? (
