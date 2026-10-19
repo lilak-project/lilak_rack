@@ -105,6 +105,9 @@ body.rl-page {
 .rl-row {
   display: grid;
   height: var(--rk-row);
+  /* As wide as its columns, not only the pane: when the table scrolls
+     sideways, a row's colour (picked, today, hover) goes all the way along. */
+  min-width: max-content;
 }
 .rl-row + .rl-row { border-top: 1px solid var(--rk-line); }
 

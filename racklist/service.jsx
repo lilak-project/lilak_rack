@@ -354,7 +354,7 @@ export function RackService({ def: declared, slots = {} }) {
     if (etab.kind === 'item') {
       const rec = etab.who ? items.find((r) => idOf(r) === etab.who) : null
       return (
-        <RackItemEditor def={def} doc={doc} rec={rec} ctx={ctx} onSave={commit}
+        <RackItemEditor key={etab.id} def={def} doc={doc} rec={rec} ctx={ctx} onSave={commit}
           canDelete={IS_ADMIN} onCancel={() => panes.close(etab.id)}
           onCreated={(r) => { panes.close(etab.id); openItem(idOf(r), r) }}
           onDeleted={(r) => {
@@ -408,7 +408,7 @@ export function RackService({ def: declared, slots = {} }) {
       if (c.stored) {
         const rec = etab.who ? findStored(c, etab.who) : null
         return (
-          <RackItemEditor def={def} doc={doc} rec={rec} fields={c.fields} listKey={c.k} noun={c.noun} cls={c}
+          <RackItemEditor key={etab.id} def={def} doc={doc} rec={rec} fields={c.fields} listKey={c.k} noun={c.noun} cls={c}
             ctx={ctx} onSave={commit} onCancel={() => panes.close(etab.id)}
             actions={c.actions ? (f, setF) => c.actions(f, setF, { ...ctx, doc, rec }) : undefined}
             // A list is its maker's to delete, or a manager's.

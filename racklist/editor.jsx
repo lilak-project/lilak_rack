@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { RackActions } from './actions.jsx'
 import { RackField } from './fields.jsx'
 import { typeOf } from './types.jsx'
@@ -91,7 +91,18 @@ export function RackItemEditor({
     .map((f) => [f.k, f.default ?? typeOf(f).empty()])), [fields])
   const draft = !rec
   const [f, setF] = useState(rec || blank)
-  useEffect(() => { setF(rec || blank) }, [rec, blank])
+  // The form as the document last had it, and as it was when it was opened.
+  const saved = useRef(rec || blank)
+  const opened = useRef(rec || blank)
+  const fRef = useRef(f)
+  fRef.current = f
+  const same_ = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+  // The record changed in the document (a save landed, someone else saved):
+  // take it — unless you are in the middle of changing it, which wins.
+  useEffect(() => {
+    if (same_(fRef.current, saved.current)) setF(rec || blank)
+    saved.current = same_(fRef.current, saved.current) ? (rec || blank) : saved.current
+  }, [rec, blank])   // eslint-disable-line react-hooks/exhaustive-deps
 
   const tidy = (r) => {
     const out = { ...r }
@@ -113,7 +124,7 @@ export function RackItemEditor({
   const same = (x) => (rec?.id ? x.id === rec.id : x === rec)
 
   // ⌘S saves and stays; leaving is ⌘X's.
-  useRackKeys({ onSave: () => (draft ? create() : save()) })
+  useRackKeys({ onSave: () => (draft ? create() : save(false)) })
 
   async function create() {
     if (why) return
@@ -123,8 +134,9 @@ export function RackItemEditor({
     Object.assign(patch, own.onSave?.(r, null, { ...doc, ...patch }) || {})
     if (await onSave(patch, `${what} '${label}' 등록됨`)) onCreated?.(r)
   }
-  async function save() {
+  async function save(auto) {
     if (why) return
+    const snap = f
     const r = { ...tidy(f), updatedAt: new Date().toISOString() }
     const patch = { [key]: (doc[key] || []).map((x) => (same(x) ? r : x)) }
     // A class record pointed at BY NAME: renaming it travels to every item
@@ -140,8 +152,25 @@ export function RackItemEditor({
       }
     }
     Object.assign(patch, own.onSave?.(r, rec, { ...doc, ...patch }) || {})
-    if (await onSave(patch, `${what} '${label}' 저장됨`)) onRenamed?.(r)
+    if (await onSave(patch, `${what} '${label}' ${auto ? '자동 ' : ''}저장됨`)) {
+      saved.current = snap
+      onRenamed?.(r)
+    }
   }
+
+  // Saving is not a step you take: a record you change saves itself a moment
+  // after you stop, and before its editor closes. A draft still waits for 등록
+  // (a half-filled form is not yet a record), and a record that fails its
+  // checks waits, saying why.
+  const dirty = !draft && !same_(f, saved.current)
+  useEffect(() => {
+    if (!dirty || why) return undefined
+    const t = setTimeout(() => save(true), 800)
+    return () => clearTimeout(t)
+  }, [f, rec])   // eslint-disable-line react-hooks/exhaustive-deps
+  const flush = useRef(null)
+  flush.current = () => { if (dirty && !why) save(true) }
+  useEffect(() => () => flush.current?.(), [])
   async function remove() {
     const patch = isItem ? dropItems(def, doc, [rec]) : { [key]: (doc[key] || []).filter((x) => !same(x)) }
     // Items pointing at it by id keep its name, as text — the way a name
@@ -169,8 +198,8 @@ export function RackItemEditor({
           is, and what you do to it is always in the same place. */}
       <RackActions key={f.id || 'draft'} draft={draft}
         onCreate={create} createDisabled={!!why} saveDisabled={!!why}
-        hint={why}
-        onSave={save} onCancel={onCancel} onRevert={() => setF(rec || blank)}
+        hint={why || (dirty ? '바뀐 것을 곧 저장합니다…' : '')}
+        onSave={() => save(false)} onCancel={onCancel} onRevert={() => setF(opened.current)}
         onDelete={canDelete ? remove : undefined}
         deleteWarn={own.deleteWarn ? own.deleteWarn(f, doc) : undefined}
         extra={actions?.(f, setF)} />
