@@ -17,7 +17,7 @@ import { load, save, projectKey } from './portal.js'
  *   }
  *
  * One bar: the days around (the trip) light gray, the record's own days light
- * in its colour, the marked day strong. A week has room for two lanes at
+ * in its colour, the marked day banded below. A week has room for two lanes at
  * least and is as tall as its records need — nothing folds into "…"; a bar
  * with nothing under it grows down into the free lanes, its name wrapping onto
  * as many lines as it then has. A record without a start is not on it.
@@ -87,7 +87,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     const mk = cal.mark ? day(r[cal.mark]) : ''
     const g = groupOf(r)
     if (hidden.has(g)) return null
-    const ev = { r, id, s, e, ts, te, mk, color: g >= 0 ? cal.groups[g].color : GRAY,
+    const ev = { r, id, s, e, ts, te, mk, color: g >= 0 ? cal.groups[g].color : GRAY, solid: g >= 0 && !!cal.groups[g].solid,
       label: cal.label ? cal.label(r, (k) => textOf(r, k)) : labelOf(def, r) }
     // What is drawn: the record's days, joined to the trip when the two touch;
     // a trip or a marked day that does not touch them is a piece of its own on
@@ -109,8 +109,9 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   const body = useRef(null)
   const goal = useRef(`${month}-01`)            // a day to bring to the top after the next draw
   const keep = useRef(null)                     // weeks added above: keep what is on screen still
-  const goTo = useCallback((ym) => {
-    const w = sunday(`${ym}-01`)
+  // To a month — or to a day in it, brought near the top.
+  const goTo = useCallback((ym, at = `${ym}-01`) => {
+    const w = sunday(at)
     goal.current = w
     setSpan(([a, n]) => {
       const last = addDays(a, 7 * (n - 1))
@@ -131,6 +132,8 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
       keep.current = null
     }
   }, [span])
+  // Today's week, with the week before it above.
+  const toToday = () => goTo(monthOf(today), addDays(today, -7))
   const onScroll = () => {
     const el = body.current
     if (!el) return
@@ -240,14 +243,16 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
         )}
         <span className="rl-cal-nav">
           <button type="button" className="rl-btn" title="이전 달" onClick={() => goTo(shiftMonth(month, -1))}>‹</button>
-          <button type="button" className="rl-btn" onClick={() => goTo(monthOf(today))}>오늘</button>
+          <button type="button" className="rl-btn" onClick={toToday}>오늘</button>
           <button type="button" className="rl-btn" title="다음 달" onClick={() => goTo(shiftMonth(month, 1))}>›</button>
         </span>
       </div>
       <div className="rl-cal-days">
         {WEEKDAYS.map((w) => <span key={w}>{w}</span>)}
       </div>
-      <div className="rl-cal-body" ref={body} onScroll={onScroll}>
+      <div className="rl-cal-body" ref={body} onScroll={onScroll}
+        // The wheel pressed down: back to today (and no autoscroll).
+        onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); toToday() } }}>
         {weeks.map((ws) => {
           const we = addDays(ws, 6)
           const days = Array.from({ length: 7 }, (_, i) => addDays(ws, i))
@@ -279,7 +284,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
             <div key={ws} className="rl-cal-week" data-week={ws}>
               <div className="rl-cal-cells">
                 {days.map((d) => (
-                  <div key={d} className={`rl-cal-cell${monthOf(d) !== month ? ' out' : ''}${inSweep(d) ? ' sweep' : ''}`}
+                  <div key={d} className={`rl-cal-cell${monthOf(d) !== month ? ' out' : ''}${inSweep(d) ? ' sweep' : ''}${monthOf(addDays(d, -7)) !== monthOf(d) ? ' m-top' : ''}`}
                     onMouseDown={(e) => {
                       // The left button lights days: one, or as many as it drags across.
                       if (e.button !== 0) return
@@ -297,7 +302,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
                       } else onNew({ [cal.start]: d })
                       setSweep(null)
                     }}>
-                    <span className={`rl-cal-num${d === today ? ' today' : ''}`}>
+                    <span className={`rl-cal-num${d === today ? ' today' : ''}${d.slice(8) === '01' ? ' first' : ''}`}>
                       {d.slice(8) === '01' ? `${Number(d.slice(5, 7))}월 1일` : `${Number(d.slice(8))}일`}
                     </span>
                   </div>
@@ -307,18 +312,23 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
                 {placed.map(({ ev, p, a, b, lane, rows }) => {
                   const n = b - a + 1
                   // How each day of the bar is painted: the trip around (light
-                  // gray), the record's own days (light), the marked day (strong).
+                  // gray), the record's own days (light), the marked day (a band below).
                   const level = (d) => (d === ev.mk ? 3 : d >= ev.s && d <= ev.e ? 2 : ev.ts && d >= ev.ts && d <= ev.te ? 1 : 0)
                   // The ends that stretch are the record's own, and only on its main piece.
                   const own = p.key === 'main'
                   const sIn = own && ev.s >= ws && ev.s <= we, eIn = own && ev.e >= ws && ev.e <= we
+                  // Where the name starts: at the record's first day, if two days
+                  // or more are left from it to the bar's end here (the trip's
+                  // end); else at the bar's beginning.
+                  const room = ev.s > addDays(ws, a) && ev.s <= addDays(ws, b) && b - col(ev.s) >= 1
+                  const skip = room ? col(ev.s) - a : 0
                   return (
-                    <div key={`${ev.id}:${p.key}`} className={`rl-cal-bar${picked?.has(ev.id) ? ' on' : ''}${p.from < ws ? ' cont-l' : ''}${p.to > we ? ' cont-r' : ''}${rows > 1 ? ' tall' : ''}`}
+                    <div key={`${ev.id}:${p.key}`} className={`rl-cal-bar${ev.solid ? ' solid' : ''}${picked?.has(ev.id) ? ' on' : ''}${p.from < ws ? ' cont-l' : ''}${p.to > we ? ' cont-r' : ''}${rows > 1 ? ' tall' : ''}`}
                       style={{ '--c': ev.color, gridRow: `${lane + 1} / span ${rows}`, gridColumn: `${a + 1} / ${b + 2}`, '--lines': Math.floor((rows * 22 + (rows - 1) * 2 - 4) / 15) }} {...barProps(ev)}>
                       <span className="rl-cal-fill">
                         {Array.from({ length: n }, (_, i) => <i key={i} className={`lv${level(addDays(ws, a + i))}`} />)}
                       </span>
-                      <span className="rl-cal-label">{ev.label}</span>
+                      <span className="rl-cal-label" style={skip ? { marginLeft: `${(skip / n) * 100}%` } : undefined}>{ev.label}</span>
                       {sIn && (
                         <b className="rl-cal-grip" style={{ left: `${((col(ev.s) - a) / n) * 100}%` }} title="시작을 옮기기"
                           onMouseDown={(e) => { if (e.button !== 0) return; e.stopPropagation(); e.preventDefault(); hoverOff(); drag.current = { kind: 'end', edge: 'start', id: ev.id, rec: ev.r, start: ev.s, end: ev.e, hadEnd: !!day(ev.r[cal.end]) } }} />
