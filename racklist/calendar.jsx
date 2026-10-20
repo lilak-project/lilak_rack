@@ -17,7 +17,7 @@ import { load, save, projectKey } from './portal.js'
  *   }
  *
  * One bar: the days around (the trip) light gray, the record's own days light
- * in its colour, the marked day strong. A week has room for three lanes at
+ * in its colour, the marked day strong. A week has room for two lanes at
  * least and is as tall as its records need — nothing folds into "…"; a bar
  * with nothing under it grows down into the free lanes, its name wrapping onto
  * as many lines as it then has. A record without a start is not on it.
@@ -48,7 +48,7 @@ const GRAY = '#8a94a6'
 const BEFORE = 10
 const AFTER = 30
 const MORE = 16
-const LANES = 3        // a week's room, at least, in lanes of 22px
+const LANES = 2        // a week's room, at least, in lanes of 22px
 
 export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOpen, onNew, onResize }) {
   const cal = def.calendar
