@@ -1,30 +1,31 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { typeOf } from './types.jsx'
 import { ctxFor, labelOf, valueOf } from './schema.js'
 import { load, save, projectKey } from './portal.js'
 
 /**
- * [달력] — a month of records with dates, the way Apple's Calendar lays one
- * out: a row per week, a bar per record running from its start to its end.
- * Declared on the service:
+ * [달력] — records with dates, the way Apple's Calendar shows a month: a row
+ * per week, a bar per record. The weeks are one stack you scroll, a week at a
+ * time; the title says the month on screen. Declared on the service:
  *
  *   calendar: {
- *     start: 'start', end: 'end',            // the bar
- *     mark: 'talkDate',                       // a day inside it, in a strong colour
- *     outline: { start: 'tripStart', end: 'tripEnd' },   // a range drawn as a border
+ *     start: 'start', end: 'end',            // the record's own days
+ *     mark: 'talkDate',                       // its one day that matters most
+ *     outline: { start: 'tripStart', end: 'tripEnd' },   // the days around it
  *     groups: [{ label, color, match: (rec) => bool }],  // colours, and the legend
  *     label: (rec, text) => string,           // text(k) is field k as the table says it
  *   }
  *
- * A week is as tall as its records need — nothing is folded into "…". A record
- * without a start is not on it.
+ * One bar, one colour, three strengths: the days around (the trip) hatched,
+ * the record's days plain, the marked day strong. A week is as tall as its
+ * records need — nothing folds into "…". A record without a start is not on it.
  *
- *   left-click a bar      picks it (as in the table)
- *   right-click a bar     opens it in the editor
- *   hover half a second   what the editor shows, in a small box
- *   drag a bar's end      moves that end
- *   drag across days      a new record from the first day to the last
- *   right-click a day     a new record starting that day
+ *   left-click a bar        picks it (as in the table)
+ *   right-click a bar       opens it in the editor
+ *   hover half a second     what the editor shows, in a small box
+ *   drag a bar's end        moves the start or the end
+ *   right-drag across days  a new record from the first day to the last
+ *                           (right-click one day: a new record starting then)
  */
 const pad = (n) => String(n).padStart(2, '0')
 const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
@@ -34,34 +35,31 @@ const addDays = (s, n) => { const d = parse(s); d.setDate(d.getDate() + n); retu
 const diff = (a, b) => Math.round((parse(b) - parse(a)) / 86400000)
 const min = (...xs) => xs.filter(Boolean).sort()[0]
 const max = (...xs) => xs.filter(Boolean).sort().at(-1)
-const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
-const GRAY = '#8a94a6'
-
-/** The weeks a month's grid shows: Sunday first, whole weeks. */
-function weeksOf(ym) {
-  const [y, m] = ym.split('-').map(Number)
-  const first = new Date(y, m - 1, 1)
-  const last = new Date(y, m, 0)
-  let s = fmt(new Date(y, m - 1, 1 - first.getDay()))
-  const end = fmt(new Date(y, m - 1, last.getDate() + (6 - last.getDay())))
-  const out = []
-  while (s <= end) { out.push(s); s = addDays(s, 7) }
-  return out
-}
+const sunday = (s) => addDays(s, -parse(s).getDay())
 const monthOf = (s) => s.slice(0, 7)
 const shiftMonth = (ym, n) => { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}` }
+const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
+const GRAY = '#8a94a6'
+// How many weeks are drawn around what is on screen, and how many more are
+// added when the scroll nears an end.
+const BEFORE = 10
+const AFTER = 30
+const MORE = 16
 
 export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOpen, onNew, onResize }) {
   const cal = def.calendar
   const idk = def.item.id || 'id'
   const today = fmt(new Date())
   const viewKey = projectKey(def.key, 'calmonth')
-  const [month, setMonth] = useState(() => load(viewKey, monthOf(today)))
+  const [month, setMonth] = useState(() => load(viewKey, monthOf(today)))     // the month on screen
   useEffect(() => { save(viewKey, month) }, [viewKey, month])
   const [hidden, setHidden] = useState(() => new Set(load(projectKey(def.key, 'calhide'), [])))
   useEffect(() => { save(projectKey(def.key, 'calhide'), [...hidden]) }, [def.key, hidden])
 
-  // What a field says, the way the table says it.
+  // The weeks drawn: [first, count]. Grows at either end as you scroll there.
+  const [span, setSpan] = useState(() => [addDays(sunday(`${month}-01`), -7 * BEFORE), BEFORE + AFTER])
+  const weeks = useMemo(() => Array.from({ length: span[1] }, (_, i) => addDays(span[0], 7 * i)), [span])
+
   const textOf = (r, k) => {
     const f = def.item.fields.find((x) => x.k === k)
     if (!f) return String(r?.[k] ?? '')
@@ -69,12 +67,8 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     return typeOf(f).text(valueOf(f, r, c), c)
   }
   const groupOf = (r) => cal.groups?.findIndex((g) => g.match(r)) ?? -1
-  const colorOf = (r) => { const g = groupOf(r); return g >= 0 ? cal.groups[g].color : GRAY }
-
-  // A bar's end being dragged: what it would be, shown before it is saved.
-  const [over, setOver] = useState(null)        // { id, start, end }
-  // A range being dragged across empty days.
-  const [sweep, setSweep] = useState(null)      // { from, to }
+  const [over, setOver] = useState(null)        // a bar's end being dragged: { id, start, end }
+  const [sweep, setSweep] = useState(null)      // a right-drag across days: { from, to }
 
   const events = useMemo(() => items.map((r) => {
     const id = r[idk]
@@ -84,12 +78,22 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     let e = o ? o.end : (day(r[cal.end]) || s)
     if (e < s) e = s
     const ts = cal.outline ? day(r[cal.outline.start]) : ''
-    const te = ts ? (day(r[cal.outline.end]) || ts) : ''
+    let te = ts ? (day(r[cal.outline.end]) || ts) : ''
+    if (te < ts) te = ts
     const mk = cal.mark ? day(r[cal.mark]) : ''
     const g = groupOf(r)
     if (hidden.has(g)) return null
-    return { r, id, s, e, ts, te: te < ts ? ts : te, mk, from: min(s, ts, mk), to: max(e, te, mk), color: colorOf(r),
+    const ev = { r, id, s, e, ts, te, mk, color: g >= 0 ? cal.groups[g].color : GRAY,
       label: cal.label ? cal.label(r, (k) => textOf(r, k)) : labelOf(def, r) }
+    // What is drawn: the record's days, joined to the trip when the two touch;
+    // a trip or a marked day that does not touch them is a piece of its own on
+    // its own days — never a bar bridging the weeks between.
+    const touches = (a, b) => a && b && a <= addDays(e, 1) && b >= addDays(s, -1)
+    const main = touches(ts, te) ? { from: min(s, ts), to: max(e, te) } : { from: s, to: e }
+    ev.pieces = [{ key: 'main', ...main }]
+    if (ts && !touches(ts, te)) ev.pieces.push({ key: 'trip', from: ts, to: te })
+    if (mk && (mk < main.from || mk > main.to)) ev.pieces.push({ key: 'mark', from: mk, to: mk })
+    return ev
   }).filter(Boolean), [items, over, hidden, doc])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // While searching: the months that have something found, to step between.
@@ -97,7 +101,47 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   const prevFound = found.filter((m) => m < month).at(-1)
   const nextFound = found.find((m) => m > month)
 
-  const weeks = useMemo(() => weeksOf(month), [month])
+  // ── scrolling ───────────────────────────────────────────────────────────
+  const body = useRef(null)
+  const goal = useRef(`${month}-01`)            // a day to bring to the top after the next draw
+  const keep = useRef(null)                     // weeks added above: keep what is on screen still
+  const goTo = useCallback((ym) => {
+    const w = sunday(`${ym}-01`)
+    goal.current = w
+    setSpan(([a, n]) => {
+      const last = addDays(a, 7 * (n - 1))
+      if (w >= a && w <= last) return [a, n]
+      return [addDays(w, -7 * BEFORE), BEFORE + AFTER]
+    })
+    setMonth(ym)
+  }, [])
+  useLayoutEffect(() => {
+    const el = body.current
+    if (!el) return
+    if (goal.current) {
+      const w = el.querySelector(`[data-week="${sunday(goal.current)}"]`)
+      if (w) el.scrollTop = w.offsetTop - el.offsetTop
+      goal.current = null
+    } else if (keep.current != null) {
+      el.scrollTop += el.scrollHeight - keep.current
+      keep.current = null
+    }
+  }, [span])
+  const onScroll = () => {
+    const el = body.current
+    if (!el) return
+    // The month on screen: the one a week a third of the way down is in.
+    const y = el.scrollTop + el.clientHeight / 3
+    const ws = [...el.querySelectorAll('[data-week]')].find((w) => w.offsetTop - el.offsetTop + w.offsetHeight > y)
+    if (ws) { const m = monthOf(addDays(ws.dataset.week, 3)); if (m !== month) setMonth(m) }
+    // More weeks before or after, before the edge is reached.
+    if (el.scrollTop < el.clientHeight) {
+      keep.current = el.scrollHeight
+      setSpan(([a, n]) => [addDays(a, -7 * MORE), n + MORE])
+    } else if (el.scrollHeight - el.scrollTop - el.clientHeight < el.clientHeight) {
+      setSpan(([a, n]) => [a, n + MORE])
+    }
+  }
 
   // The day under the pointer, from the week it is over and how far across.
   const dayAt = (e) => {
@@ -108,7 +152,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     return addDays(el.dataset.week, col)
   }
 
-  // ── dragging: an end of a bar, or a sweep over empty days ─────────────
+  // ── dragging: an end of a bar, or a right-drag over days ──────────────
   const drag = useRef(null)
   useEffect(() => {
     const move = (e) => {
@@ -116,7 +160,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
       if (!d) return
       const at = dayAt(e)
       if (!at) return
-      if (d.kind === 'sweep') { setSweep({ from: d.from, to: at }); return }
+      if (d.kind === 'sweep') { d.to = at; setSweep({ from: d.from, to: at }); return }
       let { start, end } = d
       if (d.edge === 'start') start = at > end ? end : at
       else end = at < start ? start : at
@@ -128,13 +172,9 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
       drag.current = null
       if (!d) return
       if (d.kind === 'sweep') {
-        setSweep((sw) => {
-          if (sw && sw.from !== sw.to) {
-            const [a, b] = [sw.from, sw.to].sort()
-            setTimeout(() => onNew({ [cal.start]: a, [cal.end]: b }), 0)
-          }
-          return null
-        })
+        setSweep(null)
+        const [a, b] = [d.from, d.to || d.from].sort()
+        onNew(a === b ? { [cal.start]: a } : { [cal.start]: a, [cal.end]: b })
         return
       }
       const now = d.now
@@ -148,20 +188,26 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up) }
   }, [onNew, onResize, cal])   // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── hovering: what the editor shows, after half a second ──────────────
-  const [peek, setPeek] = useState(null)        // { r, x, y }
+  // ── hovering: drawn by a box of its own, so a moving pointer redraws only it
+  const peek = useRef(null)
   const timer = useRef(null)
   const hoverOn = (r, e) => {
     clearTimeout(timer.current)
     const at = { x: e.clientX, y: e.clientY }
-    timer.current = setTimeout(() => setPeek({ r, ...at }), 500)
+    timer.current = setTimeout(() => peek.current?.show(r, at), 500)
   }
-  const hoverMove = (e) => setPeek((p) => (p ? { ...p, x: e.clientX, y: e.clientY } : p))
-  const hoverOff = () => { clearTimeout(timer.current); setPeek(null) }
+  const hoverMove = (e) => peek.current?.move({ x: e.clientX, y: e.clientY })
+  const hoverOff = () => { clearTimeout(timer.current); peek.current?.hide() }
   useEffect(() => () => clearTimeout(timer.current), [])
 
   const inSweep = (d) => sweep && d >= min(sweep.from, sweep.to) && d <= max(sweep.from, sweep.to)
   const [ty, tm] = month.split('-').map(Number)
+  const barProps = (ev) => ({
+    onMouseDown: (e) => e.stopPropagation(),
+    onClick: () => onPick(ev.id),
+    onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); hoverOff(); onOpen(ev.id) },
+    onMouseEnter: (e) => hoverOn(ev.r, e), onMouseMove: hoverMove, onMouseLeave: hoverOff,
+  })
 
   return (
     <div className="rl-cal">
@@ -175,49 +221,61 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
               <i style={{ background: g.color }} />{g.label}
             </button>
           ))}
+          {/* What the three strengths of one bar mean. */}
+          <span className="rl-cal-levels" style={{ '--c': GRAY }}>
+            {cal.outline && <><i className="lv1" />출장</>}
+            <i className="lv2" />행사
+            {cal.mark && <><i className="lv3" />발표</>}
+          </span>
         </div>
         <span className="rl-sp" />
         {query && (
           <span className="rl-cal-found">
             <span className="rl-hint">찾은 일정 {events.length}개</span>
             <button type="button" className="rl-btn" disabled={!prevFound} title="앞의 찾은 달"
-              onClick={() => setMonth(prevFound)}>‹</button>
+              onClick={() => goTo(prevFound)}>‹</button>
             <button type="button" className="rl-btn" disabled={!nextFound} title="뒤의 찾은 달"
-              onClick={() => setMonth(nextFound)}>›</button>
+              onClick={() => goTo(nextFound)}>›</button>
           </span>
         )}
         <span className="rl-cal-nav">
-          <button type="button" className="rl-btn" title="이전 달" onClick={() => setMonth((m) => shiftMonth(m, -1))}>‹</button>
-          <button type="button" className="rl-btn" onClick={() => setMonth(monthOf(today))}>오늘</button>
-          <button type="button" className="rl-btn" title="다음 달" onClick={() => setMonth((m) => shiftMonth(m, 1))}>›</button>
+          <button type="button" className="rl-btn" title="이전 달" onClick={() => goTo(shiftMonth(month, -1))}>‹</button>
+          <button type="button" className="rl-btn" onClick={() => goTo(monthOf(today))}>오늘</button>
+          <button type="button" className="rl-btn" title="다음 달" onClick={() => goTo(shiftMonth(month, 1))}>›</button>
         </span>
       </div>
       <div className="rl-cal-days">
         {WEEKDAYS.map((w) => <span key={w}>{w}</span>)}
       </div>
-      <div className="rl-cal-body">
+      <div className="rl-cal-body" ref={body} onScroll={onScroll}>
         {weeks.map((ws) => {
           const we = addDays(ws, 6)
           const days = Array.from({ length: 7 }, (_, i) => addDays(ws, i))
           const col = (d) => diff(ws, d)
           // This week's records, longest first, each in the first lane it fits.
-          const segs = events.filter((ev) => ev.from <= we && ev.to >= ws)
-            .sort((a, b) => diff(b.from, b.to) - diff(a.from, a.to) || a.s.localeCompare(b.s) || a.label.localeCompare(b.label))
+          const segs = events.flatMap((ev) => ev.pieces.filter((p) => p.from <= we && p.to >= ws).map((p) => ({ ev, p })))
+            .sort((x, y) => diff(y.p.from, y.p.to) - diff(x.p.from, x.p.to) || x.p.from.localeCompare(y.p.from) || x.ev.label.localeCompare(y.ev.label))
           const lanes = []
-          for (const ev of segs) {
-            const c0 = col(max(ev.from, ws)), c1 = col(min(ev.to, we))
-            let lane = lanes.findIndex((used) => used.every(([a, b]) => c1 < a || c0 > b))
+          const placed = segs.map(({ ev, p }) => {
+            const a = col(max(p.from, ws)), b = col(min(p.to, we))
+            let lane = lanes.findIndex((used) => used.every(([x, y]) => b < x || a > y))
             if (lane < 0) { lane = lanes.length; lanes.push([]) }
-            lanes[lane].push([c0, c1])
-            ev.lane = lane
-          }
+            lanes[lane].push([a, b])
+            return { ev, p, a, b, lane }
+          })
           return (
             <div key={ws} className="rl-cal-week" data-week={ws}>
               <div className="rl-cal-cells">
                 {days.map((d) => (
                   <div key={d} className={`rl-cal-cell${monthOf(d) !== month ? ' out' : ''}${inSweep(d) ? ' sweep' : ''}`}
-                    onMouseDown={(e) => { if (e.button === 0) { e.preventDefault(); drag.current = { kind: 'sweep', from: d }; setSweep({ from: d, to: d }) } }}
-                    onContextMenu={(e) => { e.preventDefault(); onNew({ [cal.start]: d }) }}>
+                    onMouseDown={(e) => {
+                      // The right button makes a record: one day, or as many as it drags across.
+                      if (e.button !== 2) return
+                      e.preventDefault()
+                      drag.current = { kind: 'sweep', from: d, to: d }
+                      setSweep({ from: d, to: d })
+                    }}
+                    onContextMenu={(e) => e.preventDefault()}>
                     <span className={`rl-cal-num${d === today ? ' today' : ''}`}>
                       {d.slice(8) === '01' ? `${Number(d.slice(5, 7))}월 1일` : `${Number(d.slice(8))}일`}
                     </span>
@@ -225,59 +283,57 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
                 ))}
               </div>
               <div className="rl-cal-events" style={{ gridTemplateRows: `repeat(${Math.max(lanes.length, 1)}, 22px)` }}>
-                {segs.map((ev) => {
-                  const row = ev.lane + 1
-                  const on = picked?.has(ev.id)
-                  const style = { '--c': ev.color }
-                  const out = []
-                  if (ev.ts && ev.ts <= we && ev.te >= ws) {
-                    const a = col(max(ev.ts, ws)), b = col(min(ev.te, we))
-                    out.push(<div key="trip" className="rl-cal-trip" style={{ ...style, gridRow: row, gridColumn: `${a + 1} / ${b + 2}` }}
-                      title="출장 기간" />)
-                  }
-                  if (ev.s <= we && ev.e >= ws) {
-                    const a = col(max(ev.s, ws)), b = col(min(ev.e, we))
-                    const n = b - a + 1
-                    const mi = ev.mk && ev.mk >= ev.s && ev.mk <= ev.e && ev.mk >= ws && ev.mk <= we ? col(ev.mk) - a : -1
-                    out.push(
-                      <div key="bar" className={`rl-cal-bar${on ? ' on' : ''}${ev.s < ws ? ' cont-l' : ''}${ev.e > we ? ' cont-r' : ''}`}
-                        style={{ ...style, gridRow: row, gridColumn: `${a + 1} / ${b + 2}` }}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={() => onPick(ev.id)}
-                        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); hoverOff(); onOpen(ev.id) }}
-                        onMouseEnter={(e) => hoverOn(ev.r, e)} onMouseMove={hoverMove} onMouseLeave={hoverOff}>
-                        {mi >= 0 && <i className="rl-cal-mark" style={{ left: `${(mi / n) * 100}%`, width: `${100 / n}%` }} />}
-                        <span className="rl-cal-label">{ev.label}</span>
-                        {ev.s >= ws && (
-                          <b className="rl-cal-grip l" title="시작을 옮기기"
-                            onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); hoverOff(); drag.current = { kind: 'end', edge: 'start', id: ev.id, rec: ev.r, start: ev.s, end: ev.e, hadEnd: !!day(ev.r[cal.end]) } }} />
-                        )}
-                        {ev.e <= we && (
-                          <b className="rl-cal-grip r" title="끝을 옮기기"
-                            onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); hoverOff(); drag.current = { kind: 'end', edge: 'end', id: ev.id, rec: ev.r, start: ev.s, end: ev.e, hadEnd: true } }} />
-                        )}
-                      </div>,
-                    )
-                  }
-                  // A talk outside the meeting's days: its day alone, strong.
-                  if (ev.mk && (ev.mk < ev.s || ev.mk > ev.e) && ev.mk >= ws && ev.mk <= we) {
-                    out.push(<div key="mk" className={`rl-cal-bar solo${on ? ' on' : ''}`} style={{ ...style, gridRow: row, gridColumn: `${col(ev.mk) + 1} / ${col(ev.mk) + 2}` }}
-                      onMouseDown={(e) => e.stopPropagation()} onClick={() => onPick(ev.id)}
-                      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); hoverOff(); onOpen(ev.id) }}
-                      onMouseEnter={(e) => hoverOn(ev.r, e)} onMouseMove={hoverMove} onMouseLeave={hoverOff}>
+                {placed.map(({ ev, p, a, b, lane }) => {
+                  const n = b - a + 1
+                  // How strongly each day of the bar is painted: the trip around
+                  // (hatched), the record's own days (plain), the marked day (strong).
+                  const level = (d) => (d === ev.mk ? 3 : d >= ev.s && d <= ev.e ? 2 : ev.ts && d >= ev.ts && d <= ev.te ? 1 : 0)
+                  // The ends that stretch are the record's own, and only on its main piece.
+                  const own = p.key === 'main'
+                  const sIn = own && ev.s >= ws && ev.s <= we, eIn = own && ev.e >= ws && ev.e <= we
+                  return (
+                    <div key={`${ev.id}:${p.key}`} className={`rl-cal-bar${picked?.has(ev.id) ? ' on' : ''}${p.from < ws ? ' cont-l' : ''}${p.to > we ? ' cont-r' : ''}`}
+                      style={{ '--c': ev.color, gridRow: lane + 1, gridColumn: `${a + 1} / ${b + 2}` }} {...barProps(ev)}>
+                      <span className="rl-cal-fill">
+                        {Array.from({ length: n }, (_, i) => <i key={i} className={`lv${level(addDays(ws, a + i))}`} />)}
+                      </span>
                       <span className="rl-cal-label">{ev.label}</span>
-                    </div>)
-                  }
-                  return out
+                      {sIn && (
+                        <b className="rl-cal-grip" style={{ left: `${((col(ev.s) - a) / n) * 100}%` }} title="시작을 옮기기"
+                          onMouseDown={(e) => { if (e.button !== 0) return; e.stopPropagation(); e.preventDefault(); hoverOff(); drag.current = { kind: 'end', edge: 'start', id: ev.id, rec: ev.r, start: ev.s, end: ev.e, hadEnd: !!day(ev.r[cal.end]) } }} />
+                      )}
+                      {eIn && (
+                        <b className="rl-cal-grip" style={{ left: `calc(${((col(ev.e) - a + 1) / n) * 100}% - 6px)` }} title="끝을 옮기기"
+                          onMouseDown={(e) => { if (e.button !== 0) return; e.stopPropagation(); e.preventDefault(); hoverOff(); drag.current = { kind: 'end', edge: 'end', id: ev.id, rec: ev.r, start: ev.s, end: ev.e, hadEnd: true } }} />
+                      )}
+                    </div>
+                  )
                 })}
               </div>
             </div>
           )
         })}
       </div>
-      {peek && <Peek def={def} doc={doc} ctx={ctx} r={peek.r} x={peek.x} y={peek.y} />}
+      <PeekHost ref={peek} def={def} doc={doc} ctx={ctx} />
     </div>
   )
+}
+
+/** The hover box, with state of its own: following the pointer redraws it,
+ *  not the hundreds of days behind it. */
+function PeekHost({ ref, def, doc, ctx }) {
+  const [p, setP] = useState(null)       // { r, x, y }
+  useEffect(() => {
+    if (!ref) return undefined
+    ref.current = {
+      show: (r, at) => setP({ r, ...at }),
+      move: (at) => setP((s) => (s ? { ...s, ...at } : s)),
+      hide: () => setP(null),
+    }
+    return () => { ref.current = null }
+  }, [ref])
+  if (!p) return null
+  return <Peek def={def} doc={doc} ctx={ctx} r={p.r} x={p.x} y={p.y} />
 }
 
 /** What the editor shows of a record, small, by the pointer. */
