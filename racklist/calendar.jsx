@@ -16,16 +16,19 @@ import { load, save, projectKey } from './portal.js'
  *     label: (rec, text) => string,           // text(k) is field k as the table says it
  *   }
  *
- * One bar, one colour, three strengths: the days around (the trip) hatched,
- * the record's days plain, the marked day strong. A week is as tall as its
- * records need — nothing folds into "…". A record without a start is not on it.
+ * One bar: the days around (the trip) light gray, the record's own days light
+ * in its colour, the marked day strong. A week has room for three lanes at
+ * least and is as tall as its records need — nothing folds into "…"; a bar
+ * with nothing under it grows down into the free lanes, its name wrapping onto
+ * as many lines as it then has. A record without a start is not on it.
  *
  *   left-click a bar        picks it (as in the table)
  *   right-click a bar       opens it in the editor
  *   hover half a second     what the editor shows, in a small box
  *   drag a bar's end        moves the start or the end
- *   right-drag across days  a new record from the first day to the last
- *                           (right-click one day: a new record starting then)
+ *   click or drag days      lights them, and they stay lit
+ *   right-click lit days    a new record over them (right-click any other
+ *                           day: a new record starting that day)
  */
 const pad = (n) => String(n).padStart(2, '0')
 const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
@@ -45,6 +48,7 @@ const GRAY = '#8a94a6'
 const BEFORE = 10
 const AFTER = 30
 const MORE = 16
+const LANES = 3        // a week's room, at least, in lanes of 22px
 
 export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOpen, onNew, onResize }) {
   const cal = def.calendar
@@ -68,7 +72,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   }
   const groupOf = (r) => cal.groups?.findIndex((g) => g.match(r)) ?? -1
   const [over, setOver] = useState(null)        // a bar's end being dragged: { id, start, end }
-  const [sweep, setSweep] = useState(null)      // a right-drag across days: { from, to }
+  const [sweep, setSweep] = useState(null)      // days lit by a click or a drag: { from, to }
 
   const events = useMemo(() => items.map((r) => {
     const id = r[idk]
@@ -133,7 +137,8 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     // The month on screen: the one a week a third of the way down is in.
     const y = el.scrollTop + el.clientHeight / 3
     const ws = [...el.querySelectorAll('[data-week]')].find((w) => w.offsetTop - el.offsetTop + w.offsetHeight > y)
-    if (ws) { const m = monthOf(addDays(ws.dataset.week, 3)); if (m !== month) setMonth(m) }
+    // A week belongs to the month its Thursday is in.
+    if (ws) { const m = monthOf(addDays(ws.dataset.week, 4)); if (m !== month) setMonth(m) }
     // More weeks before or after, before the edge is reached.
     if (el.scrollTop < el.clientHeight) {
       keep.current = el.scrollHeight
@@ -152,7 +157,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     return addDays(el.dataset.week, col)
   }
 
-  // ── dragging: an end of a bar, or a right-drag over days ──────────────
+  // ── dragging: an end of a bar, or days being lit ───────────────────────
   const drag = useRef(null)
   useEffect(() => {
     const move = (e) => {
@@ -171,12 +176,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
       const d = drag.current
       drag.current = null
       if (!d) return
-      if (d.kind === 'sweep') {
-        setSweep(null)
-        const [a, b] = [d.from, d.to || d.from].sort()
-        onNew(a === b ? { [cal.start]: a } : { [cal.start]: a, [cal.end]: b })
-        return
-      }
+      if (d.kind === 'sweep') return       // the days stay lit, for a right-click
       const now = d.now
       if (now && (now.start !== d.start || now.end !== d.end)) {
         Promise.resolve(onResize(d.rec, { [cal.start]: now.start, [cal.end]: now.end === now.start && !d.hadEnd ? '' : now.end }))
@@ -263,37 +263,58 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
             lanes[lane].push([a, b])
             return { ev, p, a, b, lane }
           })
+          // A bar with nothing under it takes the lanes below too — first come,
+          // first served, top lanes first — so a lone one-day record has room
+          // for its whole name.
+          const total = Math.max(lanes.length, LANES)
+          const taken = Array.from({ length: total }, (_, i) => (lanes[i] || []).slice())
+          for (const s of [...placed].sort((x, y) => x.lane - y.lane)) {
+            s.rows = 1
+            while (s.lane + s.rows < total && taken[s.lane + s.rows].every(([x, y]) => s.b < x || s.a > y)) {
+              taken[s.lane + s.rows].push([s.a, s.b])
+              s.rows += 1
+            }
+          }
           return (
             <div key={ws} className="rl-cal-week" data-week={ws}>
               <div className="rl-cal-cells">
                 {days.map((d) => (
                   <div key={d} className={`rl-cal-cell${monthOf(d) !== month ? ' out' : ''}${inSweep(d) ? ' sweep' : ''}`}
                     onMouseDown={(e) => {
-                      // The right button makes a record: one day, or as many as it drags across.
-                      if (e.button !== 2) return
+                      // The left button lights days: one, or as many as it drags across.
+                      if (e.button !== 0) return
                       e.preventDefault()
                       drag.current = { kind: 'sweep', from: d, to: d }
                       setSweep({ from: d, to: d })
                     }}
-                    onContextMenu={(e) => e.preventDefault()}>
+                    onContextMenu={(e) => {
+                      // The right button makes a record over the lit days — or,
+                      // on a day that is not lit, starting that day.
+                      e.preventDefault()
+                      if (inSweep(d)) {
+                        const [a, b] = [sweep.from, sweep.to].sort()
+                        onNew(a === b ? { [cal.start]: a } : { [cal.start]: a, [cal.end]: b })
+                      } else onNew({ [cal.start]: d })
+                      setSweep(null)
+                    }}>
                     <span className={`rl-cal-num${d === today ? ' today' : ''}`}>
                       {d.slice(8) === '01' ? `${Number(d.slice(5, 7))}월 1일` : `${Number(d.slice(8))}일`}
                     </span>
                   </div>
                 ))}
               </div>
-              <div className="rl-cal-events" style={{ gridTemplateRows: `repeat(${Math.max(lanes.length, 1)}, 22px)` }}>
-                {placed.map(({ ev, p, a, b, lane }) => {
+              <div className="rl-cal-events" style={{ gridTemplateRows: `repeat(${total}, 22px)` }}>
+                {placed.map(({ ev, p, a, b, lane, rows }) => {
                   const n = b - a + 1
-                  // How strongly each day of the bar is painted: the trip around
-                  // (hatched), the record's own days (plain), the marked day (strong).
+                  // How each day of the bar is painted: the trip around (light
+                  // gray), the record's own days (light), the marked day (strong).
                   const level = (d) => (d === ev.mk ? 3 : d >= ev.s && d <= ev.e ? 2 : ev.ts && d >= ev.ts && d <= ev.te ? 1 : 0)
                   // The ends that stretch are the record's own, and only on its main piece.
                   const own = p.key === 'main'
                   const sIn = own && ev.s >= ws && ev.s <= we, eIn = own && ev.e >= ws && ev.e <= we
                   return (
-                    <div key={`${ev.id}:${p.key}`} className={`rl-cal-bar${picked?.has(ev.id) ? ' on' : ''}${p.from < ws ? ' cont-l' : ''}${p.to > we ? ' cont-r' : ''}`}
-                      style={{ '--c': ev.color, gridRow: lane + 1, gridColumn: `${a + 1} / ${b + 2}` }} {...barProps(ev)}>
+                    <div key={`${ev.id}:${p.key}`} className={`rl-cal-bar${picked?.has(ev.id) ? ' on' : ''}${p.from < ws ? ' cont-l' : ''}${p.to > we ? ' cont-r' : ''}${rows > 1 ? ' tall' : ''}`}
+                      style={{ '--c': ev.color, gridRow: `${lane + 1} / span ${rows}`, gridColumn: `${a + 1} / ${b + 2}`, '--lines': Math.floor((rows * 22 + (rows - 1) * 2 - 4) / 15) }} {...barProps(ev)}>
                       <span className="rl-cal-fill">
                         {Array.from({ length: n }, (_, i) => <i key={i} className={`lv${level(addDays(ws, a + i))}`} />)}
                       </span>
