@@ -81,7 +81,7 @@ export function dropItems(def, doc, recs) {
 
 export function RackItemEditor({
   def, doc, rec, fields: fieldsIn, listKey, noun, cls, ctx: extra = {},
-  onSave, onCreated, onDeleted, onRenamed, onCancel, canDelete = true, actions,
+  onSave, onCreated, onDeleted, onRenamed, onCancel, canDelete = true, actions, seed,
 }) {
   const fields = fieldsIn || def.item.fields
   const key = listKey || def.item.key
@@ -90,19 +90,21 @@ export function RackItemEditor({
   const blank = useMemo(() => Object.fromEntries(fields.filter((f) => !f.get && f.store !== false)
     .map((f) => [f.k, f.default ?? typeOf(f).empty()])), [fields])
   const draft = !rec
-  const [f, setF] = useState(rec || blank)
+  // A draft may start with values already in it (a day picked on a calendar).
+  const fresh = useMemo(() => ({ ...blank, ...(seed || {}) }), [blank, seed])
+  const [f, setF] = useState(rec || fresh)
   // The form as the document last had it, and as it was when it was opened.
-  const saved = useRef(rec || blank)
-  const opened = useRef(rec || blank)
+  const saved = useRef(rec || fresh)
+  const opened = useRef(rec || fresh)
   const fRef = useRef(f)
   fRef.current = f
   const same_ = (a, b) => JSON.stringify(a) === JSON.stringify(b)
   // The record changed in the document (a save landed, someone else saved):
   // take it — unless you are in the middle of changing it, which wins.
   useEffect(() => {
-    if (same_(fRef.current, saved.current)) setF(rec || blank)
-    saved.current = same_(fRef.current, saved.current) ? (rec || blank) : saved.current
-  }, [rec, blank])   // eslint-disable-line react-hooks/exhaustive-deps
+    if (same_(fRef.current, saved.current)) setF(rec || fresh)
+    saved.current = same_(fRef.current, saved.current) ? (rec || fresh) : saved.current
+  }, [rec, fresh])   // eslint-disable-line react-hooks/exhaustive-deps
 
   const tidy = (r) => {
     const out = { ...r }

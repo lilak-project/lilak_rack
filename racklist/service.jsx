@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { RackTable, RackRow, RackTabs } from './table.jsx'
 import { RackPaneStrip } from './panes.jsx'
 import { RackBar } from './bar.jsx'
+import { RackCalendar } from './calendar.jsx'
 import { RackEditClass } from './classedit.jsx'
 import { FilterBar, FacetRows } from './filter.jsx'
 import { RackListing } from './listing.jsx'
@@ -58,6 +59,8 @@ export function RackService({ def: declared, slots = {} }) {
     ...fixedTabs(def),
     ...(slots.tabs || []).map((t) => ({ id: t.id, kind: 'slot', label: t.label })),
     // Where the service may read the disk is a manager's to say.
+    // A month of the items, when they have dates (def.calendar).
+    ...(def.calendar ? [{ id: 'calendar', kind: 'calendar', label: 'calendar' }] : []),
     ...(IS_ADMIN && hasRoots(def) ? [{ id: 'settings', kind: 'settings', label: 'settings' }] : []),
   ], [def, slots.tabs, IS_ADMIN])
 
@@ -158,11 +161,15 @@ export function RackService({ def: declared, slots = {} }) {
   // `rec` when the caller already has the record — right after creating one,
   // the document this closure sees does not have it yet, and the tab would be
   // named "새 …" for a record that has a name.
-  const openItem = useCallback((id, rec) => {
+  // `seed` fills a new one in (a day picked on the calendar); a draft already
+  // open gives way to it.
+  const openItem = useCallback((id, rec, seed) => {
     const r = rec || (doc?.[def.item.key] || []).find((x) => idOf(x) === id)
-    openEdit({ id: `item:${id || 'new'}`, kind: 'item', who: id || null,
+    if (!id && seed) panes.close('item:new')
+    const open = () => openEdit({ id: `item:${id || 'new'}`, kind: 'item', who: id || null, seed,
       label: r ? labelOf(def, r) : `새 ${def.item.noun}` })
-  }, [doc, def, openEdit])
+    if (!id && seed) setTimeout(open, 0); else open()
+  }, [doc, def, openEdit, panes])   // eslint-disable-line react-hooks/exhaustive-deps
   const rowLabel = (c, rec) => (c.rowLabel ? c.rowLabel(rec) : rec?.name) || ''
   // A stored record is found by its id, or — one from before ids — by its key.
   const whoOf = (c, rec) => (rec ? rec.id || rec[c.keyBy] : null)
@@ -343,7 +350,7 @@ export function RackService({ def: declared, slots = {} }) {
     if (etab.kind === 'item') {
       const rec = etab.who ? items.find((r) => idOf(r) === etab.who) : null
       return (
-        <RackItemEditor key={etab.id} def={def} doc={doc} rec={rec} ctx={ctx} onSave={commit}
+        <RackItemEditor key={etab.id} def={def} doc={doc} rec={rec} seed={etab.seed} ctx={ctx} onSave={commit}
           canDelete={IS_ADMIN} onCancel={() => panes.close(etab.id)}
           onCreated={(r) => { panes.close(etab.id); openItem(idOf(r), r) }}
           onDeleted={(r) => {
@@ -591,6 +598,19 @@ export function RackService({ def: declared, slots = {} }) {
                 })}
                 {classes.length === 0 && <p className="rl-msg">아직 없습니다.</p>}
               </RackTable>
+            )}
+
+            {doc && tab?.kind === 'calendar' && (
+              <RackCalendar def={def} doc={doc} ctx={ctx} picked={picked}
+                // The search box narrows the calendar as it does the table.
+                items={query.trim() ? items.filter((r) => search(r, query.trim().toLowerCase())) : items}
+                query={query.trim()}
+                onPick={(id) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })}
+                onOpen={(id) => openItem(id)}
+                onNew={(seed) => openItem(null, null, seed)}
+                onResize={(rec, patch) => commit({
+                  [def.item.key]: items.map((x) => (x === rec ? { ...x, ...patch, updatedAt: new Date().toISOString() } : x)),
+                }, `${labelOf(def, rec)} 날짜를 바꿨습니다.`)} />
             )}
 
             {doc && tab?.kind === 'settings' && (

@@ -2,6 +2,7 @@ export { useRackList } from './list.js'
 // The declared service: a definition in, the whole screen out.
 export { RackService } from './service.jsx'
 export { RackBar, useReloadKey } from './bar.jsx'
+export { RackCalendar } from './calendar.jsx'
 export { RackItemEditor, dropItems } from './editor.jsx'
 export { RackBulkEditor, bulkFields } from './bulk.jsx'
 export { RackListing } from './listing.jsx'
