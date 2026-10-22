@@ -1,6 +1,8 @@
+import './strings.js'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { RackTabs } from './table.jsx'
 import { load, save } from './portal.js'
+import { tr } from '../i18n.jsx'
 
 /**
  * The editor beside the list, in one or two columns.
@@ -111,16 +113,16 @@ export function RackPaneStrip({ panes, col }) {
   return (
     <div className="rl-strip">
       <div className="rl-strip-tabs" onDoubleClick={() => panes.setFull(!panes.full)}
-        title="두 번 눌러 전체 너비">
+        title={tr("rk_dbl_full_width")}>
         <RackTabs tabs={panes.inCol(col)} active={cur?.id} opened
           onPick={(id) => panes.pick(col, id)} onClose={panes.close} />
       </div>
       {cur && (
         <button type="button" className="rl-btn rl-pane-btn" onClick={() => panes.move(cur.id)}
-          title={toLeft ? '왼쪽으로 보내기' : '오른쪽으로 보내기'}>{toLeft ? '←' : '→'}</button>
+          title={toLeft ? tr("rk_send_left") : tr("rk_send_right")}>{toLeft ? '←' : '→'}</button>
       )}
       <button type="button" className="rl-btn rl-pane-btn" onClick={() => panes.setFull(!panes.full)}
-        title={panes.full ? '목록 다시 보기' : '전체 너비'}>
+        title={panes.full ? tr("rk_show_list_again") : tr("rk_full_width")}>
         <Expand on={panes.full} />
       </button>
     </div>

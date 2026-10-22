@@ -1,3 +1,4 @@
+import './strings.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RackActions } from './actions.jsx'
 import { RackField } from './fields.jsx'
@@ -5,6 +6,7 @@ import { typeOf } from './types.jsx'
 import { ctxFor, labelOf, wornBy, valueOf } from './schema.js'
 import { useRackKeys } from './hooks.js'
 import { newId } from './portal.js'
+import { tr } from '../i18n.jsx'
 
 /**
  * The editor for one [항목] — or one stored [클래스] record — built from its
@@ -24,7 +26,8 @@ import { newId } from './portal.js'
  * A field with `edit: false` is shown in the table but not here; `edit:
  * (props) => node` replaces the widget for that one field. A computed field
  * (`get`) is left out unless its type can Show it (a folder, a cited-by list).
- * `when(rec, { draft })` shows a field only then; `store: false` is a helper
+ * `when(rec, { draft })` shows a field only then; `disabled(rec)` greys it out
+ * (shown, not to be changed — a trip, for a meeting joined online); `store: false` is a helper
  * that is never saved; `default` is what a new record starts with.
  *
  * Deleting a record also unhooks every link in this document that pointed at
@@ -79,9 +82,29 @@ export function dropItems(def, doc, recs) {
   return patch
 }
 
+/** A copy of an item, its dates moved `days` later: what it says, not what it
+ *  is — no id, nothing computed, and no field marked `clone: false` (a name
+ *  made from the date, which the copy makes anew). */
+const shiftDay = (d, n) => {
+  const t = new Date(`${String(d).slice(0, 10)}T00:00:00Z`)
+  if (Number.isNaN(t.getTime())) return d
+  t.setUTCDate(t.getUTCDate() + n)
+  return t.toISOString().slice(0, 10)
+}
+export function cloneOf(def, rec, days = 0) {
+  const out = {}
+  for (const fl of def.item.fields) {
+    if (fl.get || fl.store === false || fl.clone === false || fl.k === def.item.id) continue
+    const v = rec[fl.k]
+    if (v === undefined) continue
+    out[fl.k] = days && fl.type === 'date' && v ? shiftDay(v, days) : JSON.parse(JSON.stringify(v))
+  }
+  return out
+}
+
 export function RackItemEditor({
   def, doc, rec, fields: fieldsIn, listKey, noun, cls, ctx: extra = {},
-  onSave, onCreated, onDeleted, onRenamed, onCancel, canDelete = true, actions, seed,
+  onSave, onCreated, onDeleted, onRenamed, onCancel, onClone, canDelete = true, actions, seed,
 }) {
   const fields = fieldsIn || def.item.fields
   const key = listKey || def.item.key
@@ -117,7 +140,7 @@ export function RackItemEditor({
   }
   const label = isItem ? labelOf(def, f) : String((cls?.rowLabel ? cls.rowLabel(f) : f.name) || '')
   const missing = fields.filter((fl) => fl.required && !typeOf(fl).text(f[fl.k], ctxFor(def, doc, fl, extra)).trim())
-  const why = missing.length ? `${missing.map((x) => x.label).join(', ')} 이(가) 있어야 합니다.`
+  const why = missing.length ? tr("rk_required", missing.map((x) => x.label).join(', '))
     : (own.check ? own.check(tidy(f), doc, rec) || '' : '')
   const what = noun || def.item.noun
   // The record in the document this form edits. Records older than the kit
@@ -134,7 +157,7 @@ export function RackItemEditor({
     const r = { ...tidy(f), id: newId(), createdAt: now, updatedAt: now }
     const patch = { [key]: [r, ...(doc[key] || [])] }
     Object.assign(patch, own.onSave?.(r, null, { ...doc, ...patch }) || {})
-    if (await onSave(patch, `${what} '${label}' 등록됨`)) onCreated?.(r)
+    if (await onSave(patch, tr("rk_created_x", what, label))) onCreated?.(r)
   }
   async function save(auto) {
     if (why) return
@@ -154,7 +177,7 @@ export function RackItemEditor({
       }
     }
     Object.assign(patch, own.onSave?.(r, rec, { ...doc, ...patch }) || {})
-    if (await onSave(patch, `${what} '${label}' ${auto ? '자동 ' : ''}저장됨`)) {
+    if (await onSave(patch, auto ? tr('rk_autosaved', what, label) : tr('rk_saved_one', what, label))) {
       saved.current = snap
       onRenamed?.(r)
     }
@@ -186,12 +209,36 @@ export function RackItemEditor({
         return v === rec.id ? { ...it, [field.k]: as(v) } : it
       })
     }
+    // A repeating record (calendar.repeat): its changed days go with it; one
+    // changed day going leaves that day out of its series, as Google does.
+    const cal = def.calendar
+    if (isItem && cal?.series && rec) {
+      const S = cal.series, O = cal.seriesDate, R = cal.repeat
+      const list = patch[key] || doc[key] || []
+      const of = rec[S]?.id ?? rec[S]
+      if (rec[R]?.rule) patch[key] = list.filter((x) => (x[S]?.id ?? x[S]) !== rec.id)
+      else if (of && rec[O]) {
+        patch[key] = list.map((x) => (x.id === of && x[R]?.rule
+          ? { ...x, [R]: { ...x[R], ex: [...new Set([...(x[R].ex || []), String(rec[O]).slice(0, 10)])].sort() } } : x))
+      }
+    }
     Object.assign(patch, own.onDelete?.(f, { ...doc, ...patch }) || {})
-    if (await onSave(patch, `${what} '${label}' 삭제됨`)) onDeleted?.(f)
+    if (await onSave(patch, tr("rk_deleted_x", what, label))) onDeleted?.(f)
   }
 
   const shown = fields.filter((fl) => fl.edit !== false && (!fl.get || typeOf(fl).Show)
     && (!fl.when || fl.when(f, { draft, doc })))
+  // `item.applies(rec) → { color, fields }`: the fields this kind of record
+  // uses, lit in its colour (fields: null — all of them).
+  const fit = own.applies?.(f)
+  const lit = (seg) => (fit && seg.fields.some((fl) => !fit.fields || fit.fields.includes(fl.k)) ? fit.color : '')
+  // A date's label, when the service has a calendar and the date is set:
+  // pressed, the calendar shows that day.
+  const dateLabel = (seg) => {
+    const fl = seg.fields[0], v = f[fl.k]
+    if (fl.type !== 'date' || !v || !extra.showDate) return null
+    return <button type="button" className="rl-fl-go" title={tr("rk_show_in_calendar")} onClick={() => extra.showDate(v)}>{seg.group || fl.label}</button>
+  }
   const patchF = (o) => setF((s) => ({ ...s, ...o }))
 
   return (
@@ -200,8 +247,9 @@ export function RackItemEditor({
           is, and what you do to it is always in the same place. */}
       <RackActions key={f.id || 'draft'} draft={draft}
         onCreate={create} createDisabled={!!why} saveDisabled={!!why}
-        hint={why || (dirty ? '바뀐 것을 곧 저장합니다…' : '')}
+        hint={why} pending={dirty && !why}
         onSave={() => save(false)} onCancel={onCancel} onRevert={() => setF(opened.current)}
+        onClone={onClone && isItem ? () => onClone(cloneOf(def, tidy(f))) : undefined}
         onDelete={canDelete ? remove : undefined}
         deleteWarn={own.deleteWarn ? own.deleteWarn(f, doc) : undefined}
         extra={actions?.(f, setF)} />
@@ -216,13 +264,15 @@ export function RackItemEditor({
             const field = seg.group ? { placeholder: fl.label, ...fl } : fl
             const props = { value: fl.get ? valueOf(fl, f, c) : f[fl.k], onChange: set, field, ctx: c,
               rec: f, patch: patchF, draft }
-            return fl.get ? <T.Show key={fl.k} {...props} />
+            const w = fl.get ? <T.Show key={fl.k} {...props} />
               : typeof fl.edit === 'function' ? <span key={fl.k} style={{ display: 'contents' }}>{fl.edit(props)}</span>
                 : <T.Edit key={fl.k} {...props} />
+            return fl.disabled?.(f) ? <fieldset key={fl.k} className="rl-off" disabled>{w}</fieldset> : w
           }
           const hints = seg.fields.filter((fl) => fl.hint && fl.type !== 'check').map((fl) => fl.hint)
           return (
-            <RackField key={seg.fields[0].k} label={seg.group || seg.fields[0].label}>
+            <RackField key={seg.fields[0].k} label={dateLabel(seg) || seg.group || seg.fields[0].label}
+              {...(seg.fields.every((fl) => fl.disabled?.(f)) ? { off: true } : { tone: lit(seg) })}>
               {seg.fields.map(widget)}
               {hints.map((h) => <span key={h} className="rl-hint">{h}</span>)}
             </RackField>

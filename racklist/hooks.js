@@ -1,5 +1,7 @@
+import './strings.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { load, save } from './portal.js'
+import { tr } from '../i18n.jsx'
 
 /** Column widths, dragged by the edge and remembered per project. `prefix`
  *  separates two tables in one service (the records and their classes). */
@@ -184,7 +186,7 @@ export function usePaneSplit(key, initial = 50) {
       style: { touchAction: 'none' },
       onDoubleClick: () => setPct(initial),
       role: 'separator',
-      title: '끌어서 넓이 조절 · 두 번 누르면 반반',
+      title: tr("rk_drag_resize"),
       className: `rl-split${dragging ? ' on' : ''}`,
     },
   }

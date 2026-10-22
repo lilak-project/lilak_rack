@@ -1,8 +1,10 @@
+import './strings.js'
 import { useEffect, useState } from 'react'
 import { PORTAL_BASE, authHeaders } from './portal.js'
 import { registerType } from './types.jsx'
 import { RackActions } from './actions.jsx'
 import { RackField, RackTextRows } from './fields.jsx'
+import { tr } from '../i18n.jsx'
 
 /**
  * Files on disk — the rack's one way to say "the material for this is over
@@ -67,7 +69,7 @@ async function post(p, body, say) {
       body: JSON.stringify(body),
     })
     const got = await r.json().catch(() => ({}))
-    if (!r.ok) { say?.(got.detail || '할 수 없습니다.'); return null }
+    if (!r.ok) { say?.(got.detail || tr("rk_cannot")); return null }
     return got
   } catch (e) { say?.(String(e.message || e)); return null }
 }
@@ -75,10 +77,10 @@ async function post(p, body, say) {
  *  file where it lives). */
 export async function onDesktop(name, path, how, say) {
   const got = await post('/open', { name, path: path || '', how }, say)
-  if (got) say?.(how === 'reveal' ? `폴더에서 보여줍니다 — ${got.path}` : `열었습니다 — ${got.path}`)
+  if (got) say?.(how === 'reveal' ? tr("rk_revealed", got.path) : tr("rk_opened", got.path))
 }
 export async function copyText(text, say) {
-  try { await navigator.clipboard.writeText(text); say?.(`복사했습니다 — ${text}`) }
+  try { await navigator.clipboard.writeText(text); say?.(tr("rk_copied_text", text)) }
   catch { say?.(text) }     // no clipboard: the note line IS the copy
 }
 
@@ -120,9 +122,9 @@ function FolderRow({ name, ctx, field }) {
   const path = folderPathOf(name, folders)
   const roots = folders?.roots || []
   useEffect(() => { setCand('') }, [name])
-  if (!folders) return <span className="rl-hint">폴더 목록을 읽는 중…</span>
-  if (!roots.length) return <span className="rl-hint">폴더 루트가 정해지지 않았습니다 — settings 탭에서 정합니다.</span>
-  if (!name) return <span className="rl-hint">이름이 정해지면 그 이름의 폴더와 연결됩니다.</span>
+  if (!folders) return <span className="rl-hint">{tr("rk_folders_loading")}</span>
+  if (!roots.length) return <span className="rl-hint">{tr("rk_no_folder_roots")}</span>
+  if (!name) return <span className="rl-hint">{tr("rk_folder_by_name_hint")}</span>
   if (!path) {
     // Folders no record is named after: the ones that could be this one's.
     const items = ctx.doc?.[ctx.def?.item?.key] || []
@@ -132,7 +134,7 @@ function FolderRow({ name, ctx, field }) {
     async function adopt() {
       setBusy(true)
       const got = await post('/adopt', { source: cand, name }, say)
-      if (got) { say?.(`'${shown}' → '${name}' 로 바꿔 연결했습니다.`); setCand(''); ctx.reloadFolders?.() }
+      if (got) { say?.(tr("rk_renamed_and_linked", shown, name)); setCand(''); ctx.reloadFolders?.() }
       setBusy(false)
     }
     return (
@@ -143,49 +145,49 @@ function FolderRow({ name, ctx, field }) {
           e.preventDefault(); setOver(false)
           const got = dropped(e)
           if (got.why) say?.(got.why)
-          else if (got.dir === false) say?.(`'${got.name}' 은(는) 폴더가 아니라 파일입니다.`)
+          else if (got.dir === false) say?.(tr("rk_is_file_not_folder", got.name))
           else setCand(got.path || got.name)
         }}>
-        <span className="rl-hint">'{name}' 폴더가 없습니다 — 만들면 {homeOf(name, folders)} 에 생깁니다.</span>
+        <span className="rl-hint">{tr("rk_folder_missing", name, homeOf(name, folders))}</span>
         {cand ? (
           <div className="rl-rrow">
             <span className="rl-mono" title={cand}>{shown}</span>
             <span className="rl-hint">→ {name}</span>
-            <button type="button" className="rl-btn rl-go" disabled={busy} onClick={adopt}>이름 바꿔 연결</button>
-            <button type="button" className="rl-btn" onClick={() => setCand('')}>취소</button>
+            <button type="button" className="rl-btn rl-go" disabled={busy} onClick={adopt}>{tr("rk_rename_and_link")}</button>
+            <button type="button" className="rl-btn" onClick={() => setCand('')}>{tr("rk_cancel")}</button>
           </div>
         ) : (
           <div className="rl-rrow">
             <button type="button" className="rl-btn rl-go" disabled={busy} onClick={async () => {
               setBusy(true)
-              if (await post('/make', { name }, say)) { say?.(`폴더를 만들었습니다 — ${name}`); ctx.reloadFolders?.() }
+              if (await post('/make', { name }, say)) { say?.(tr("rk_folder_made", name)); ctx.reloadFolders?.() }
               setBusy(false)
-            }}>폴더 만들기</button>
+            }}>{tr("rk_make_folder")}</button>
             {orphans.length > 0 && (
               <select className="rl-in" value="" onChange={(e) => setCand(e.target.value)}>
-                <option value="">있는 폴더에 연결…</option>
+                <option value="">{tr("rk_link_existing_folder")}</option>
                 {orphans.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
             )}
           </div>
         )}
         <span className="rl-hint">
-          {cand ? '그 폴더의 이름이 바뀝니다 (안의 파일은 그대로).'
-            : '루트 안의 폴더라면 Finder에서 끌어다 놓아도 됩니다 — 이 이름으로 바꿔 연결합니다.'}
+          {cand ? tr("rk_folder_will_rename")
+            : tr("rk_drop_folder_hint")}
         </span>
       </div>
     )
   }
   return (
     <div className="rl-rows" style={{ minWidth: 0 }}>
-      <button type="button" className="rl-path rl-mono" title="경로 복사"
+      <button type="button" className="rl-path rl-mono" title={tr("rk_copy_path")}
         onClick={() => copyText(path, say)}>{path}</button>
       <div className="rl-rrow">
-        <button type="button" className="rl-btn" onClick={() => ctx.openFolder?.(name)}>열기</button>
+        <button type="button" className="rl-btn" onClick={() => ctx.openFolder?.(name)}>{tr("rk_open")}</button>
         {onThisMachine && (
-          <button type="button" className="rl-btn" onClick={() => onDesktop(name, '', 'open', say)}>폴더에서 보기</button>
+          <button type="button" className="rl-btn" onClick={() => onDesktop(name, '', 'open', say)}>{tr("rk_show_in_folder")}</button>
         )}
-        <button type="button" className="rl-btn" onClick={() => copyText(path, say)}>경로 복사</button>
+        <button type="button" className="rl-btn" onClick={() => copyText(path, say)}>{tr("rk_copy_path")}</button>
       </div>
     </div>
   )
@@ -208,61 +210,61 @@ export function RackFolder({ name, say }) {
   useEffect(() => {
     setErr('')
     fetch(`${API}/list?${qs({ name })}`, { headers: authHeaders() })
-      .then(async (r) => (r.ok ? setList(await r.json()) : setErr((await r.json().catch(() => ({}))).detail || '읽을 수 없습니다.')))
+      .then(async (r) => (r.ok ? setList(await r.json()) : setErr((await r.json().catch(() => ({}))).detail || tr("rk_cannot_read"))))
       .catch((e) => setErr(String(e.message || e)))
   }, [name, n])
 
   if (err) return <p className="rl-msg">{err}</p>
-  if (!list) return <p className="rl-msg">읽는 중…</p>
+  if (!list) return <p className="rl-msg">{tr("rk_loading")}</p>
   const full = pick ? `${list.path}/${pick}` : list.path
 
   return (
     <div className="rl-pdf">
       <div className="rl-pdfbar">
-        <button type="button" className="rl-path rl-mono" title="경로 복사"
+        <button type="button" className="rl-path rl-mono" title={tr("rk_copy_path")}
           onClick={() => copyText(full, say)}>{full}</button>
         <div className="rl-pdfacts">
           {pick ? (
             <>
-              <button type="button" className="rl-btn" onClick={() => setPick('')}>← 목록</button>
-              <a className="rl-btn" href={fileSrc(name, pick)} target="_blank" rel="noreferrer">새 창</a>
-              <a className="rl-btn" href={fileSrc(name, pick, true)} download>내려받기</a>
+              <button type="button" className="rl-btn" onClick={() => setPick('')}>{tr("rk_back_to_list")}</button>
+              <a className="rl-btn" href={fileSrc(name, pick)} target="_blank" rel="noreferrer">{tr("rk_new_window")}</a>
+              <a className="rl-btn" href={fileSrc(name, pick, true)} download>{tr("rk_download")}</a>
               {onThisMachine && (
                 <>
-                  <button type="button" className="rl-btn" onClick={() => onDesktop(name, pick, 'open', say)}>앱에서 열기</button>
-                  <button type="button" className="rl-btn" onClick={() => onDesktop(name, pick, 'reveal', say)}>폴더에서 보기</button>
+                  <button type="button" className="rl-btn" onClick={() => onDesktop(name, pick, 'open', say)}>{tr("rk_open_in_app")}</button>
+                  <button type="button" className="rl-btn" onClick={() => onDesktop(name, pick, 'reveal', say)}>{tr("rk_show_in_folder")}</button>
                 </>
               )}
             </>
           ) : (
             <>
               {onThisMachine && (
-                <button type="button" className="rl-btn" onClick={() => onDesktop(name, '', 'open', say)}>폴더에서 보기</button>
+                <button type="button" className="rl-btn" onClick={() => onDesktop(name, '', 'open', say)}>{tr("rk_show_in_folder")}</button>
               )}
-              <button type="button" className="rl-btn" onClick={() => setN((x) => x + 1)}>새로 읽기</button>
+              <button type="button" className="rl-btn" onClick={() => setN((x) => x + 1)}>{tr("rk_reload")}</button>
             </>
           )}
           <span className="rl-sp" />
-          <button type="button" className="rl-btn" onClick={() => copyText(full, say)}>경로 복사</button>
+          <button type="button" className="rl-btn" onClick={() => copyText(full, say)}>{tr("rk_copy_path")}</button>
         </div>
       </div>
       {pick ? (
         VIEWABLE.test(pick)
           ? <iframe className="rl-pdfview" src={fileSrc(name, pick)} title={pick} />
-          : <p className="rl-msg">브라우저가 보여줄 수 없는 형식입니다 — 내려받거나{onThisMachine ? ' 앱에서 여세요' : ' 하세요'}.</p>
+          : <p className="rl-msg">{onThisMachine ? tr('rk_cannot_show_open_app') : tr('rk_cannot_show_download')}</p>
       ) : (
         <div className="rl-files">
-          {list.files.length === 0 && <p className="rl-msg">비어 있습니다.</p>}
+          {list.files.length === 0 && <p className="rl-msg">{tr("rk_empty")}</p>}
           {list.files.map((f) => (
             <button key={f.path} type="button" className="rl-file" onClick={() => setPick(f.path)}
               onDoubleClick={() => onThisMachine && onDesktop(name, f.path, 'open', say)}
-              title={onThisMachine ? '누르면 보기, 두 번 누르면 앱에서 열기' : '누르면 보기'}>
+              title={onThisMachine ? tr("rk_click_view_dbl_app") : tr("rk_click_view")}>
               <span className="rl-mono">{f.path}</span>
               <span className="rl-dim">{size(f.size)}</span>
               <span className="rl-dim rl-mono">{day(f.mtime)}</span>
             </button>
           ))}
-          {list.more && <p className="rl-msg">2000개까지만 보입니다.</p>}
+          {list.more && <p className="rl-msg">{tr("rk_shows_2000")}</p>}
         </div>
       )}
     </div>
@@ -280,7 +282,7 @@ async function revealFile(path, say) {
       body: JSON.stringify({ path }),
     })
     const got = await r.json().catch(() => ({}))
-    say?.(r.ok ? `${got.where || '파일 관리자'}에서 열었습니다.` : (got.detail || '열 수 없습니다.'))
+    say?.(r.ok ? tr("rk_opened_in", got.where || tr("rk_file_manager")) : (got.detail || tr("rk_cannot_open")))
   } catch (e) { say?.(String(e.message || e)) }
 }
 /** Where the file IS, whole: the record keeps a path relative to a root, and
@@ -296,7 +298,7 @@ async function copyFilePath(path, say) {
 /** Every file under the roots, by its name without the extension. */
 export async function scanFiles() {
   const r = await fetch(`${FAPI}/scan`, { headers: authHeaders() })
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || '훑을 수 없습니다.')
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || tr("rk_cannot_scan"))
   return (await r.json()).files || {}
 }
 /** The outermost of several copies is the one linked; the rest are noted. */
@@ -323,7 +325,7 @@ function dropped(e) {
   if (entry) return { name: entry.name, dir: entry.isDirectory }
   const f = e.dataTransfer.files?.[0]
   if (f) return { name: f.name }
-  return { why: `끌어온 것에서 이름을 읽지 못했습니다 (${[...(e.dataTransfer.types || [])].join(', ') || '빈 끌기'}).` }
+  return { why: tr("rk_drop_no_name", [...(e.dataTransfer.types || [])].join(', ') || tr("rk_empty_drop")) }
 }
 
 registerType('file', {
@@ -352,13 +354,13 @@ function FileRow({ value, onChange, field, ctx, rec }) {
   const named = field.find ? str(rec?.[field.find]).trim() : ''
 
   async function look() {
-    if (!named) { say?.(`${field.find} 이(가) 있어야 찾을 수 있습니다.`); return }
+    if (!named) { say?.(tr("rk_needs_x_to_find", field.find)); return }
     setBusy(true)
     try {
       const hits = (await scanFiles())[named] || []
-      if (!hits.length) { say?.(`허용 루트에 ${named} 이(가) 없습니다.`); return }
+      if (!hits.length) { say?.(tr("rk_not_in_roots", named)); return }
       onChange(pickHit(hits))
-      say?.(hits.length > 1 ? `${hits.length}개 찾음 — 가장 바깥 것을 연결했습니다.` : '연결했습니다.')
+      say?.(hits.length > 1 ? tr("rk_found_n_linked_outer", hits.length) : tr("rk_linked"))
     } catch (e) { say?.(String(e.message || e)) } finally { setBusy(false) }
   }
 
@@ -370,40 +372,40 @@ function FileRow({ value, onChange, field, ctx, rec }) {
         e.preventDefault(); setOver(false)
         const got = dropped(e)
         if (got.why) { say?.(got.why); return }
-        if (got.path) { set(got.path); say?.('경로를 받았습니다 — 허용 루트 안이어야 열립니다.'); return }
+        if (got.path) { set(got.path); say?.(tr("rk_got_path")); return }
         // Only the name came: find the file of that name under the roots.
         const stem = got.name.replace(/\.[^.]+$/, '').normalize('NFC')
         try {
           const hits = (await scanFiles())[stem] || []
-          if (!hits.length) { say?.(`허용 루트 안에서 ${got.name} 을(를) 찾지 못했습니다.`); return }
+          if (!hits.length) { say?.(tr("rk_not_found_in_roots", got.name)); return }
           onChange(pickHit(hits))
-          say?.(hits.length > 1 ? `${hits.length}개 찾음 — 가장 바깥 것을 연결했습니다.` : `${got.name} 을(를) 연결했습니다.`)
+          say?.(hits.length > 1 ? tr("rk_found_n_linked_outer", hits.length) : tr("rk_linked_x", got.name))
         } catch (err) { say?.(String(err.message || err)) }
       }}>
       <div className="rl-rrow">
         <input className="rl-in rl-mono" style={{ width: '100%', minWidth: 260 }} value={path}
-          placeholder="Finder에서 끌어다 놓거나 경로를 붙여넣으세요"
+          placeholder={tr("rk_drop_or_paste")}
           onChange={(e) => set(e.target.value)} />
       </div>
       <div className="rl-rrow">
         {path ? (
           <>
-            <a className="rl-btn" href={fileUrl(path)} target="_blank" rel="noreferrer">열기</a>
-            <a className="rl-btn" href={fileUrl(path, true)} download>내려받기</a>
+            <a className="rl-btn" href={fileUrl(path)} target="_blank" rel="noreferrer">{tr("rk_open")}</a>
+            <a className="rl-btn" href={fileUrl(path, true)} download>{tr("rk_download")}</a>
             {onThisMachine && (
-              <button type="button" className="rl-btn" onClick={() => revealFile(path, say)}>폴더에서 보기</button>
+              <button type="button" className="rl-btn" onClick={() => revealFile(path, say)}>{tr("rk_show_in_folder")}</button>
             )}
-            <button type="button" className="rl-btn" onClick={() => copyFilePath(path, say)}>경로 복사</button>
-            <button type="button" className="rl-x" title="연결 끊기" onClick={() => set('')}>×</button>
+            <button type="button" className="rl-btn" onClick={() => copyFilePath(path, say)}>{tr("rk_copy_path")}</button>
+            <button type="button" className="rl-x" title={tr("rk_unlink")} onClick={() => set('')}>×</button>
           </>
         ) : field.find && (
           <button type="button" className="rl-btn rl-go" disabled={busy} onClick={look}>
-            {busy ? '찾는 중…' : '찾기'}
+            {busy ? tr("rk_searching") : tr("rk_find")}
           </button>
         )}
       </div>
       {(value?.copies || []).length > 0 && (
-        <span className="rl-hint">사본 {value.copies.length}개: {value.copies.join(' · ')}</span>
+        <span className="rl-hint">{tr("rk_copies_n", value.copies.length, value.copies.join(' · '))}</span>
       )}
     </div>
   )
@@ -412,25 +414,25 @@ function FileRow({ value, onChange, field, ctx, rec }) {
 /** One file, read in a pane. */
 export function RackFilePane({ value, say }) {
   const path = filePath(value)
-  if (!path) return <p className="rl-msg">파일이 연결되어 있지 않습니다.</p>
+  if (!path) return <p className="rl-msg">{tr("rk_no_file_linked")}</p>
   return (
     <div className="rl-pdf">
       <div className="rl-pdfbar">
-        <button type="button" className="rl-path rl-mono" title="경로 복사"
+        <button type="button" className="rl-path rl-mono" title={tr("rk_copy_path")}
           onClick={() => copyFilePath(path, say)}>{path}</button>
         <div className="rl-pdfacts">
           {onThisMachine && (
-            <button type="button" className="rl-btn" onClick={() => revealFile(path, say)}>폴더에서 보기</button>
+            <button type="button" className="rl-btn" onClick={() => revealFile(path, say)}>{tr("rk_show_in_folder")}</button>
           )}
-          <a className="rl-btn" href={fileUrl(path)} target="_blank" rel="noreferrer">새 창</a>
-          <a className="rl-btn" href={fileUrl(path, true)} download>내려받기</a>
+          <a className="rl-btn" href={fileUrl(path)} target="_blank" rel="noreferrer">{tr("rk_new_window")}</a>
+          <a className="rl-btn" href={fileUrl(path, true)} download>{tr("rk_download")}</a>
           <span className="rl-sp" />
-          <button type="button" className="rl-btn" onClick={() => copyFilePath(path, say)}>경로 복사</button>
+          <button type="button" className="rl-btn" onClick={() => copyFilePath(path, say)}>{tr("rk_copy_path")}</button>
         </div>
       </div>
       {VIEWABLE.test(path)
         ? <iframe className="rl-pdfview" src={fileUrl(path)} title={path} />
-        : <p className="rl-msg">브라우저가 보여줄 수 없는 형식입니다 — 내려받으세요.</p>}
+        : <p className="rl-msg">{tr("rk_cannot_show_download_only")}</p>}
     </div>
   )
 }
@@ -463,7 +465,7 @@ export function RackSettings({ def, doc, folders, onSave, say, onReload, onOpenF
   async function save() {
     const next = { ...(doc.settings || {}) }
     for (const k of keys) next[k] = tidy(roots[k])
-    if (await onSave({ settings: next }, '허용 루트를 저장했습니다.')) onReload?.()
+    if (await onSave({ settings: next }, tr("rk_roots_saved"))) onReload?.()
   }
   /** Every record whose file is named after it, linked in one pass. */
   async function linkAll(f) {
@@ -479,8 +481,8 @@ export function RackSettings({ def, doc, folders, onSave, say, onReload, onOpenF
         return { ...r, [f.k]: pickHit(hits) }
       })
       setFound({ files: Object.keys(files).length, linked, already })
-      if (linked) await onSave({ [def.item.key]: next }, `${linked}${def.unit}에 파일을 연결했습니다.`)
-      else say?.('새로 연결할 것이 없습니다.')
+      if (linked) await onSave({ [def.item.key]: next }, tr("rk_linked_files_n", linked, def.unit))
+      else say?.(tr("rk_nothing_new_to_link"))
     } catch (e) { say?.(String(e.message || e)) } finally { setBusy(false) }
   }
 
@@ -488,37 +490,33 @@ export function RackSettings({ def, doc, folders, onSave, say, onReload, onOpenF
   return (
     <div className="rl-edit">
       <RackActions onSave={save} saveDisabled={!dirty} onRevert={() => setRoots(saved)}
-        hint={dirty ? '저장하지 않은 변경이 있습니다.' : ''}
+        hint={dirty ? tr("rk_unsaved_changes") : ''}
         extra={finders.map(({ f }) => (
           // It reads the roots the SERVICE has, which is why it waits for them to be saved.
           <button key={f.k} type="button" className="rl-btn" disabled={busy || dirty || !tidy(saved[f.roots || 'fileRoots']).length}
-            title={dirty ? '먼저 저장하세요' : `파일 이름이 ${f.find}와 같으면 연결합니다`}
-            onClick={() => linkAll(f)}>{busy ? '훑는 중…' : '루트를 훑어 연결'}</button>
+            title={dirty ? tr("rk_save_first") : tr("rk_links_when_name_matches", f.find)}
+            onClick={() => linkAll(f)}>{busy ? tr("rk_scanning") : tr("rk_scan_and_link")}</button>
         ))} />
       <div className="rl-rec">
         {keys.map((k) => {
           const users = fields.filter((x) => x.key === k).map((x) => x.f)
           const isFolder = users.some((f) => f.type === 'folder')
           return (
-            <RackField key={k} label={`${users.map((f) => f.label).join(' · ')} 루트`}>
+            <RackField key={k} label={tr("rk_x_roots", users.map((f) => f.label).join(' · '))}>
               {/* A root is easiest given by dropping the folder from Finder. */}
               <div className="rl-rows" onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
                   e.preventDefault()
                   const got = dropped(e)
                   // A root needs the whole path, and only some browsers give it.
-                  if (!got.path) { say?.('이 브라우저는 끌어온 폴더의 경로를 알려주지 않습니다 — Finder에서 폴더를 고르고 ⌥⌘C 로 경로를 복사해 + 루트 칸에 붙여넣으세요.'); return }
+                  if (!got.path) { say?.(tr("rk_browser_no_path")); return }
                   const p = got.path
                   setRoots((s) => ({ ...s, [k]: [...(s[k] || []).filter((x) => str(x).trim() && x !== p), p] }))
                 }}>
-              <RackTextRows value={roots[k] || []} add="+ 루트" width={560}
+              <RackTextRows value={roots[k] || []} add={tr("rk_add_root")} width={560}
                 placeholder={isFolder ? '/Users/…/Academic Activities' : '/Users/…/Papers'}
                 onChange={(v) => setRoots((s) => ({ ...s, [k]: v }))} />
-              <span className="rl-hint">
-                {isFolder ? '이 폴더들 바로 아래의 폴더가 같은 이름의 항목과 연결됩니다. ' : ''}
-                이 폴더들 안의 파일만 서비스가 읽습니다. 심볼릭 링크를 풀어 확인하므로 루트 밖을 가리키는 링크는 거부됩니다.
-                {' '}경로는 Finder에서 폴더를 고르고 ⌥⌘C 로 복사해 붙여넣으면 됩니다. 루트를 바꿔도 폴더는 옮겨지지 않습니다{isFolder ? ' — 새 폴더는 첫 번째 루트에 만들어집니다' : ''}.
-              </span>
+              <span className="rl-hint">{isFolder ? tr('rk_roots_hint_folders') : tr('rk_roots_hint_files')}</span>
               </div>
             </RackField>
           )
@@ -529,14 +527,12 @@ export function RackSettings({ def, doc, folders, onSave, say, onReload, onOpenF
           const orphans = dirs.filter((d) => !named.has(d)).sort()
           const linked = dirs.length - orphans.length
           return (
-            <RackField key={`${f.k}:state`} label={`${f.label} 연결`}>
+            <RackField key={`${f.k}:state`} label={tr("rk_x_links", f.label)}>
               <div className="rl-rows">
-                <span className="rl-hint rl-mono">
-                  폴더 {dirs.length} · 연결 {linked} · 폴더 없는 {def.item.noun} {Math.max(0, items.length - linked)}
-                </span>
+                <span className="rl-hint rl-mono">{tr("rk_folder_stats", dirs.length, linked, def.item.noun, Math.max(0, items.length - linked))}</span>
                 {orphans.length === 0
-                  ? <span className="rl-hint">주인 없는 폴더 없음 — 모든 폴더가 {def.item.noun}과(와) 연결되어 있습니다.</span>
-                  : <span className="rl-hint">주인 없는 폴더 — {def.item.noun}의 이름이나 폴더 이름을 고치면 연결됩니다:</span>}
+                  ? <span className="rl-hint">{tr("rk_no_orphans", def.item.noun)}</span>
+                  : <span className="rl-hint">{tr("rk_orphans", def.item.noun)}</span>}
                 {orphans.map((d) => (
                   <div key={d} className="rl-rrow">
                     <button type="button" className="rl-lnk rl-mono" onClick={() => onOpenFolder?.(d)}>{d}</button>
@@ -547,24 +543,20 @@ export function RackSettings({ def, doc, folders, onSave, say, onReload, onOpenF
           )
         })}
         {finders.map(({ f }) => (
-          <RackField key={`${f.k}:state`} label={`${f.label} 연결`}>
+          <RackField key={`${f.k}:state`} label={tr("rk_x_links", f.label)}>
             <div className="rl-rows">
-              <span className="rl-hint">
-                위의 <b>루트를 훑어 연결</b>이 저장된 루트를 훑어, 이름이 {f.find}와 같은 파일을 연결합니다.
-              </span>
+              <span className="rl-hint">{tr("rk_above")} <b>{tr("rk_scan_and_link")}</b>{tr("rk_scan_hint", f.find)}</span>
               {found && (
-                <span className="rl-hint">
-                  파일 {found.files}개 · 새로 연결 {found.linked} · 이미 있던 것 {found.already}
-                </span>
+                <span className="rl-hint">{tr("rk_scan_stats", found.files, found.linked, found.already)}</span>
               )}
             </div>
           </RackField>
         ))}
-        <RackField label="문서">
+        <RackField label={tr("rk_documents")}>
           <span className="rl-hint rl-mono">
             {def.item.noun} {items.length}
             {def.classes.filter((c) => c.stored).map((c) => ` · ${c.label} ${(doc[c.k] || []).length}`).join('')}
-            {fields.filter(({ f }) => f.type === 'file').map(({ f }) => ` · ${f.label} 연결 ${items.filter((r) => filePath(r[f.k])).length}`).join('')}
+            {fields.filter(({ f }) => f.type === 'file').map(({ f }) => tr("rk_x_linked_n", f.label, items.filter((r) => filePath(r[f.k])).length)).join('')}
             {' · '}version {doc.version}
           </span>
         </RackField>

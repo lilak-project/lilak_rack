@@ -1,5 +1,7 @@
+import './strings.js'
 import { useState } from 'react'
 import { fill } from './sort.js'
+import { tr } from '../i18n.jsx'
 
 /**
  * [나열] — the drawer under a table that turns its records into text by a rule.
@@ -12,7 +14,7 @@ import { fill } from './sort.js'
  *   presets   [[label, template, separator]] — ⏎ in a separator is a newline
  *   tokens    { name: (rec) => string }
  */
-export function RackListing({ list, picked, tokens, presets = [], say, open, setOpen, unit = '개', extra }) {
+export function RackListing({ list, picked, tokens, presets = [], say, open, setOpen, unit = tr("rk_unit_items"), extra }) {
   const first = presets[0] || ['', Object.keys(tokens).slice(0, 2).map((k) => `{${k}}`).join(' '), ', ']
   const [tpl, setTpl] = useState(first[1])
   const [sep, setSep] = useState(first[2] ?? ', ')
@@ -21,9 +23,9 @@ export function RackListing({ list, picked, tokens, presets = [], say, open, set
   const none = list.length === 0
 
   async function copy() {
-    if (!out) { say?.('나열할 것이 없습니다.'); return }
-    try { await navigator.clipboard.writeText(out); say?.('복사했습니다.') }
-    catch { say?.('복사 실패 — 직접 선택해 복사하세요.') }
+    if (!out) { say?.(tr("rk_nothing_to_list")); return }
+    try { await navigator.clipboard.writeText(out); say?.(tr("rk_copied")) }
+    catch { say?.(tr("rk_copy_failed")) }
   }
 
   return (
@@ -33,8 +35,8 @@ export function RackListing({ list, picked, tokens, presets = [], say, open, set
       <button type="button" className={`rl-outhead${open ? ' on' : ''}`} onClick={() => setOpen(!open)}
         aria-expanded={open}>
         <i className="rl-caret">{open ? '▾' : '▸'}</i>
-        <span>나열</span>
-        <span className="rl-hint">{picked ? `선택한 ${list.length}${unit}` : `${list.length}${unit}`}</span>
+        <span>{tr("rk_listing")}</span>
+        <span className="rl-hint">{picked ? tr("rk_selected_n", list.length, unit) : `${list.length}${unit}`}</span>
       </button>
       {open && (<>
         <div className="rl-outbar">
@@ -47,13 +49,13 @@ export function RackListing({ list, picked, tokens, presets = [], say, open, set
           <button type="button" className="rl-btn" disabled={!out} onClick={copy}>copy</button>
         </div>
         <div className="rl-rule-line">
-          <span className="rl-hint">나열 규칙</span>
+          <span className="rl-hint">{tr("rk_listing_rule")}</span>
           <input className="rl-in rl-mono" style={{ flex: 1, minWidth: 180 }} value={tpl}
             onChange={(e) => setTpl(e.target.value)} />
-          <span className="rl-hint">사이</span>
+          <span className="rl-hint">{tr("rk_between")}</span>
           <input className="rl-in rl-mono" style={{ width: 66 }} value={sep}
-            onChange={(e) => setSep(e.target.value)} title="구분기호" />
-          <button type="button" className="rl-btn" title="줄바꿈 추가"
+            onChange={(e) => setSep(e.target.value)} title={tr("rk_separator")} />
+          <button type="button" className="rl-btn" title={tr("rk_add_newline")}
             onClick={() => setSep((v) => `${v}⏎`)}>+⏎</button>
         </div>
         <div className="rl-tokens">
@@ -63,7 +65,7 @@ export function RackListing({ list, picked, tokens, presets = [], say, open, set
           ))}
         </div>
         <textarea className="rl-outbox" value={out} readOnly
-          placeholder={none ? '이 탭에 아무것도 없습니다.' : ''} />
+          placeholder={none ? tr("rk_tab_empty") : ''} />
       </>)}
     </div>
   )

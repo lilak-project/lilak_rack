@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import './strings.js'
+import { tr, currentLang } from '../i18n.jsx'
 import { RackTextRows } from './fields.jsx'
-import { authHeaders, openInService } from './portal.js'
+import { authHeaders, openInService, serviceColor } from './portal.js'
+import { parseRule, describe, withUntil, withCount, withoutEnd, DAYS, dow, nth } from './rrule.js'
 
 /**
  * Field types — what a property of an [항목] IS, said once.
@@ -47,36 +50,59 @@ const BASE = {
 }
 
 // ─── one value ────────────────────────────────────────────────────────────
-function Input({ value, onChange, field, type = 'text', width }) {
+/** `grow`: as wide as the line leaves it (what is typed is text, and long). */
+function Input({ value, onChange, field, type = 'text', width, grow, placeholder, inputMode, maxLength }) {
   return (
-    <input className={`rl-in${field.mono ? ' rl-mono' : ''}`} type={type}
-      style={{ width: field.width || width }} value={str(value)}
-      placeholder={field.placeholder || ''}
+    <input className={`rl-in${field.mono ? ' rl-mono' : ''}`} type={type} inputMode={inputMode} maxLength={maxLength}
+      style={field.width ? { width: field.width } : grow ? { flex: '1 1 220px', minWidth: 0 } : { width }}
+      value={str(value)}
+      placeholder={placeholder || field.placeholder || ''}
       onChange={(e) => onChange(e.target.value)} />
   )
 }
 
-/** `href: (v) => url` puts a link beside it (a doi → doi.org). */
+/** `href: (v) => url` puts a link beside it (a doi → doi.org). `make: (rec)
+ *  => value` puts a button beside it that writes the value by a rule (a name
+ *  from the kind, the date and the title); `makeLabel` names the button. */
 registerType('text', {
-  Edit: (p) => (
-    <>
-      <Input {...p} width={320} />
-      {p.field.href && str(p.value).trim() && (
-        <a className="rl-hint" href={p.field.href(str(p.value).trim())} target="_blank" rel="noreferrer">열기</a>
-      )}
-    </>
-  ),
+  Edit: (p) => {
+    const made = p.field.make ? str(p.field.make(p.rec || {})) : ''
+    return (
+      <>
+        <Input {...p} grow />
+        {p.field.href && str(p.value).trim() && (
+          <a className="rl-hint" href={p.field.href(str(p.value).trim())} target="_blank" rel="noreferrer">{tr("rk_open")}</a>
+        )}
+        {p.field.make && (
+          <button type="button" className="rl-btn" disabled={!made || made === str(p.value)}
+            title={made || tr("rk_rule_values_empty")} onClick={() => p.onChange(made)}>{p.field.makeLabel || tr("rk_generate")}</button>
+        )}
+      </>
+    )
+  },
   tidy: (v) => str(v).trim(),
 })
 
 registerType('longtext', {
   cell: (v) => (str(v).split('\n')[0] || D),
-  Edit: ({ value, onChange, field }) => (
-    <textarea className="rl-in" rows={field.rows || 3} style={{ width: '100%', minWidth: 260 }}
+  Edit: (p) => <GrowText {...p} />,
+})
+
+/** A text box as tall as its lines — it grows as you type, not by dragging. */
+function GrowText({ value, onChange, field }) {
+  const ref = useRef(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`   // + its borders
+  }, [value])
+  return (
+    <textarea ref={ref} className="rl-in rl-grow" rows={field.rows || 2} style={{ width: '100%', minWidth: 260 }}
       value={str(value)} placeholder={field.placeholder || ''}
       onChange={(e) => onChange(e.target.value)} />
-  ),
-})
+  )
+}
 
 registerType('number', {
   // Numbers sort as numbers: 9 before 10, and a blank last rather than first.
@@ -87,30 +113,48 @@ registerType('number', {
 
 /** '과' after a final consonant, '와' after a vowel: 행사 시작과, 마감일과… */
 const withGwa = (w) => {
+  if (currentLang() !== 'ko') return str(w)          // other languages carry no particle
   const c = str(w).trim().slice(-1).charCodeAt(0)
   return `${w}${c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 !== 0 ? '과' : '와'}`
 }
 
 /** `same: 'start'` puts a button beside it that copies that field's date —
- *  a talk on the first day, a trip as long as the meeting. */
+ *  a talk on the first day, a trip as long as the meeting; `same: ['start',
+ *  'end']` puts one for each. */
 registerType('date', {
   // ISO dates already sort as text; the cell keeps the date part only.
   text: (v) => str(v).slice(0, 10),
   Edit: (p) => {
-    const from = p.field.same
-    const src = from && (p.ctx?.def?.item?.fields || []).find((f) => f.k === from)
-    const v = from ? str(p.rec?.[from]) : ''
+    const froms = [p.field.same].flat().filter(Boolean)
+    const fields = p.ctx?.def?.item?.fields || []
     return (
       <>
         <Input {...p} type="date" width={150} />
-        {from && (
-          <button type="button" className="rl-btn" disabled={!v || v === str(p.value)}
-            title={v ? `${v}` : `${src?.label || from}이(가) 비어 있습니다`}
-            onClick={() => p.onChange(v)}>{withGwa(src?.label || from)} 같음</button>
-        )}
+        {froms.map((from) => {
+          const src = fields.find((f) => f.k === from)
+          const v = str(p.rec?.[from])
+          return (
+            <button key={from} type="button" className="rl-btn" disabled={!v || v === str(p.value)}
+              title={v ? `${v}` : tr("rk_is_empty", src?.label || from)}
+              onClick={() => p.onChange(v)}>{tr("rk_same_as", withGwa(src?.label || from))}</button>
+          )
+        })}
       </>
     )
   },
+})
+
+/** A time of day, 'HH:MM' — what sorts as text, as a date does. */
+// Typed, not the browser's picker, which shows 오후 02:30 by the OS locale:
+// 930, 0930, 9:30 and 14.30 all become 09:30 / 14:30 when saved; 14 → 14:00.
+const hhmm = (v) => {
+  const t = str(v).trim()
+  const m = t.match(/^(\d{1,2})(?:\D?(\d{2}))?$/)
+  return m ? `${m[1].padStart(2, '0')}:${m[2] || '00'}` : t
+}
+registerType('time', {
+  Edit: (p) => <Input {...p} width={64} placeholder="--:--" inputMode="numeric" maxLength={5} />,
+  tidy: hhmm,
 })
 
 /** `short: 'link'` shows that word in the table instead of the address —
@@ -122,15 +166,15 @@ registerType('url', {
   ) : D),
   Edit: ({ value, onChange, field }) => (
     <>
-      <Input value={value} onChange={onChange} field={field} type="url" width={320} />
-      {/^https?:\/\//.test(str(value)) && (
-        <a className="rl-hint" href={str(value)} target="_blank" rel="noreferrer">열기</a>
-      )}
+      <Input value={value} onChange={onChange} field={field} type="url" grow />
+      {/^https?:\/\//.test(str(value))
+        ? <a className="rl-btn" href={str(value)} target="_blank" rel="noreferrer">{tr("rk_open")}</a>
+        : <button type="button" className="rl-btn" disabled>{tr("rk_open")}</button>}
     </>
   ),
 })
 
-registerType('email', { Edit: (p) => <Input {...p} type="email" width={260} /> })
+registerType('email', { Edit: (p) => <Input {...p} type="email" grow /> })
 
 registerType('check', {
   empty: () => false,
@@ -142,21 +186,35 @@ registerType('check', {
   ),
 })
 
-/** One of a fixed set — `options: ['paper', 'thesis']` or [[value, label]]. */
+/** One of a fixed set — `options: ['paper', 'thesis']` or [[value, label]];
+ *  `{ group, options }` among them is a run of options under a heading. */
+const flatOptions = (opts) => (opts || []).flatMap((o) => (o?.group ? o.options : [o]))
+const option = (o) => {
+  const [v, l] = Array.isArray(o) ? o : [o, o]
+  return <option key={v} value={v}>{l}</option>
+}
 registerType('select', {
   text(v, ctx) {
-    const o = (ctx.field.options || []).find((x) => (Array.isArray(x) ? x[0] : x) === v)
+    const o = flatOptions(ctx.field.options).find((x) => (Array.isArray(x) ? x[0] : x) === v)
     return Array.isArray(o) ? o[1] : str(v)
   },
-  Edit: ({ value, onChange, field }) => (
-    <select className="rl-in" value={str(value)} onChange={(e) => onChange(e.target.value)}>
-      {!field.required && <option value="">—</option>}
-      {(field.options || []).map((o) => {
-        const [v, l] = Array.isArray(o) ? o : [o, o]
-        return <option key={v} value={v}>{l}</option>
-      })}
-    </select>
-  ),
+  // A value no longer among the options (a kind since taken out) still shows,
+  // marked, rather than reading as empty.
+  Edit: ({ value, onChange, field }) => {
+    const gone = str(value) && !flatOptions(field.options).some((o) => (Array.isArray(o) ? o[0] : o) === str(value))
+    return (
+      <>
+        <select className="rl-in" value={str(value)} onChange={(e) => onChange(e.target.value)}>
+          {!field.required && <option value="">—</option>}
+          {(field.options || []).map((o) => (o?.group
+            ? <optgroup key={o.group} label={o.group}>{o.options.map(option)}</optgroup>
+            : option(o)))}
+          {gone && <option value={str(value)}>{str(value)}</option>}
+        </select>
+        {gone && <span className="rl-hint rl-warn">{tr("rk_not_in_list", field.label || tr("rk_value"))}</span>}
+      </>
+    )
+  },
 })
 
 // ─── names a record wears ─────────────────────────────────────────────────
@@ -202,7 +260,7 @@ function Chips({ value, onChange, field, ctx, single }) {
     setAdd('')
   }
   return (
-    <div className="rl-rows">
+    <div className="rl-rows rl-chips">
       <div className="rl-rrow">
         {vals.map((t) => (
           <span key={t} className="rl-tag">
@@ -211,15 +269,15 @@ function Chips({ value, onChange, field, ctx, single }) {
               ? <button type="button" className="rl-lnk" onClick={() => ctx.openClass(field.of, classRec(field, ctx, t).id || t)}>
                 {nameOf(field, ctx, t)}</button>
               : t}
-            <button type="button" className="rl-x" title="떼기"
+            <button type="button" className="rl-x" title={tr("rk_detach")}
               onClick={() => onChange(single ? '' : vals.filter((x) => x !== t))}>×</button>
           </span>
         ))}
-        {vals.length === 0 && <span className="rl-hint">없음</span>}
+        {vals.length === 0 && <span className="rl-hint">{tr("rk_none")}</span>}
       </div>
       {(!single || vals.length === 0) && (
         <div className="rl-rrow">
-          <input className="rl-in" style={{ width: 220 }} list={id} value={add}
+          <input className="rl-in" style={{ flex: '1 1 220px', minWidth: 0 }} list={id} value={add}
             placeholder={field.placeholder || field.label || ''} onChange={(e) => setAdd(e.target.value)}
             onBlur={put} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); put() } }} />
           <datalist id={id}>{options.map((t) => <option key={t} value={t} />)}</datalist>
@@ -246,9 +304,47 @@ registerType('class', {
     const rec = classRec(ctx.field, ctx, v)
     return rec ? str((ctx.field.show && rec[ctx.field.show]) || rec.name || v) : str(v)
   },
-  Edit: (p) => <Chips {...p} single />,
+  Edit: (p) => (p.field.pick ? <Pick {...p} /> : <Chips {...p} single />),
   tidy: (v) => str(v).trim(),
 })
+
+/** `pick: true` on a class: chosen from the names in use, as a 구분 is — or
+ *  typed, when it is a new one. `options` are offered first, used or not;
+ *  `options: (rec) => [...]` offers only those, as fit this record (a role its
+ *  kind allows), and says so when the value is not among them. */
+const NEW = '\u0001new'
+function Pick({ value, onChange, field, ctx, rec }) {
+  const only = typeof field.options === 'function' ? field.options(rec || {}) : null
+  const cur = nameOf(field, ctx, value)
+  const options = useMemo(() => (only
+    ? [...new Set([...only, ...(cur ? [cur] : [])])]
+    : [...new Set([...(field.options || []), ...namesFor(field, ctx)])]), [field, ctx, only, cur])
+  const off = only && cur && !only.includes(cur)
+  const [typing, setTyping] = useState(false)
+  const [t, setT] = useState('')
+  if (typing) {
+    const done = () => { if (t.trim()) onChange(storedFor(field, ctx, t.trim())); setTyping(false); setT('') }
+    return (
+      <input className="rl-in" autoFocus style={{ width: 220 }} value={t} placeholder={tr("rk_new_name")}
+        onChange={(e) => setT(e.target.value)} onBlur={done}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); done() }
+          if (e.key === 'Escape') { setTyping(false); setT('') }
+        }} />
+    )
+  }
+  return (
+    <>
+      <select className="rl-in" value={cur}
+        onChange={(e) => (e.target.value === NEW ? setTyping(true) : onChange(storedFor(field, ctx, e.target.value)))}>
+        <option value="">—</option>
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+        <option value={NEW}>{tr("rk_type_your_own")}</option>
+      </select>
+      {off && <span className="rl-hint rl-warn">{tr("rk_not_in_kind", field.label || tr("rk_value"))}</span>}
+    </>
+  )
+}
 
 /** Several names from a class. */
 registerType('classes', {
@@ -287,7 +383,7 @@ registerType('rows', {
     const blank = () => Object.fromEntries(subs.map((s) => [s.k, typeOf(s).empty()]))
     return (
       <div className="rl-rows">
-        {rows.length === 0 && <span className="rl-hint">없음</span>}
+        {rows.length === 0 && <span className="rl-hint">{tr("rk_none")}</span>}
         {rows.map((e, i) => (
           <div key={i} className="rl-rrow">
             {subs.map((s) => {
@@ -295,7 +391,7 @@ registerType('rows', {
               return <T.Edit key={s.k} value={e?.[s.k]} field={{ ...s, width: s.width || 140 }}
                 ctx={{ ...ctx, field: s }} onChange={(v) => put(i, s.k, v)} />
             })}
-            <button type="button" className="rl-x" title="이 줄 지우기"
+            <button type="button" className="rl-x" title={tr("rk_delete_row")}
               onClick={() => onChange(rows.filter((_, j) => j !== i))}>×</button>
           </div>
         ))}
@@ -321,7 +417,7 @@ const kb = (n) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)}MB` : `${Ma
 const dataUrl = (file) => new Promise((res, rej) => {
   const r = new FileReader()
   r.onload = () => res(r.result)
-  r.onerror = () => rej(new Error('읽지 못했습니다.'))
+  r.onerror = () => rej(new Error(tr("rk_read_failed")))
   r.readAsDataURL(file)
 })
 function download(data, name) {
@@ -341,25 +437,25 @@ function Files({ value, onChange, field, ctx }) {
     e.target.value = ''
     const added = []
     for (const f of got) {
-      if (f.size > cap) { ctx.say?.(`${f.name} 은 ${kb(cap)}보다 큽니다 — 문서 전체가 매번 저장되므로 받지 않습니다.`); continue }
+      if (f.size > cap) { ctx.say?.(tr("rk_file_too_big", f.name, kb(cap))); continue }
       added.push({ name: f.name, type: f.type, size: f.size, data: await dataUrl(f) })
     }
     if (added.length) onChange([...files, ...added])
   }
   return (
     <div className="rl-rows">
-      {files.length === 0 && <span className="rl-hint">없음</span>}
+      {files.length === 0 && <span className="rl-hint">{tr("rk_none")}</span>}
       {files.map((f, i) => (
         <div key={`${f.name}-${i}`} className="rl-rrow">
           <button type="button" className="rl-btn" onClick={() => download(f.data, f.name)}>{f.name}</button>
           <span className="rl-hint">{f.size ? kb(f.size) : ''}</span>
-          <button type="button" className="rl-x" title="지우기"
+          <button type="button" className="rl-x" title={tr("rk_delete")}
             onClick={() => onChange(files.filter((_, j) => j !== i))}>×</button>
         </div>
       ))}
-      <button type="button" className="rl-btn" onClick={() => pick.current?.click()}>+ 파일</button>
+      <button type="button" className="rl-btn" onClick={() => pick.current?.click()}>{tr("rk_add_file")}</button>
       <input ref={pick} type="file" multiple hidden accept={field.accept} onChange={add} />
-      <span className="rl-hint">한 개 {kb(cap)}까지.</span>
+      <span className="rl-hint">{tr("rk_one_file_up_to", kb(cap))}</span>
     </div>
   )
 }
@@ -432,7 +528,7 @@ export function refLabelOf(link, field, ctx) {
   if (!id) return (typeof link === 'object' && link?.label) || ''
   const src = t.local ? ctx.doc : ctx.remote?.[`${t.svc}/${t.proj}`]
   const rec = (src?.[t.item] || []).find((r) => r.id === id)
-  return rec ? labelWith(t.label)(rec) : (typeof link === 'object' && link?.label) || '(없는 항목)'
+  return rec ? labelWith(t.label)(rec) : (typeof link === 'object' && link?.label) || tr("rk_missing_item")
 }
 
 function RefEdit({ value, onChange, field, ctx }) {
@@ -450,7 +546,7 @@ function RefEdit({ value, onChange, field, ctx }) {
     else onChange(mk(o))
     setQ('')
   }
-  const name = (l) => (l.id ? options.find((o) => o.id === l.id)?.label : null) || l.label || '(없는 항목)'
+  const name = (l) => (l.id ? options.find((o) => o.id === l.id)?.label : null) || l.label || tr("rk_missing_item")
   // A name the other side does not have can still be written down; it shows as
   // plain text and links the moment someone with that name is picked instead.
   const putName = () => {
@@ -461,34 +557,34 @@ function RefEdit({ value, onChange, field, ctx }) {
     setQ('')
   }
   return (
-    <div className="rl-rows">
+    <div className="rl-rows rl-chips">
       <div className="rl-rrow">
         {links.map((l) => (
           <span key={l.id || `name:${l.label}`} className={`rl-tag${l.id ? '' : ' rl-unlinked'}`}
-            title={l.id ? '' : '연결된 항목 없이 이름만'}>
+            title={l.id ? '' : tr("rk_name_only_no_link")}>
             {t.local && l.id && ctx.openItem
               ? <button type="button" className="rl-lnk" onClick={() => ctx.openItem(l.id)}>{name(l)}</button>
               // A record in another service: press it and you are there.
               : !t.local && l.id
-                ? <button type="button" className="rl-lnk" title={`${t.svc} 에서 열기`}
+                ? <button type="button" className="rl-lnk" title={tr("rk_open_in", t.svc)}
                   onClick={() => openInService(l.svc || t.svc, l.proj || t.proj, l.id)}>{name(l)}</button>
                 : name(l)}
-            <button type="button" className="rl-x" title="연결 끊기"
+            <button type="button" className="rl-x" title={tr("rk_unlink")}
               onClick={() => onChange(field.many ? links.filter((x) => x !== l) : null)}>×</button>
           </span>
         ))}
-        {links.length === 0 && <span className="rl-hint">{t.svc ? `${t.svc} 의 항목과 연결` : '없음'}</span>}
+        {links.length === 0 && <span className="rl-hint">{t.svc ? tr("rk_link_to_items_of", t.svc) : tr("rk_none")}</span>}
       </div>
       {(field.many || links.length === 0) && (
         <div className="rl-rrow">
-          <input className="rl-in" style={{ width: 280 }} list={id} value={q}
-            placeholder={options.length ? '찾아서 고르기' : '읽는 중…'}
+          <input className="rl-in" style={{ flex: '1 1 220px', minWidth: 0 }} list={id} value={q}
+            placeholder={options.length ? tr("rk_search_and_pick") : tr("rk_loading")}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); put() } }} />
           <datalist id={id}>{options.map((o) => <option key={o.id} value={o.label} />)}</datalist>
-          <button type="button" className="rl-btn" onClick={put} disabled={!byLabel.has(q.trim())}>연결</button>
+          <button type="button" className="rl-btn" onClick={put} disabled={!byLabel.has(q.trim())}>{tr("rk_link")}</button>
           {field.names && q.trim() && !byLabel.has(q.trim()) && (
-            <button type="button" className="rl-btn" onClick={putName}>이름만 적기</button>
+            <button type="button" className="rl-btn" onClick={putName}>{tr("rk_name_only")}</button>
           )}
         </div>
       )}
@@ -514,7 +610,7 @@ function refCell(v, ctx) {
     <span key={l.id || `n${i}`}>
       {i > 0 && ', '}
       {l.id ? (
-        <button type="button" className="rl-lnk" title={`${t.svc} 에서 열기`}
+        <button type="button" className="rl-lnk" title={tr("rk_open_in", t.svc)}
           onClick={(e) => { e.stopPropagation(); openInService(l.svc || t.svc, l.proj || t.proj, l.id) }}>
           {refLabelOf(l, ctx.field, ctx)}
         </button>
@@ -550,20 +646,20 @@ registerType('members', {
     const ids = list(value)
     return (
       <div className="rl-rows">
-        {ids.length === 0 && <span className="rl-hint">비어 있습니다 — 표에서 고른 뒤 "목록에 넣기"로 담습니다.</span>}
+        {ids.length === 0 && <span className="rl-hint">{tr("rk_list_empty_hint")}</span>}
         {ids.map((id) => {
           const r = byId.get(id)
           return (
             <div key={id} className="rl-rrow">
               {r ? <button type="button" className="rl-lnk rl-mono" onClick={() => ctx.openItem?.(id)}>{itemLabel(def, r)}</button>
-                : <span className="rl-hint">(없는 항목 {id})</span>}
+                : <span className="rl-hint">{tr("rk_missing_item_id", id)}</span>}
               {r && field.show && <span className="rl-hint">{field.show(r)}</span>}
-              <button type="button" className="rl-x" title="목록에서 빼기 (항목은 그대로)"
+              <button type="button" className="rl-x" title={tr("rk_remove_from_list")}
                 onClick={() => onChange(ids.filter((x) => x !== id))}>×</button>
             </div>
           )
         })}
-        {ids.length > 0 && <span className="rl-hint">{ids.length}개</span>}
+        {ids.length > 0 && <span className="rl-hint">{tr("rk_n", ids.length)}</span>}
       </div>
     )
   },
@@ -592,7 +688,7 @@ function shrink(file) {
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
       res(c.toDataURL('image/jpeg', 0.82))
     }
-    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('읽지 못했습니다.')) }
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error(tr("rk_read_failed"))) }
     img.src = url
   })
 }
@@ -603,26 +699,26 @@ function Shot({ value, onChange, field, ctx }) {
     if (!file) return
     try {
       const data = await shrink(file)
-      if (data.length > SHOT_CAP * 1.4) { ctx.say?.('사진이 너무 큽니다.'); return }
+      if (data.length > SHOT_CAP * 1.4) { ctx.say?.(tr("rk_photo_too_big")); return }
       onChange(data)
     } catch (e) { ctx.say?.(String(e.message || e)) }
   }
   return (
     <span className="rl-shot">
       {value ? (
-        <button type="button" className="rl-shot-img" title="크게 보기" onClick={() => setBig(true)}>
+        <button type="button" className="rl-shot-img" title={tr("rk_view_large")} onClick={() => setBig(true)}>
           <img src={value} alt={field.label} />
         </button>
-      ) : <span className="rl-shot-img is-empty">없음</span>}
+      ) : <span className="rl-shot-img is-empty">{tr("rk_none")}</span>}
       <span className="rl-shot-line">
         <span className="rl-hint">{field.placeholder || field.label}</span>
-        <button type="button" className="rl-btn" onClick={() => pick.current?.click()}>{value ? '바꾸기' : '추가'}</button>
-        {value && <button type="button" className="rl-x" title="지우기" onClick={() => onChange('')}>×</button>}
+        <button type="button" className="rl-btn" onClick={() => pick.current?.click()}>{value ? tr("rk_replace") : tr("rk_add")}</button>
+        {value && <button type="button" className="rl-x" title={tr("rk_delete")} onClick={() => onChange('')}>×</button>}
       </span>
       <input ref={pick} type="file" accept="image/*" capture="environment" hidden
         onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; take(f) }} />
       {big && (
-        <button type="button" className="rl-lightbox" onClick={() => setBig(false)} title="닫기">
+        <button type="button" className="rl-lightbox" onClick={() => setBig(false)} title={tr("rk_close")}>
           <img src={value} alt="" />
         </button>
       )}
@@ -666,20 +762,20 @@ registerType('backlinks', {
     return links.map((l, i) => (
       <span key={l.id}>
         {i > 0 && ', '}
-        <button type="button" className="rl-lnk" title={`${l.svc} 에서 열기`}
+        <button type="button" className="rl-lnk" title={tr("rk_open_in", l.svc)}
           onClick={(e) => { e.stopPropagation(); openInService(l.svc, l.proj, l.id) }}>{l.label}</button>
       </span>
     ))
   },
   Show: ({ value }) => {
     const links = list(value)
-    if (!links.length) return <span className="rl-hint">없음</span>
+    if (!links.length) return <span className="rl-hint">{tr("rk_none")}</span>
     return (
       <div className="rl-rows">
         <div className="rl-rrow" style={{ flexWrap: 'wrap' }}>
           {links.map((l) => (
             <span key={l.id} className="rl-tag">
-              <button type="button" className="rl-lnk" title={`${l.svc} 에서 열기`}
+              <button type="button" className="rl-lnk" title={tr("rk_open_in", l.svc)}
                 onClick={() => openInService(l.svc, l.proj, l.id)}>{l.label}</button>
             </span>
           ))}
@@ -687,4 +783,209 @@ registerType('backlinks', {
       </div>
     )
   },
+})
+
+// ─── a note about the record, in the note service ─────────────────────────
+/** `type: 'note'` — the record's note in the note service (`svc`, `proj`;
+ *  'note' by default), named `title(rec)`. Made when asked; a note already
+ *  there by that name is the one meant, not a second. Kept as { id, title }
+ *  and found again by its id — or by its name, if the id never got saved. */
+const NOTES = new Map()           // 'svc/proj' → Promise<[{ id, title }]>
+const noteApi = (svc, proj, p, o = {}) => fetch(`/pp/${svc}/${proj}/api${p}`,
+  { ...o, headers: { 'Content-Type': 'application/json', ...authHeaders() } })
+function notesOf(svc, proj, fresh) {
+  const k = `${svc}/${proj}`
+  if (fresh || !NOTES.has(k)) {
+    NOTES.set(k, noteApi(svc, proj, '/notes').then((r) => (r.ok ? r.json() : { notes: [] }))
+      .then((d) => d.notes || []).catch(() => []))
+  }
+  return NOTES.get(k)
+}
+function NoteEdit({ value, onChange, field, rec, ctx }) {
+  const svc = field.svc || 'note', proj = field.proj || 'note'
+  const title = str(field.title ? field.title(rec || {}) : '').trim()
+  const [notes, setNotes] = useState(null)
+  const [tone, setTone] = useState('')            // the note service's colour, for its tab
+  useEffect(() => { serviceColor(svc).then(setTone) }, [svc])
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  useEffect(() => { let on = true; notesOf(svc, proj).then((n) => { if (on) setNotes(n) }); return () => { on = false } }, [svc, proj])
+  const found = notes && (notes.find((n) => value?.id && n.id === value.id) || notes.find((n) => title && n.title === title))
+  async function make() {
+    setBusy(true); setErr('')
+    try {
+      const had = (await notesOf(svc, proj, true)).find((n) => n.title === title)
+      const r = had ? null : await noteApi(svc, proj, '/notes', { method: 'POST', body: JSON.stringify({ title }) })
+      if (r && !r.ok) throw new Error(tr("rk_note_create_failed", r.status))
+      const n = had || await r.json()
+      onChange({ id: n.id, title: n.title })
+      setNotes(await notesOf(svc, proj, true))
+    } catch (e) { setErr(String(e.message || e)) } finally { setBusy(false) }
+  }
+  if (!notes) return <span className="rl-hint">{tr("rk_note_finding")}</span>
+  if (found) {
+    // 노트 열기: the note's own editor, as a tab beside this record's. Its
+    // name goes to the note service itself.
+    const open = () => (ctx?.openFrame
+      ? ctx.openFrame({ id: `note:${found.id}`, label: found.title, color: tone, src: `/pp/${svc}/${proj}/?solo=${encodeURIComponent(found.id)}` })
+      : openInService(svc, proj, found.id))
+    return (
+      <>
+        <button type="button" className="rl-lnk" title={tr("rk_open_in", svc)}
+          onClick={() => openInService(svc, proj, found.id)}>{found.title}</button>
+        <button type="button" className="rl-btn" onClick={open}>{tr("rk_note_open")}</button>
+      </>
+    )
+  }
+  return (
+    <>
+      <button type="button" className="rl-btn" disabled={!title || busy} onClick={make}>{tr("rk_note_create")}</button>
+      {title && <span className="rl-hint">{title}</span>}
+      {value?.id && <span className="rl-hint rl-warn">{tr("rk_note_gone")}</span>}
+      {err && <span className="rl-hint rl-warn">{err}</span>}
+    </>
+  )
+}
+registerType('note', {
+  empty: () => null,
+  text: (v) => str(v?.title),
+  cell: (v, ctx) => (v?.id ? (
+    <button type="button" className="rl-lnk" title={v.title}
+      onClick={(e) => { e.stopPropagation(); openInService(ctx.field.svc || 'note', ctx.field.proj || 'note', v.id) }}>{tr("rk_note")}</button>
+  ) : D),
+  Edit: (p) => <NoteEdit {...p} />,
+  tidy: (v) => (v?.id ? { id: v.id, title: str(v.title) } : null),
+})
+
+// ─── a record that repeats ────────────────────────────────────────────────
+/** `type: 'repeat'` — { rule: RRULE text, ex: [days taken out] } or null
+ *  (rrule.js). Edited the way a calendar asks it: how often, on which days,
+ *  until when; a rule nobody can say that way (one from Google) is shown and
+ *  edited as its text. `start` names the field the record starts on. */
+function RepeatEdit({ value, onChange, field, rec }) {
+  const v = value?.rule ? value : null
+  const start = String(rec?.[field.start || 'start'] || '').slice(0, 10)
+  const r = v ? parseRule(v.rule) : null
+  const sdow = start ? new Date(`${start}T00:00:00Z`).getUTCDay() : 1
+  const sdom = start ? Number(start.slice(8)) : 1
+  const snth = Math.ceil(sdom / 7)
+  // Plain enough for the form: one freq, plain weekdays in a week, one 'nth
+  // weekday' or the start's day in a month — anything else is the rule's text.
+  const plain = !r || (['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].includes(r.freq) && !r.bymonth.length
+    && (r.freq === 'WEEKLY' ? r.byday.every((x) => !x.n) && !r.bymonthday.length
+      : r.freq === 'MONTHLY' ? (r.byday.length <= 1 && r.byday.every((x) => x.n) && !r.bymonthday.length)
+        || (!r.byday.length && (!r.bymonthday.length || (r.bymonthday.length === 1 && r.bymonthday[0] === sdom)))
+        : !r.byday.length && !r.bymonthday.length))
+  const [raw, setRaw] = useState(!plain)
+  const put = (rule, ex = v?.ex || []) => onChange(rule ? { rule, ex } : null)
+  const build = (o) => {
+    const p = { freq: r?.freq || 'WEEKLY', interval: r?.interval || 1, days: r?.byday?.filter((x) => !x.n).map((x) => x.d) || [],
+      nth: r?.freq === 'MONTHLY' && r.byday.length ? r.byday[0] : null, until: r?.until || '', count: r?.count || 0, ...o }
+    const parts = [`FREQ=${p.freq}`]
+    if (p.interval > 1) parts.push(`INTERVAL=${p.interval}`)
+    if (p.freq === 'WEEKLY' && p.days.length) parts.push(`BYDAY=${[...new Set(p.days)].sort().map((d) => DAYS[d]).join(',')}`)
+    if (p.freq === 'MONTHLY' && p.nth) parts.push(`BYDAY=${p.nth.n}${DAYS[p.nth.d]}`)
+    let rule = parts.join(';')
+    if (p.until) rule = withUntil(rule, p.until)
+    else if (p.count) rule = withCount(rule, p.count)
+    return rule
+  }
+  const freq = r?.freq || ''
+  const end = r?.until ? 'until' : r?.count ? 'count' : 'none'
+  return (
+    <div className="rl-repeat">
+      <div className="rl-rrow">
+        <select className="rl-in" value={raw ? 'RAW' : freq}
+          onChange={(e) => {
+            const f = e.target.value
+            if (f === 'RAW') { setRaw(true); if (!v) put('FREQ=WEEKLY'); return }
+            setRaw(false)
+            put(f ? build({ freq: f, days: [], nth: null }) : '')
+          }}>
+          <option value="">{tr("rk_no_repeat")}</option>
+          <option value="DAILY">{tr("rk_every_DAILY")}</option>
+          <option value="WEEKLY">{tr("rk_every_WEEKLY")}</option>
+          <option value="MONTHLY">{tr("rk_every_MONTHLY")}</option>
+          <option value="YEARLY">{tr("rk_every_YEARLY")}</option>
+          <option value="RAW">{tr("rk_raw_rule")}</option>
+        </select>
+        {v && !raw && (
+          <>
+            <input className="rl-in" type="number" min={1} style={{ width: 56 }} value={r.interval}
+              onChange={(e) => put(build({ interval: Math.max(1, Number(e.target.value) || 1) }))} />
+            <span className="rl-hint">{tr(`rk_every_unit_${freq}`)}</span>
+          </>
+        )}
+        {v && raw && (
+          <input className="rl-in rl-mono" style={{ flex: '1 1 260px', minWidth: 0 }} value={v.rule}
+            onChange={(e) => put(e.target.value.replace(/^RRULE:/i, '').trim() || 'FREQ=WEEKLY')} />
+        )}
+      </div>
+      {v && !raw && freq === 'WEEKLY' && (
+        <div className="rl-rrow">
+          {DAYS.map((_, d) => {
+            const on = r.byday.length ? r.byday.some((x) => x.d === d) : d === sdow
+            return (
+              <button key={d} type="button" className={`rl-btn rl-day${on ? ' on' : ''}`}
+                onClick={() => {
+                  const cur = r.byday.length ? r.byday.map((x) => x.d) : [sdow]
+                  const next = on ? cur.filter((x) => x !== d) : [...cur, d]
+                  put(build({ days: next.length ? next : [sdow] }))
+                }}>{dow(d)}</button>
+            )
+          })}
+        </div>
+      )}
+      {v && !raw && freq === 'MONTHLY' && (
+        <div className="rl-rrow">
+          <select className="rl-in" value={r.byday.length ? 'nth' : 'day'}
+            onChange={(e) => put(build({ nth: e.target.value === 'nth' ? { n: snth > 4 ? -1 : snth, d: sdow } : null }))}>
+            <option value="day">{tr('rk_monthly_on_day', sdom)}</option>
+            <option value="nth">{tr('rk_monthly_on_nth', nth(snth > 4 ? -1 : snth), dow(sdow))}</option>
+          </select>
+        </div>
+      )}
+      {v && !raw && (
+        <div className="rl-rrow">
+          <select className="rl-in" value={end}
+            onChange={(e) => {
+              const m = e.target.value
+              put(m === 'until' ? withUntil(v.rule, start || new Date().toISOString().slice(0, 10))
+                : m === 'count' ? withCount(v.rule, 10) : withoutEnd(v.rule))
+            }}>
+            <option value="none">{tr("rk_no_end")}</option>
+            <option value="until">{tr("rk_end_until")}</option>
+            <option value="count">{tr("rk_end_count")}</option>
+          </select>
+          {end === 'until' && (
+            <input className="rl-in" type="date" value={r.until} onChange={(e) => put(withUntil(v.rule, e.target.value))} />
+          )}
+          {end === 'count' && (
+            <>
+              <input className="rl-in" type="number" min={1} style={{ width: 64 }} value={r.count}
+                onChange={(e) => put(withCount(v.rule, Math.max(1, Number(e.target.value) || 1)))} />
+              <span className="rl-hint">{tr("rk_times_unit")}</span>
+            </>
+          )}
+        </div>
+      )}
+      {v && <span className="rl-hint">{describe(v.rule, start)}</span>}
+      {v?.ex?.length > 0 && (
+        <div className="rl-rrow">
+          <span className="rl-hint">{tr("rk_skipped_dates")}</span>
+          {v.ex.map((d) => (
+            <span key={d} className="rl-tag">{d}
+              <button type="button" className="rl-x" title={tr("rk_put_back")} onClick={() => put(v.rule, v.ex.filter((x) => x !== d))}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+registerType('repeat', {
+  empty: () => null,
+  text: (v) => (v?.rule ? describe(v.rule) : ''),
+  Edit: (p) => <RepeatEdit {...p} />,
+  tidy: (v) => (v?.rule ? { rule: String(v.rule).replace(/^RRULE:/i, '').trim(), ex: [...new Set(v.ex || [])].sort() } : null),
 })

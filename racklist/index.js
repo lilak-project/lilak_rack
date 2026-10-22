@@ -26,5 +26,5 @@ export { bySome, fill, facetOf, passesFilter, asSorts, bumpSort, byKeys } from '
 export { useFacetFilter, FilterBar, FacetRows } from './filter.jsx'
 export {
   PORTAL_BASE, PORTAL_PROJECT, PORTAL_SERVICE, brandStyle, onColor, projectKey, load, save,
-  portalToken, portalUser, isManager, authHeaders, newId, fetchDoc, putDoc, openInService,
+  portalToken, portalUser, isManager, authHeaders, newId, fetchDoc, putDoc, openInService, takeOpenRequest, serviceColor,
 } from './portal.js'

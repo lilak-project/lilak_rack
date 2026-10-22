@@ -1,12 +1,15 @@
+import './strings.js'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { RackTable, RackRow, RackTabs } from './table.jsx'
 import { RackPaneStrip } from './panes.jsx'
 import { RackBar } from './bar.jsx'
 import { RackCalendar } from './calendar.jsx'
+import { RackTrash } from './trash.jsx'
+import { occurrences, parseRule, withUntil, withCount } from './rrule.js'
 import { RackEditClass } from './classedit.jsx'
 import { FilterBar, FacetRows } from './filter.jsx'
 import { RackListing } from './listing.jsx'
-import { RackItemEditor } from './editor.jsx'
+import { RackItemEditor, cloneOf } from './editor.jsx'
 import { useMergeMode, RackMergeButtons, RackMerge } from './merge.jsx'
 import { RackBulkEditor } from './bulk.jsx'
 import { useRackList } from './list.js'
@@ -19,7 +22,8 @@ import {
   classRows, wornBy, wears, isRef, fixedTabs, itemTabId, itemScope, labelOf, useRemoteDocs, valueOf,
   EMPTY_CELL as D,
 } from './schema.js'
-import { PORTAL_PROJECT, brandStyle, isManager, portalUser, fetchDoc, putDoc, newId, takeOpenRequest } from './portal.js'
+import { PORTAL_PROJECT, brandStyle, isManager, portalUser, fetchDoc, putDoc, newId, takeOpenRequest, load, save, projectKey } from './portal.js'
+import { tr } from '../i18n.jsx'
 
 /**
  * <RackService def={…} /> — a whole rack-list service from its declaration.
@@ -35,6 +39,7 @@ import { PORTAL_PROJECT, brandStyle, isManager, portalUser, fetchDoc, putDoc, ne
  * The ways out, for what a declaration cannot say:
  *   slots.commands(api)          more buttons on the command line
  *   slots.tabs                   [{ id, label, render(api) }] — tabs of the service's own
+ *   slots.settings(api)          more of the settings tab, under the kit's (a manager's)
  *   slots.editors                { kind: (tab, api) => node } — editor panes of its own;
  *                                open one with api.openEdit({ id, kind, label, … })
  *   registerType(name, type)     a field type of its own (types.jsx)
@@ -55,22 +60,37 @@ export function RackService({ def: declared, slots = {} }) {
   const ME = useMemo(() => portalUser()?.email || '', [])
   const FIRST = itemTabId(def)
 
-  const FIXED = useMemo(() => [
-    ...fixedTabs(def),
-    ...(slots.tabs || []).map((t) => ({ id: t.id, kind: 'slot', label: t.label })),
-    // Where the service may read the disk is a manager's to say.
-    // A month of the items, when they have dates (def.calendar).
-    ...(def.calendar ? [{ id: 'calendar', kind: 'calendar', label: 'calendar' }] : []),
-    ...(IS_ADMIN && hasRoots(def) ? [{ id: 'settings', kind: 'settings', label: 'settings' }] : []),
-  ], [def, slots.tabs, IS_ADMIN])
+  const FIXED = useMemo(() => {
+    const [all, ...classTabs] = fixedTabs(def)
+    return [
+      all,
+      // A month of the items, when they have dates (def.calendar) — the items
+      // again, so beside them.
+      ...(def.calendar ? [{ id: 'calendar', kind: 'calendar', label: tr("rk_tab_calendar") }] : []),
+      ...classTabs,
+      ...(slots.tabs || []).map((t) => ({ id: t.id, kind: 'slot', label: t.label })),
+      // What was deleted, and the way back — a manager's, as deleting is.
+      ...(IS_ADMIN ? [{ id: 'trash', kind: 'trash', label: tr("rk_trash") }] : []),
+      // Where the service may read the disk is a manager's to say.
+      ...(IS_ADMIN && (hasRoots(def) || slots.settings) ? [{ id: 'settings', kind: 'settings', label: tr("rk_tab_settings") }] : []),
+    ]
+  }, [def, slots.tabs, slots.settings, IS_ADMIN])
 
   const extra = useMemo(() => ({ remote, folders }), [remote, folders])
   const itemSort = useMemo(() => itemSorters(def, doc, extra), [def, doc, extra])
   // A sorter may depend on the tab (a group's own core on that group's tab).
   const sortersFor = useCallback((t) => (t?.kind !== 'items' ? {}
     : def.item.tabbed ? itemSorters(def, doc, { ...extra, tab: t }) : itemSort), [def, doc, extra, itemSort])
-  const scopeOf = useCallback((t, sort) => itemScope(def, doc, t, sort, sortersFor(t),
-    def.item.tie?.(t, { def, doc, ...extra, tab: t })), [def, doc, extra, sortersFor])
+  // Quick filters (def.item.quick: [{ id, label, title, drop: (rec) => hide it }]):
+  // a button each beside the filter on the items tab, on or off, kept per project.
+  const quickKey = projectKey(def.key, 'quick')
+  const [quick, setQuick] = useState(() => load(quickKey, []))
+  useEffect(() => { save(quickKey, quick) }, [quickKey, quick])
+  const drops = useMemo(() => (def.item.quick || []).filter((q) => quick.includes(q.id)), [def, quick])
+  const scopeOf = useCallback((t, sort) => {
+    const s = itemScope(def, doc, t, sort, sortersFor(t), def.item.tie?.(t, { def, doc, ...extra, tab: t }))
+    return t?.kind === 'items' && drops.length ? s.filter((r) => !drops.some((q) => q.drop(r))) : s
+  }, [def, doc, extra, sortersFor, drops])
   const search = useMemo(() => itemSearch(def, doc, extra), [def, doc, extra])
   const tokens = useMemo(() => itemTokens(def, doc, extra), [def, doc, extra])
   const allClassCols = useMemo(() => def.classes.flatMap((c) => classColumns(def, c)), [def])
@@ -94,7 +114,7 @@ export function RackService({ def: declared, slots = {} }) {
   useToggleKey(() => {
     if (!rows.length) return
     toggleAll()
-    setNote(allPicked ? `${rows.length}${def.unit} 선택 해제` : `${rows.length}${def.unit} 선택`)
+    setNote(allPicked ? tr("rk_deselect_n", rows.length, def.unit) : tr("rk_select_n", rows.length, def.unit))
   })
 
   const items = doc?.[def.item.key] || []
@@ -106,7 +126,7 @@ export function RackService({ def: declared, slots = {} }) {
   const merge = useMergeMode(mergeable)
 
   useEffect(() => {
-    if (!PORTAL_PROJECT) { setErr('이 앱은 LILAK 포털을 통해 열어야 합니다.'); return }
+    if (!PORTAL_PROJECT) { setErr(tr("rk_open_via_portal")); return }
     fetchDoc().then(setDoc).catch((e) => setErr(String(e.message || e)))
   }, [])   // eslint-disable-line react-hooks/exhaustive-deps
   // Sent here from another service (#open=<id>): open that record once the
@@ -148,11 +168,11 @@ export function RackService({ def: declared, slots = {} }) {
       const r = await putDoc(doc.version, body)
       if (r.conflict) {
         if (r.doc) setDoc(r.doc)
-        setNote('목록이 그 사이 바뀌어 새로 읽었습니다 — 저장을 한 번 더 눌러주세요.')
+        setNote(tr("rk_changed_meanwhile"))
         return false
       }
       setDoc(r.doc)
-      setNote(said || '저장했습니다.')
+      setNote(said || tr("rk_saved"))
       return true
     } catch (e) { setNote(String(e.message || e)); return false }
   }, [doc, def, setNote])
@@ -167,7 +187,7 @@ export function RackService({ def: declared, slots = {} }) {
     const r = rec || (doc?.[def.item.key] || []).find((x) => idOf(x) === id)
     if (!id && seed) panes.close('item:new')
     const open = () => openEdit({ id: `item:${id || 'new'}`, kind: 'item', who: id || null, seed,
-      label: r ? labelOf(def, r) : `새 ${def.item.noun}` })
+      label: r ? labelOf(def, r) : tr("rk_new_x", def.item.noun) })
     if (!id && seed) setTimeout(open, 0); else open()
   }, [doc, def, openEdit, panes])   // eslint-disable-line react-hooks/exhaustive-deps
   const rowLabel = (c, rec) => (c.rowLabel ? c.rowLabel(rec) : rec?.name) || ''
@@ -176,7 +196,7 @@ export function RackService({ def: declared, slots = {} }) {
   const findStored = (c, who) => (doc?.[c.k] || []).find((r) => (r.id ? r.id === who : r[c.keyBy] === who))
   const openClass = useCallback((c, rec) => openEdit(c.stored
     ? { id: `class:${c.k}:${whoOf(c, rec) || 'new'}`, kind: 'class', of: c.k, stored: true, who: whoOf(c, rec),
-      label: rec ? rowLabel(c, rec) : `새 ${c.noun}` }
+      label: rec ? rowLabel(c, rec) : tr("rk_new_x", c.noun) }
     : { id: `class:${c.k}:${rec.name}`, kind: 'class', of: c.k, stored: false, who: rec.name, label: rec.name }),
   [openEdit])
 
@@ -206,13 +226,28 @@ export function RackService({ def: declared, slots = {} }) {
     if (!doc || !asked || answered) return
     setAnswered(true)
     if (items.some((r) => idOf(r) === asked)) openItem(asked)
-    else setNote('열려던 항목을 찾지 못했습니다.')
+    else setNote(tr("rk_open_target_missing"))
   }, [doc, asked, answered])   // eslint-disable-line react-hooks/exhaustive-deps
+  // A day to show on the calendar (a date's label pressed in an editor). The
+  // calendar must be in sight: a full-width editor gives the list its width
+  // back, and where the two cannot stand side by side the editors close
+  // (each saves what it holds as it goes).
+  const [calAt, setCalAt] = useState(null)
+  const showDate = useCallback((d) => {
+    if (!d) return
+    panes.setFull(false)
+    if (L.vw < (panes.cols.length > 1 ? 1500 : 1180)) panes.closeAll()     // as useRackList's showList
+    openTab({ id: 'calendar', kind: 'calendar', label: tr("rk_tab_calendar") })
+    setCalAt({ d: String(d).slice(0, 10), n: Date.now() })
+  }, [openTab, panes, L.vw])
   const ctx = useMemo(() => ({
     remote, folders, reloadFolders, openFolder, openFile, say: setNote, openItem,
     openClass: openClassByName, openTab, openEdit, commit, isAdmin: IS_ADMIN, tab,
+    showDate: def.calendar ? showDate : undefined,
+    // Another service's page as an editor tab: { id, label, src }.
+    openFrame: (t) => openEdit({ ...t, kind: 'frame' }),
   }), [remote, folders, reloadFolders, openFolder, openFile, setNote, openItem, openClassByName,
-    openTab, openEdit, commit, IS_ADMIN, tab])
+    openTab, openEdit, commit, IS_ADMIN, tab, def.calendar, showDate])
   const api = { def, doc, commit, openTab, openEdit, closeEdit: (id) => panes.close(id), openItem, setNote,
     picked, setPicked, clearPicked, chosen, tab, rows, scope }
 
@@ -284,7 +319,7 @@ export function RackService({ def: declared, slots = {} }) {
     const ids = items.filter((r) => picked.has(idOf(r))).map(idOf)
     if (!ids.length) return
     panes.close('many')
-    setTimeout(() => openEdit({ id: 'many', kind: 'many', ids, label: `${ids.length}${def.unit} 한꺼번에` }), 0)
+    setTimeout(() => openEdit({ id: 'many', kind: 'many', ids, label: tr("rk_n_at_once", ids.length, def.unit) }), 0)
   }
   const pickedKeys = () => {
     const idk = def.item.id || 'id'
@@ -312,7 +347,7 @@ export function RackService({ def: declared, slots = {} }) {
       next = recs.map((x) => (x.id === listId
         ? { ...x, [ik]: [...(x[ik] || []), ...add.filter((id) => !(x[ik] || []).includes(id))], updatedAt: now } : x))
     }
-    if (await commit({ [c.k]: next }, `${add.length}${def.unit}을(를) '${name}' ${c.noun}에 넣었습니다.`)) {
+    if (await commit({ [c.k]: next }, tr("rk_put_in_list", add.length, def.unit, name, c.noun))) {
       clearPicked()
       // A list just made is opened: its items, beside what to do with them.
       if (listId === '+new') {
@@ -326,7 +361,7 @@ export function RackService({ def: declared, slots = {} }) {
     const ik = c.list.ids
     const next = (doc[c.k] || []).map((x) => (x.id === listId
       ? { ...x, [ik]: (x[ik] || []).filter((id) => !out.has(id)), updatedAt: new Date().toISOString() } : x))
-    if (await commit({ [c.k]: next }, `${out.size}${def.unit}을(를) ${c.noun}에서 뺐습니다.`)) clearPicked()
+    if (await commit({ [c.k]: next }, tr("rk_took_out_of", out.size, def.unit, c.noun))) clearPicked()
   }
   // My lists first: they are the ones I am filling.
   const listsFor = (c) => [...(doc?.[c.k] || [])].sort((a, b) => (
@@ -336,6 +371,7 @@ export function RackService({ def: declared, slots = {} }) {
   function editorFor(etab) {
     if (slots.editors?.[etab.kind]) return slots.editors[etab.kind](etab, api)
     if (etab.kind === 'folder') return <RackFolder key={etab.who} name={etab.who} say={setNote} />
+    if (etab.kind === 'frame') return <iframe key={etab.src} className="rl-frame" src={etab.src} title={etab.label} />
     if (etab.kind === 'many') {
       return (
         <RackBulkEditor def={def} doc={doc} ids={etab.ids || []} ctx={ctx} onSave={commit}
@@ -352,6 +388,7 @@ export function RackService({ def: declared, slots = {} }) {
       return (
         <RackItemEditor key={etab.id} def={def} doc={doc} rec={rec} seed={etab.seed} ctx={ctx} onSave={commit}
           canDelete={IS_ADMIN} onCancel={() => panes.close(etab.id)}
+          onClone={(seed) => openItem(null, null, seed)}
           onCreated={(r) => { panes.close(etab.id); openItem(idOf(r), r) }}
           onDeleted={(r) => {
             panes.close(etab.id)
@@ -374,7 +411,7 @@ export function RackService({ def: declared, slots = {} }) {
             users={users.map((r) => labelOf(def, r))}
             onMerge={async (gone, to) => {
               if (await commit(c.merge(doc, gone, to),
-                `${c.noun} ${gone.length + 1}개를 '${to}' 하나로 합쳤습니다 · ${users.length}${def.unit}`)) {
+                tr("rk_merged_into_one_n", c.noun, gone.length + 1, to, users.length, def.unit))) {
                 panes.close(etab.id); merge.off()
               }
             }}
@@ -391,7 +428,7 @@ export function RackService({ def: declared, slots = {} }) {
           movedWhy={field.movedWhy}
           onMerge={async (gone, to) => {
             if (await commit({ [def.item.key]: foldNames(field, gone, to) },
-              `${field.label || c.noun} ${gone.length + 1}개를 '${to}' 하나로 합쳤습니다 · ${users.length}${def.unit}`)) {
+              tr("rk_merged_into_one_n", field.label || c.noun, gone.length + 1, to, users.length, def.unit))) {
               panes.close(etab.id); merge.off()
             }
           }}
@@ -416,7 +453,7 @@ export function RackService({ def: declared, slots = {} }) {
       const field = wornBy(def, c)
       const names = classRows(def, doc, c, extra).map((r) => r.name)
       return (
-        <RackEditClass name={etab.who} noun={c.noun} wears={`쓰는 ${def.item.noun}`} unit={def.unit}
+        <RackEditClass name={etab.who} noun={c.noun} wears={tr("rk_x_using", def.item.noun)} unit={def.unit}
           exists={names} wearing={(gone) => wearing(field, gone).map((r) => ({ id: idOf(r), label: labelOf(def, r) }))}
           onOpen={openItem}
           onSave={async (gone, to, said) => {
@@ -425,11 +462,11 @@ export function RackService({ def: declared, slots = {} }) {
           onCancel={() => panes.close(etab.id)}
           onDelete={IS_ADMIN ? async () => {
             if (await commit({ [def.item.key]: foldNames(field, [etab.who], '') },
-              `'${etab.who}'를 뗐습니다.`)) panes.close(etab.id)
+              tr("rk_removed_name", etab.who))) panes.close(etab.id)
           } : null} />
       )
     }
-    return <p className="rl-msg">이 편집창을 그릴 수 없습니다.</p>
+    return <p className="rl-msg">{tr("rk_cannot_draw_editor")}</p>
   }
 
   const slotTab = tab?.kind === 'slot' ? (slots.tabs || []).find((t) => t.id === tab.id) : null
@@ -457,31 +494,27 @@ export function RackService({ def: declared, slots = {} }) {
           {cls?.stored ? (
             /* Mustard: it is only here while a class tab is, and the colour is
                what says so. */
-            <button type="button" className="rl-btn rl-tabonly" onClick={() => openClass(cls, null)}>
-              + 새 {cls.noun}
-            </button>
+            <button type="button" className="rl-btn rl-tabonly" onClick={() => openClass(cls, null)}>{tr("rk_add_new_x", cls.noun)}</button>
           ) : (
-            <button type="button" className="rl-btn rl-go" onClick={() => openItem(null)}>
-              + 새 {def.item.noun}
-            </button>
+            <button type="button" className="rl-btn rl-go" onClick={() => openItem(null)}>{tr("rk_add_new_x", def.item.noun)}</button>
           )}
           {mergeable && (
             <RackMergeButtons merge={merge} noun={cls.stored ? cls.noun : (clsField.label || cls.noun)}
               onOpen={(names) => openEdit({ id: `merge:${cls.k}`, kind: 'merge', of: cls.k, names,
-                label: `${cls.stored ? cls.noun : (clsField.label || cls.noun)} ${names.length}개 합치기` })} />
+                label: tr("rk_merge_n_x", cls.stored ? cls.noun : (clsField.label || cls.noun), names.length) })} />
           )}
           {slots.commands?.(api)}
           <button type="button" className="rl-btn" disabled={!picked.size} onClick={clearPicked}>clear</button>
-          {picked.size > 0 && <span className="rl-n">{picked.size} 선택</span>}
+          {picked.size > 0 && <span className="rl-n">{tr("rk_select_x", picked.size)}</span>}
           {tab?.kind === 'items' && picked.size > 1 && (
-            <button type="button" className="rl-btn" title="고른 것들의 같은 칸을 한꺼번에 바꿉니다"
-              onClick={openMany}>선택 편집 ({picked.size})</button>
+            <button type="button" className="rl-btn" title={tr("rk_bulk_edit_hint")}
+              onClick={openMany}>{tr("rk_bulk_edit_n", picked.size)}</button>
           )}
           {tab?.kind === 'items' && picked.size > 0 && listClasses.map((c) => (
             <select key={c.k} className="rl-btn rl-pick" value=""
               onChange={(e) => e.target.value && putInList(c, e.target.value)}>
-              <option value="">{c.noun}에 넣기…</option>
-              <option value="+new">+ 새 {c.noun}</option>
+              <option value="">{tr("rk_put_in_x", c.noun)}</option>
+              <option value="+new">{tr("rk_add_new_x", c.noun)}</option>
               {listsFor(c).map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.name || l.id.slice(0, 8)} ({(l[c.list.ids] || []).length}){c.list.owner && l[c.list.owner] && l[c.list.owner] !== ME ? ` · ${l[c.list.owner]}` : ''}
@@ -491,29 +524,29 @@ export function RackService({ def: declared, slots = {} }) {
           ))}
           {inList && (
             <button type="button" className="rl-btn rl-tabonly"
-              onClick={() => { const l = findStored(inList, tab.key); if (l) openClass(inList, l) }}>{inList.noun} 편집</button>
+              onClick={() => { const l = findStored(inList, tab.key); if (l) openClass(inList, l) }}>{tr("rk_edit_x", inList.noun)}</button>
           )}
           {inList && picked.size > 0 && (
-            <button type="button" className="rl-btn" title={`이 ${inList.label}에서만 뺍니다 — 항목은 그대로입니다`}
-              onClick={() => takeOutOfList(inList, tab.key)}>{inList.label}에서 빼기 ({picked.size})</button>
+            <button type="button" className="rl-btn" title={tr("rk_remove_from_this_hint", inList.label)}
+              onClick={() => takeOutOfList(inList, tab.key)}>{tr("rk_remove_from_x_n", inList.label, picked.size)}</button>
           )}
           <span className="rl-gap" />
           {L.opened > 0 && (
-            <button type="button" className="rl-btn" title="열어둔 탭을 모두 닫습니다" onClick={L.closeOpened}>
-              탭 닫기 ({L.opened})
-            </button>
+            <button type="button" className="rl-btn" title={tr("rk_close_tabs_hint")} onClick={L.closeOpened}>{tr("rk_close_tabs_n", L.opened)}</button>
           )}
           {panes.tabs.length > 0 && (
-            <button type="button" className="rl-btn" title="편집 패널의 탭을 모두 닫습니다" onClick={panes.closeAll}>
-              편집 닫기 ({panes.tabs.length})
-            </button>
+            <button type="button" className="rl-btn" title={tr("rk_close_editors_hint")} onClick={panes.closeAll}>{tr("rk_close_editors_n", panes.tabs.length)}</button>
           )}
           {tab?.kind === 'items' && <FilterBar f={filter} />}
+          {tab?.kind === 'items' && (def.item.quick || []).map((q) => (
+            <button key={q.id} type="button" className={`rl-btn${quick.includes(q.id) ? ' on' : ''}`} title={q.title}
+              onClick={() => setQuick((xs) => (xs.includes(q.id) ? xs.filter((x) => x !== q.id) : [...xs, q.id]))}>{q.label}</button>
+          ))}
           <span className="rl-sp" />
           <input ref={findRef} type="search" className="rl-find"
             value={filter.mode ? filter.find : query}
-            placeholder={filter.mode ? '고를 값 찾기   (⌘F)'
-              : cls ? '이 목록에서 찾기   (⌘F)' : (def.item.findHint || `${def.item.noun} 찾기   (⌘F)`)}
+            placeholder={filter.mode ? tr("rk_find_value")
+              : cls ? tr("rk_find_in_list") : (def.item.findHint || tr("rk_find_x", def.item.noun))}
             onChange={(e) => (filter.mode ? filter.setFind : setQuery)(e.target.value)} />
         </div>
 
@@ -522,7 +555,7 @@ export function RackService({ def: declared, slots = {} }) {
             <RackTabs tabs={tabs} active={L.active} fixed={FIXED} onPick={L.setActive} onClose={closeTab} />
 
             {err && <p className="rl-msg">{err}</p>}
-            {!err && !doc && <p className="rl-msg">읽는 중…</p>}
+            {!err && !doc && <p className="rl-msg">{tr("rk_loading")}</p>}
 
             {doc && tab?.kind === 'items' && (
               <>
@@ -530,7 +563,7 @@ export function RackService({ def: declared, slots = {} }) {
                   sort={order}
                   onSort={(k) => setSort((s2) => bumpSort(asSorts(s2).length ? s2 : def.item.order, k))}
                   head={filter.mode ? null : { all: allPicked, some: somePicked, onAll: toggleAll }}>
-                  <FacetRows f={filter} labels={{ empty: '이 열에는 값이 없습니다.' }} />
+                  <FacetRows f={filter} labels={{ empty: tr("rk_column_empty") }} />
                   {!filter.mode && rows.map((r, i) => {
                     const rid = idOf(r)
                     const on = picked.has(rid)
@@ -549,14 +582,14 @@ export function RackService({ def: declared, slots = {} }) {
                         }}
                         cell={{
                           chk: <input type="checkbox" checked={on} tabIndex={-1} readOnly
-                            aria-label={`${labelOf(def, r)} 선택`} />,
+                            aria-label={tr("rk_select_x", labelOf(def, r))} />,
                           num: i + 1,
                           ...itemCells(def, doc, r, ctx),
                         }} />
                     )
                   })}
                   {!filter.mode && rows.length === 0 && (
-                    <p className="rl-msg">{items.length ? `해당하는 ${def.item.noun}이(가) 없습니다.` : `아직 ${def.item.noun}이(가) 없습니다 — + 새 ${def.item.noun}`}</p>
+                    <p className="rl-msg">{items.length ? tr("rk_no_matching_x", def.item.noun) : tr("rk_no_x_yet", def.item.noun, def.item.noun)}</p>
                   )}
                 </RackTable>
                 {def.listing?.render && def.listing.render({
@@ -591,17 +624,17 @@ export function RackService({ def: declared, slots = {} }) {
                       }}
                       cell={{
                         ...(merge.mode ? { chk: <input type="checkbox" checked={on} tabIndex={-1} readOnly
-                          aria-label={`${r.name} 선택`} /> } : {}),
+                          aria-label={tr("rk_select_x", r.name)} /> } : {}),
                         ...classCells(r, i),
                       }} />
                   )
                 })}
-                {classes.length === 0 && <p className="rl-msg">아직 없습니다.</p>}
+                {classes.length === 0 && <p className="rl-msg">{tr("rk_none_yet")}</p>}
               </RackTable>
             )}
 
             {doc && tab?.kind === 'calendar' && (
-              <RackCalendar def={def} doc={doc} ctx={ctx} picked={picked}
+              <RackCalendar def={def} doc={doc} ctx={ctx} picked={picked} at={calAt}
                 // The search box narrows the calendar as it does the table.
                 items={query.trim() ? items.filter((r) => search(r, query.trim().toLowerCase())) : items}
                 query={query.trim()}
@@ -610,12 +643,70 @@ export function RackService({ def: declared, slots = {} }) {
                 onNew={(seed) => openItem(null, null, seed)}
                 onResize={(rec, patch) => commit({
                   [def.item.key]: items.map((x) => (x === rec ? { ...x, ...patch, updatedAt: new Date().toISOString() } : x)),
-                }, `${labelOf(def, rec)} 날짜를 바꿨습니다.`)} />
+                }, tr("rk_date_changed", labelOf(def, rec)))}
+                // One occurrence of a repeating record (calendar.repeat), and which
+                // of them a change is for — as Google Calendar asks it.
+                onOccurrence={(how, rec, occ) => {
+                  const cal = def.calendar, R = cal.repeat, S = cal.series, O = cal.seriesDate
+                  const rp = rec[R] || {}
+                  const key = def.item.key, now = new Date().toISOString(), all = doc[key] || []
+                  const first = String(rec[cal.start]).slice(0, 10)
+                  const days = Math.round((Date.parse(occ) - Date.parse(first)) / 864e5)
+                  const made = (o) => { let r = { ...cloneOf(def, rec, days), ...o, id: newId(), createdAt: now, updatedAt: now }; if (def.item.fill) r = def.item.fill(r, doc); return r }
+                  if (how === 'all') { openItem(idOf(rec), rec); return }
+                  if (how === 'delete') {
+                    commit({ [key]: all.map((x) => (x === rec ? { ...x, [R]: { ...rp, ex: [...new Set([...(rp.ex || []), occ])].sort() }, updatedAt: now } : x)) },
+                      tr("rk_occurrence_deleted", labelOf(def, rec), occ))
+                    return
+                  }
+                  if (how === 'one') {
+                    // This day alone: a record of its own, tied to the series by the day it was.
+                    const r = made({ [R]: null, [S]: { id: rec.id }, [O]: occ })
+                    commit({ [key]: [r, ...all] }, tr("rk_occurrence_split", labelOf(def, rec), occ))
+                      .then((ok) => { if (ok) openItem(idOf(r), r) })
+                    return
+                  }
+                  // This day and after: the series ends the day before, and a new one
+                  // starts here — with what was left of a COUNT, and the days left out
+                  // and changed from here on.
+                  const p = parseRule(rp.rule)
+                  const before = new Date(Date.parse(occ) - 864e5).toISOString().slice(0, 10)
+                  let oldRule = withUntil(rp.rule, before), newRule = rp.rule
+                  if (p.count) {
+                    const done = occurrences(first, rp.rule, first, before).length
+                    oldRule = withCount(rp.rule, done)
+                    newRule = withCount(rp.rule, Math.max(1, p.count - done))
+                  }
+                  const r = made({ [R]: { rule: newRule, ex: (rp.ex || []).filter((d) => d >= occ) } })
+                  const next = all.map((x) => {
+                    if (x === rec) return { ...x, [R]: { rule: oldRule, ex: (rp.ex || []).filter((d) => d < occ) }, updatedAt: now }
+                    const s2 = x[S]?.id ?? x[S]
+                    return s2 === rec.id && String(x[O] || '') >= occ ? { ...x, [S]: { id: r.id }, updatedAt: now } : x
+                  })
+                  commit({ [key]: [r, ...next] }, tr("rk_series_split", labelOf(def, rec), occ))
+                    .then((ok) => { if (ok) openItem(idOf(r), r) })
+                }}
+                // Dropped on another day: a copy there, made as 등록 would.
+                onCopy={(rec, days) => {
+                  const now = new Date().toISOString()
+                  let r = { ...cloneOf(def, rec, days), id: newId(), createdAt: now, updatedAt: now }
+                  if (def.item.fill) r = def.item.fill(r, doc)
+                  const patch = { [def.item.key]: [r, ...(doc[def.item.key] || [])] }
+                  Object.assign(patch, def.item.onSave?.(r, null, { ...doc, ...patch }) || {})
+                  return commit(patch, tr("rk_copied_x", labelOf(def, r)))
+                }} />
             )}
 
+            {doc && tab?.kind === 'trash' && <RackTrash def={def} setDoc={setDoc} say={setNote} />}
+
             {doc && tab?.kind === 'settings' && (
-              <RackSettings def={def} doc={doc} folders={folders} onSave={commit} say={setNote}
-                onReload={reloadFolders} onOpenFolder={openFolder} />
+              <div className="rl-settings">
+                {hasRoots(def) && (
+                  <RackSettings def={def} doc={doc} folders={folders} onSave={commit} say={setNote}
+                    onReload={reloadFolders} onOpenFolder={openFolder} />
+                )}
+                {slots.settings?.(api)}
+              </div>
             )}
 
             {doc && slotTab && slotTab.render(api)}
@@ -635,10 +726,10 @@ export function RackService({ def: declared, slots = {} }) {
         </div>
 
         <footer className="rl-foot">
-          <span>{note || '왼쪽 클릭으로 선택, shift로 범위, 오른쪽 클릭으로 편집.'}</span>
+          <span>{note || tr("rk_status_hint")}</span>
           <span className="rl-sp" />
           <span className="rl-mono">
-            {cls ? (classes.length ? `${classes.length}줄` : '') : (tab?.kind === 'items' && rows.length ? `${rows.length}줄` : '')}
+            {cls ? (classes.length ? tr("rk_n_rows", classes.length) : '') : (tab?.kind === 'items' && rows.length ? tr("rk_n_rows", rows.length) : '')}
           </span>
         </footer>
       </section>

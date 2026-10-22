@@ -1,5 +1,7 @@
+import './strings.js'
 import { useCallback, useMemo, useState } from 'react'
 import { facetOf, passesFilter } from './sort.js'
+import { tr } from '../i18n.jsx'
 
 /**
  * Filtering, the RACK way, in one place so every list service does it the same.
@@ -58,8 +60,8 @@ export function useFacetFilter(scope, sorters, initial = {}) {
 /** The three states on the command line: choose, applied, off. */
 export function FilterBar({ f, labels = {} }) {
   const L = {
-    choose: '필터 선택', apply: '필터 적용', cancel: '취소',
-    off: '필터 풀기', edit: '필터 고치기', hint: '레이블을 눌러 종류를 고르세요.',
+    choose: tr("rk_filter_choose"), apply: tr("rk_filter_apply"), cancel: tr("rk_cancel"),
+    off: tr("rk_filter_off"), edit: tr("rk_filter_edit"), hint: tr("rk_filter_press_label"),
     ...labels,
   }
   if (f.mode) {
@@ -87,9 +89,9 @@ export function FilterBar({ f, labels = {} }) {
 /** The values on offer, as rows of the table they will filter. */
 export function FacetRows({ f, labels = {} }) {
   const L = {
-    pickCol: '위의 레이블을 눌러 어떤 종류로 걸를지 고르세요.',
-    empty: '이 열에는 값이 없습니다.',
-    none: '찾는 값이 없습니다.',
+    pickCol: tr("rk_filter_press_label_above"),
+    empty: tr("rk_column_empty"),
+    none: tr("rk_no_match_value"),
     ...labels,
   }
   if (!f.mode) return null
@@ -103,7 +105,7 @@ export function FacetRows({ f, labels = {} }) {
       <div key={v} className={`rl-row rl-frow rl-hit${on ? ' on' : ''}`}
         onClick={() => f.toggle(v)}>
         <span className="rl-chk">
-          <input type="checkbox" checked={on} tabIndex={-1} readOnly aria-label={`${v} 고르기`} />
+          <input type="checkbox" checked={on} tabIndex={-1} readOnly aria-label={tr("rk_pick_value", v)} />
         </span>
         <span className="rl-gut">{i + 1}</span>
         <span className="rl-c rl-ink">{v}</span>

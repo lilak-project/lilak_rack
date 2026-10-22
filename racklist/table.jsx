@@ -1,5 +1,7 @@
+import './strings.js'
 import { asSorts } from './sort.js'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { tr } from '../i18n.jsx'
 
 /**
  * The table shell: one column template, a sticky head, draggable edges.
@@ -55,11 +57,11 @@ export function RackTable({ cols, onDrag, head, sort, onSort, facet, children })
   return (
     <div className="rl-tab-wrap">
       {edge.left && (
-        <button type="button" className="rl-edge rl-edge-l" title="왼쪽 열"
+        <button type="button" className="rl-edge rl-edge-l" title={tr("rk_left_column")}
           onClick={() => slide(-1)}>‹</button>
       )}
       {edge.right && (
-        <button type="button" className="rl-edge rl-edge-r" title="오른쪽 열"
+        <button type="button" className="rl-edge rl-edge-r" title={tr("rk_right_column")}
           onClick={() => slide(1)}>›</button>
       )}
       <div className="rl-tab-body" ref={body}>
@@ -71,7 +73,7 @@ export function RackTable({ cols, onDrag, head, sort, onSort, facet, children })
             {c.k === 'chk' && head ? (
               <input type="checkbox" checked={head.all}
                 ref={(el) => { if (el) el.indeterminate = !head.all && head.some }}
-                onChange={head.onAll} aria-label="전체 선택" />
+                onChange={head.onAll} aria-label={tr("rk_select_all")} />
             ) : facet && !c.fix ? (
               // In filter mode the label stops sorting and starts choosing
               // which column you are picking values from.
@@ -155,11 +157,12 @@ export function RackTabs({ tabs, active, onPick, onClose, fixed = [], opened = f
       {tabs.map((t) => {
         const isFixed = !opened && fixed.some((f) => f === t.id || f?.id === t.id)
         return (
-          <span key={t.id} className={`rl-tab${isFixed ? '' : ' rl-opened'}${t.id === active ? ' on' : ''}`}>
+          <span key={t.id} className={`rl-tab${isFixed ? '' : ' rl-opened'}${t.id === active ? ' on' : ''}`}
+            style={t.color ? { '--tone': t.color } : undefined}>
             <button type="button" className="rl-tabname" onClick={() => onPick(t.id)}>{t.label}</button>
             {!isFixed && onClose && (
-              <button type="button" className="rl-x" title="닫기"
-                onClick={() => onClose(t.id)} aria-label={`${t.label} 닫기`}>×</button>
+              <button type="button" className="rl-x" title={tr("rk_close")}
+                onClick={() => onClose(t.id)} aria-label={tr("rk_close_named", t.label)}>×</button>
             )}
           </span>
         )

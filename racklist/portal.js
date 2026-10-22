@@ -79,6 +79,15 @@ export async function putDoc(baseVersion, body) {
   return { doc: await r.json() }
 }
 
+/** Another service's colour, from the portal's list of services ('' when it
+ *  is not known) — a tab of that service's page wears it. */
+let SERVICES = null
+export function serviceColor(name) {
+  SERVICES ||= fetch('/api/services', { headers: authHeaders() })
+    .then((r) => (r.ok ? r.json() : [])).catch(() => [])
+  return SERVICES.then((l) => ((Array.isArray(l) ? l : l?.services || []).find((s) => s.name === name) || {}).color || '')
+}
+
 /** Open a record in ANOTHER service. Inside the portal's panel the portal is
  *  asked to switch to that service and hand it the record; on a page of its
  *  own, the browser goes there. The service opened reads `#open=<id>`. */

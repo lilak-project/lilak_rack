@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import './strings.js'
+import { tr, currentLang } from '../i18n.jsx'
 import { RackActions } from './actions.jsx'
 import { RackField } from './fields.jsx'
 
@@ -21,6 +23,7 @@ import { RackField } from './fields.jsx'
 /** '태그가' but '그룹이': the particle depends on whether the word ends in a
  *  consonant, and getting it wrong is the first thing a reader notices. */
 const subj = (w) => {
+  if (currentLang() !== 'ko') return String(w || '')   // other languages carry no particle
   const c = String(w || '').trim().slice(-1).charCodeAt(0)
   const batchim = c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 !== 0
   return `${w}${batchim ? '이' : '가'}`
@@ -54,16 +57,16 @@ export function useMergeMode(active) {
 }
 
 /** The two buttons the mode needs, for the service's command bar. */
-export function RackMergeButtons({ merge, noun = '태그', onOpen }) {
+export function RackMergeButtons({ merge, noun = tr("rk_tag"), onOpen }) {
   return (
     <>
       <button type="button" className={`rl-btn rl-tabonly${merge.mode ? ' on' : ''}`}
-        title={`${noun} 여러 개를 골라 하나로 합칩니다`} onClick={merge.turn}>
-        {merge.mode ? '합치기 모드 끄기' : '합치기 모드'}
+        title={tr("rk_merge_pick_hint", noun)} onClick={merge.turn}>
+        {merge.mode ? tr("rk_merge_mode_off") : tr("rk_merge_mode")}
       </button>
       {merge.mode && (
         <button type="button" className="rl-btn rl-go" disabled={merge.size < 2}
-          onClick={() => onOpen(merge.names)}>합치기 ({merge.size})</button>
+          onClick={() => onOpen(merge.names)}>{tr("rk_merge_n", merge.size)}</button>
       )}
     </>
   )
@@ -77,8 +80,8 @@ export function RackMergeButtons({ merge, noun = '태그', onOpen }) {
  * that bites because a key is usually filed under it.
  */
 export function RackMerge({
-  names = [], noun = '태그', count = () => 0, exists = [],
-  users = [], moved = [], movedWhy = '이름이 바뀌므로 다시 만들어야 합니다',
+  names = [], noun = tr("rk_tag"), count = () => 0, exists = [],
+  users = [], moved = [], movedWhy = tr("rk_renamed_must_rebuild"),
   onMerge, onCancel,
 }) {
   const live = useMemo(() => names.filter((n) => exists.includes(n)), [names, exists])
@@ -98,75 +101,68 @@ export function RackMerge({
   if (live.length < 2) {
     return (
       <div className="rl-edit">
-        <RackActions saveLabel="닫기" onSave={onCancel} />
-        <p className="rl-msg">합칠 {subj(noun)} 남아 있지 않습니다.</p>
+        <RackActions saveLabel={tr("rk_close")} onSave={onCancel} />
+        <p className="rl-msg">{tr("rk_nothing_left_to_merge", subj(noun))}</p>
       </div>
     )
   }
   return (
     <div className="rl-edit">
-      <RackActions key={live.join('\u0000')} saveLabel="합치기"
+      <RackActions key={live.join('\u0000')} saveLabel={tr("rk_merge")}
         onSave={async () => {
           if (!named || !gone.length || busy) return
           setBusy(true)
           try { await onMerge(gone, named) } finally { setBusy(false) }
         }}
         saveDisabled={busy || !named || !gone.length} onCancel={onCancel}
-        hint={`${live.length}개 → 1개 · ${users.length}개 기록`} />
+        hint={tr("rk_merge_summary", live.length, users.length)} />
       <div className="rl-rec">
-        <RackField label={`남길 ${noun}`}>
+        <RackField label={tr("rk_keep_which", noun)}>
           <div className="rl-rows">
             {live.map((t) => (
               <label key={t} className={`rl-rrow rl-hit${t === named ? ' on' : ''}`}>
                 <input type="radio" name="rl-merge-keep" checked={t === named}
                   onChange={() => setTo(t)} />
                 <span className={t === named ? '' : 'rl-gone'}>{t}</span>
-                <span className="rl-hint">{count(t)}개</span>
+                <span className="rl-hint">{tr("rk_n", count(t))}</span>
                 <span className="rl-sp" />
                 {/* What goes is the name. Saying "없어집니다" beside a count of
                     records reads as though the records go with it. */}
                 <span className="rl-hint">{t === named
-                  ? `남습니다 · 합친 뒤 ${users.length}개`
-                  : `이 ${noun}만 떼어집니다`}</span>
+                  ? tr("rk_stays_after_merge", users.length)
+                  : tr("rk_only_this_removed", noun)}</span>
               </label>
             ))}
           </div>
         </RackField>
-        <RackField label="이름">
+        <RackField label={tr("rk_name")}>
           <input className="rl-in" style={{ width: 260 }} value={to || ''}
             onChange={(e) => setTo(e.target.value)} />
           <button type="button" className="rl-btn" disabled={to === best}
-            onClick={() => setTo(best)}>← 고른 것으로</button>
+            onClick={() => setTo(best)}>{tr("rk_use_picked")}</button>
           {fresh && (
-            <span className="rl-hint">
-              새 이름입니다 — 고른 {live.length}개가 모두 이것이 됩니다.
-            </span>
+            <span className="rl-hint">{tr("rk_new_name_all_become", live.length)}</span>
           )}
         </RackField>
-        <RackField label={`없어지는 ${noun}`}>
+        <RackField label={tr("rk_going", noun)}>
           <div className="rl-rrow">
-            {gone.length === 0 && <span className="rl-hint">없음</span>}
+            {gone.length === 0 && <span className="rl-hint">{tr("rk_none")}</span>}
             {gone.map((t) => <span key={t} className="rl-tag rl-gone">{t}</span>)}
           </div>
         </RackField>
-        <RackField label="영향">
+        <RackField label={tr("rk_impact")}>
           <div className="rl-rows">
-            <span className="rl-hint">
-              {users.length}개 기록의 {subj(noun)} 바뀝니다 — 기록이 지워지지는 않습니다.
-            </span>
+            <span className="rl-hint">{tr("rk_records_change", users.length, subj(noun))}</span>
             {hurt.length > 0 && (
-              <span className="rl-hint">
-                그중 {hurt.length}개는 {movedWhy} — {hurt.slice(0, 6).join(', ')}
-                {hurt.length > 6 ? ' …' : ''}
-              </span>
+              <span className="rl-hint">{tr("rk_of_which", hurt.length, movedWhy, hurt.slice(0, 6).join(', '), hurt.length > 6 ? ' …' : '')}</span>
             )}
           </div>
         </RackField>
-        <RackField label="쓰는 기록">
+        <RackField label={tr("rk_records_using")}>
           <div className="rl-rows">
-            {users.length === 0 && <span className="rl-hint">없음</span>}
+            {users.length === 0 && <span className="rl-hint">{tr("rk_none")}</span>}
             {users.slice(0, 12).map((u) => <span key={u} className="rl-hint">{u}</span>)}
-            {users.length > 12 && <span className="rl-hint">… 모두 {users.length}개</span>}
+            {users.length > 12 && <span className="rl-hint">{tr("rk_all_n", users.length)}</span>}
           </div>
         </RackField>
       </div>

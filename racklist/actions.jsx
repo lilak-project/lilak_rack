@@ -1,4 +1,6 @@
+import './strings.js'
 import { useState } from 'react'
+import { tr } from '../i18n.jsx'
 
 /**
  * The bar at the foot of an editor. Every record in every rack-list service is
@@ -22,9 +24,12 @@ import { useState } from 'react'
  * so a half-asked question does not follow you to the next one.
  */
 export function RackActions({
-  draft, createLabel = '등록', onCreate, createDisabled, hint,
+  draft, createLabel = tr("rk_create"), onCreate, createDisabled, hint,
   saveLabel = 'save', onSave, saveDisabled,
-  onCancel, onRevert, revertTitle, onDelete, deleteWarn = '되돌릴 수 없습니다.',
+  // Changed and about to save on its own: the save button's border runs
+  // round it — a word saying so would push the bar about each time.
+  pending,
+  onCancel, onRevert, revertTitle, onDelete, deleteWarn = tr("rk_cannot_undo"), onClone,
   // Anything this one editor can do that the others cannot — a preview, a
   // paste, a re-scan. It rides with save and cancel, which are also about
   // this record, and never with revert and delete.
@@ -45,10 +50,11 @@ export function RackActions({
   return (
     <div className="rl-acts">
       {onSave && (
-        <button type="button" className="rl-btn rl-go" disabled={saveDisabled}
-          onClick={onSave}>{saveLabel}</button>
+        <button type="button" className={`rl-btn rl-go${pending ? ' rl-pending' : ''}`} disabled={saveDisabled}
+          title={pending ? tr("rk_saving_soon") : undefined} onClick={onSave}>{saveLabel}</button>
       )}
       {onCancel && <button type="button" className="rl-btn" onClick={onCancel}>cancel</button>}
+      {onClone && <button type="button" className="rl-btn" title={tr("rk_clone_hint")} onClick={onClone}>clone</button>}
       {extra}
       {hint && <span className="rl-hint">{hint}</span>}
       <span className="rl-sp" />
@@ -58,8 +64,8 @@ export function RackActions({
       {onDelete && (sure ? (
         <>
           <span className="rl-warn">{deleteWarn}</span>
-          <button type="button" className="rl-btn rl-danger" onClick={onDelete}>정말 삭제</button>
-          <button type="button" className="rl-btn" onClick={() => setSure(false)}>취소</button>
+          <button type="button" className="rl-btn rl-danger" onClick={onDelete}>{tr("rk_really_delete")}</button>
+          <button type="button" className="rl-btn" onClick={() => setSure(false)}>{tr("rk_cancel")}</button>
         </>
       ) : (
         <button type="button" className="rl-btn rl-danger" onClick={() => setSure(true)}>delete</button>

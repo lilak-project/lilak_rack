@@ -1,5 +1,7 @@
+import './strings.js'
 import { useEffect } from 'react'
 import { PORTAL_PROJECT } from './portal.js'
+import { tr } from '../i18n.jsx'
 
 /**
  * The title bar of a rack service — its name and how many, the project, and ↻.
@@ -21,7 +23,7 @@ export function RackBar({ title, count, project = PORTAL_PROJECT, children }) {
       {children}
       <span className="rl-sp" />
       <span className="rl-n">{project}</span>
-      <button type="button" className="rl-reload" title="이 서비스만 새로고침 (⌘R)"
+      <button type="button" className="rl-reload" title={tr("rk_reload_service")}
         onClick={() => window.location.reload()}>↻</button>
     </header>
   )

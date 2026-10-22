@@ -1,7 +1,9 @@
+import './strings.js'
 import { asSorts, byKeys } from './sort.js'
 import { useEffect, useMemo, useState } from 'react'
 import { typeOf, refTarget, remoteDoc, refLabelOf, backlinksOf } from './types.jsx'
 import { portalUser } from './portal.js'
+import { tr } from '../i18n.jsx'
 
 /**
  * A service, declared.
@@ -77,7 +79,7 @@ import { portalUser } from './portal.js'
  *   onSave(rec, prev, doc) => patch    more to change when one is saved
  *   onDelete(rec, doc) => patch        … or deleted (and deleteWarn(rec, doc))
  *   countLabel                 the header of its count column
- *   noun                       one of them, in buttons and notes (+ 새 그룹)
+ *   noun                       one of them, in buttons and notes (+ 새 그룹); its label by default
  *   actions(rec, setRec, ctx) => node   buttons of its own on its editor's bar
  *                              (a list's 위치 적용) — ctx has doc, commit, isAdmin, say
  *   merge(doc, gone, to) => patch   folding several records into one (the
@@ -98,10 +100,10 @@ export function defineRack(def) {
   const fields = (item.fields || []).map((f) => ({ label: f.k,
     ...(f.type === 'backlinks' && !f.get ? { get: (r, ctx) => backlinksOf(r, f, ctx) } : {}), ...f }))
   const classes = (def.classes || []).map((c) => {
-    let fields = (c.fields || [{ k: 'name', label: '이름', type: 'text', col: 200 }]).map((f) => ({ label: f.k, ...f }))
+    let fields = (c.fields || [{ k: 'name', label: tr("rk_name"), type: 'text', col: 200 }]).map((f) => ({ label: f.k, ...f }))
     // A list holds its items: the field that does is the kit's, said or not.
     if (c.list && !fields.some((f) => f.k === c.list.ids)) {
-      fields = [...fields, { k: c.list.ids, label: '항목', type: 'members', show: c.list.show }]
+      fields = [...fields, { k: c.list.ids, label: tr("rk_item"), type: 'members', show: c.list.show }]
     }
     // A list's owner is whoever made it.
     const owner = c.list?.owner
@@ -111,6 +113,8 @@ export function defineRack(def) {
     } : c.fill
     return {
       label: c.k, keyBy: 'id', ...c, fill,
+      // What one is called (+ 새 위치): said, or the tab's own name.
+      noun: c.noun || c.label || c.k,
       // A class with fields of its own is a list of records in the document; one
       // without is a name the items wear (its list is what they use).
       stored: !c.field,
@@ -119,10 +123,10 @@ export function defineRack(def) {
   })
   return {
     ...def,
-    unit: def.unit || '개',
+    unit: def.unit || tr("rk_unit_items"),
     key: def.key || def.name,
     item: {
-      noun: '항목', id: 'id', ...item, fields,
+      noun: tr("rk_item"), id: 'id', ...item, fields,
       order: item.order || { k: fields[0]?.k, dir: 1 },
     },
     classes,
@@ -173,7 +177,7 @@ export function classColumns(def, cls) {
   return [
     { k: 'num', w: 40, min: 30, fix: true, label: '#' },
     ...own.map(colOf),
-    { k: 'count', w: 70, min: 46, label: cls.countLabel || (def.unit === '개' ? 'count' : def.item.noun), num: true },
+    { k: 'count', w: 70, min: 46, label: cls.countLabel || (def.unit === tr("rk_unit_items") ? 'count' : def.item.noun), num: true },
   ]
 }
 

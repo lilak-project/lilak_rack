@@ -1,7 +1,9 @@
+import './strings.js'
 import { useEffect, useMemo, useState } from 'react'
 import { RackActions } from './actions.jsx'
 import { RackField, RackTextRows } from './fields.jsx'
 import { useRackKeys } from './hooks.js'
+import { tr } from '../i18n.jsx'
 
 /**
  * The editor for ONE class — a tag, a journal, a group: a name that records
@@ -24,7 +26,7 @@ import { useRackKeys } from './hooks.js'
  * cannot have them disagree.
  */
 export function RackEditClass({
-  name, noun = '태그', wears = '쓰는 것', unit = '개',
+  name, noun = tr("rk_tag"), wears = tr("rk_using_it"), unit = tr("rk_unit_items"),
   exists = [], wearing, onSave, onOpen, onCancel,
   onDelete, deleteWarn, listMax = 12, children,
 }) {
@@ -43,8 +45,8 @@ export function RackEditClass({
   function save() {
     if (nothing) return
     onSave(gone, named, absorb.length
-      ? `${noun} ${gone.length}개를 '${named}' 하나로 합쳤습니다`
-      : merging ? `'${name}'을 '${named}'에 합쳤습니다`
+      ? tr("rk_merged_into_one", noun, gone.length, named)
+      : merging ? tr("rk_merged_into", name, named)
         : `'${name}' → '${named}'`)
   }
   // ⌘S saves and stays; closing is ⌘X's job.
@@ -53,7 +55,7 @@ export function RackEditClass({
   const listId = `rl-cls-${noun}`
   return (
     <div className="rl-edit">
-      <RackActions key={name} saveLabel={merging ? '합치기' : 'save'}
+      <RackActions key={name} saveLabel={merging ? tr("rk_merge") : 'save'}
         onSave={save} saveDisabled={nothing} onCancel={onCancel}
         onRevert={() => { setTo(name); setAbsorb([]) }}
         onDelete={onDelete} deleteWarn={deleteWarn} />
@@ -63,20 +65,20 @@ export function RackEditClass({
             onChange={(e) => setTo(e.target.value)} />
           <datalist id={listId}>{exists.map((t) => <option key={t} value={t} />)}</datalist>
           {named !== name && exists.includes(named)
-            && <span className="rl-hint">이미 있는 {noun}입니다 — 합쳐집니다.</span>}
+            && <span className="rl-hint">{tr("rk_exists_will_merge", noun)}</span>}
         </RackField>
-        <RackField label={`합칠 ${noun}`}>
+        <RackField label={tr("rk_to_merge", noun)}>
           <RackTextRows value={absorb} add={`+ ${noun}`} placeholder={noun}
             onChange={(v) => setAbsorb(v.filter((t) => t !== named))} />
           <span className="rl-hint">
             {absorb.length
-              ? `이 ${absorb.length}개가 '${named || name}'이 됩니다 — 합쳐서 ${users.length}${unit}`
-              : `같은 뜻의 다른 ${noun}를 적으면 이 ${noun}로 합쳐집니다.`}
+              ? tr("rk_these_become", absorb.length, named || name, users.length, unit)
+              : tr("rk_same_meaning_hint", noun, noun)}
           </span>
         </RackField>
         <RackField label={wears}>
           <div className="rl-rows">
-            {users.length === 0 && <span className="rl-hint">없음</span>}
+            {users.length === 0 && <span className="rl-hint">{tr("rk_none")}</span>}
             {users.slice(0, listMax).map((u) => (onOpen ? (
               <button key={u.id} type="button" className="rl-lnk"
                 onClick={() => onOpen(u.id)}>{u.label}</button>
@@ -84,7 +86,7 @@ export function RackEditClass({
               <span key={u.id} className="rl-hint">{u.label}</span>
             )))}
             {users.length > listMax
-              && <span className="rl-hint">… 모두 {users.length}{unit}</span>}
+              && <span className="rl-hint">{tr("rk_all_n_unit", users.length, unit)}</span>}
           </div>
         </RackField>
         {/* Whatever this one class has that the others do not. */}

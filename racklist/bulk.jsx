@@ -1,9 +1,11 @@
+import './strings.js'
 import { useEffect, useMemo, useState } from 'react'
 import { RackActions } from './actions.jsx'
 import { RackField } from './fields.jsx'
 import { typeOf } from './types.jsx'
 import { ctxFor, labelOf, linkKey, isRef } from './schema.js'
 import { dropItems } from './editor.jsx'
+import { tr } from '../i18n.jsx'
 
 /**
  * Editing several items at once — the ones picked in the table.
@@ -99,21 +101,21 @@ export function RackBulkEditor({ def, doc, ids, ctx = {}, onSave, onCancel, canD
     const n = items.filter((r, i) => r !== doc[def.item.key][i]).length
     // save saves: the selection is still the selection, and the next thing to
     // set for all of them is in the form you are looking at.
-    if (await onSave({ [def.item.key]: items }, `${n}${def.unit}을(를) 한꺼번에 저장했습니다.`)) reset()
+    if (await onSave({ [def.item.key]: items }, tr("rk_saved_many", n, def.unit))) reset()
   }
   async function removeAll() {
-    if (await onSave(dropItems(def, doc, recs), `${recs.length}${def.unit}을(를) 지웠습니다.`)) onDeleted?.(recs)
+    if (await onSave(dropItems(def, doc, recs), tr("rk_deleted_many", recs.length, def.unit))) onDeleted?.(recs)
   }
 
-  if (!recs.length) return <p className="rl-msg">선택된 {def.item.noun}이(가) 없습니다.</p>
+  if (!recs.length) return <p className="rl-msg">{tr("rk_none_selected", def.item.noun)}</p>
   return (
     <div className="rl-edit">
       <RackActions key={ids.join(',')} onSave={save} saveDisabled={!dirty} onCancel={onCancel}
-        onRevert={reset} hint={dirty ? '' : '바꾼 칸만 모두에게 적용됩니다.'}
+        onRevert={reset} hint={dirty ? '' : tr("rk_only_changed_apply")}
         onDelete={canDelete ? removeAll : undefined}
-        deleteWarn={`선택한 ${recs.length}${def.unit}을(를) 모두 지웁니다. 되돌릴 수 없습니다.`} />
+        deleteWarn={tr("rk_delete_selected_warn", recs.length, def.unit)} />
       <div className="rl-rec">
-        <RackField label="대상">
+        <RackField label={tr("rk_targets")}>
           <div className="rl-rows">
             <span className="rl-hint">{recs.length}{def.unit}</span>
             <div className="rl-rrow" style={{ flexWrap: 'wrap' }}>
@@ -122,7 +124,7 @@ export function RackBulkEditor({ def, doc, ids, ctx = {}, onSave, onCancel, canD
                   {labelOf(def, r)}
                 </button>
               ))}
-              {recs.length > 20 && <span className="rl-hint">… 외 {recs.length - 20}{def.unit}</span>}
+              {recs.length > 20 && <span className="rl-hint">{tr("rk_and_more", recs.length - 20, def.unit)}</span>}
             </div>
           </div>
         </RackField>
@@ -136,21 +138,21 @@ export function RackBulkEditor({ def, doc, ids, ctx = {}, onSave, onCancel, canD
                 <div className="rl-rrow">
                   <T.Edit value={valueOfF(f)} onChange={(v) => set(f, v)} field={f} ctx={c} rec={{}} patch={() => {}} />
                   {touched.has(f.k) && (
-                    <button type="button" className="rl-x" title="이 칸은 그대로 두기"
+                    <button type="button" className="rl-x" title={tr("rk_leave_field")}
                       onClick={() => setTouched((s) => { const n = new Set(s); n.delete(f.k); return n })}>↺</button>
                   )}
                 </div>
-                {!many(f) && b.mixed && !touched.has(f.k) && <span className="rl-hint">여러 값 — 정하면 모두 이것이 됩니다.</span>}
-                {!many(f) && touched.has(f.k) && <span className="rl-hint">모두 이것이 됩니다.</span>}
+                {!many(f) && b.mixed && !touched.has(f.k) && <span className="rl-hint">{tr("rk_mixed_set_all")}</span>}
+                {!many(f) && touched.has(f.k) && <span className="rl-hint">{tr("rk_all_become")}</span>}
                 {many(f) && b.some.length > 0 && (
                   <div className="rl-rrow" style={{ flexWrap: 'wrap' }}>
-                    <span className="rl-hint">일부에만:</span>
+                    <span className="rl-hint">{tr("rk_only_some")}</span>
                     {b.some.map(({ k, x, n }) => {
                       const off = (drop[f.k] || []).includes(k)
                       return (
                         <span key={k} className="rl-tag" style={off ? { opacity: 0.45, textDecoration: 'line-through' } : null}>
                           {T.text([x], c) || k} <span className="rl-hint">{n}/{recs.length}</span>
-                          <button type="button" className="rl-x" title={off ? '되돌리기' : `가진 ${n}${def.unit}에서 떼기`}
+                          <button type="button" className="rl-x" title={off ? tr("rk_undo") : tr("rk_take_off_from", n, def.unit)}
                             onClick={() => setDrop((s) => ({ ...s, [f.k]: off ? (s[f.k] || []).filter((y) => y !== k) : [...(s[f.k] || []), k] }))}>
                             {off ? '↺' : '×'}
                           </button>
@@ -163,7 +165,7 @@ export function RackBulkEditor({ def, doc, ids, ctx = {}, onSave, onCancel, canD
             </RackField>
           )
         })}
-        {fields.length === 0 && <p className="rl-msg">함께 바꿀 수 있는 칸이 없습니다.</p>}
+        {fields.length === 0 && <p className="rl-msg">{tr("rk_no_shared_fields")}</p>}
       </div>
     </div>
   )
