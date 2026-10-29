@@ -9,7 +9,7 @@ export { RackListing } from './listing.jsx'
 export { RackFolder, RackFilePane, RackSettings, useFolders, fileSrc, fileUrl, scanFiles, onDesktop, copyText } from './files.jsx'
 export { registerType, typeOf, remoteDoc, forgetRemote, useRefOptions } from './types.jsx'
 export {
-  defineRack, itemColumns, classColumns, itemSorters, itemCells, itemSearch, itemTokens,
+  defineRack, FAV, isFav, withFav, itemColumns, classColumns, itemSorters, itemCells, itemSearch, itemTokens,
   classRows, fixedTabs, itemTabId, itemScope, labelOf, useRemoteDocs, valueOf,
 } from './schema.js'
 export { RackTable, RackRow, RackTabs } from './table.jsx'

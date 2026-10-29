@@ -451,7 +451,9 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
    still reads. */
 .rl-tab.rl-opened {
   --t: var(--tone, var(--rk-brand, var(--rk-cite-t)));
-  background: color-mix(in srgb, var(--t) 14%, #fff);
+  /* 14% read as grey under a dark, unsaturated plate (author manager's navy),
+     which is most of them; at 24% the colour is the first thing you see. */
+  background: color-mix(in srgb, var(--t) 24%, #fff);
   color: color-mix(in srgb, var(--t) 85%, #000);
 }
 .rl-tab.rl-opened.on {
@@ -934,3 +936,11 @@ body.rl-copying, body.rl-copying * { cursor: copy !important; }
 .rl-cal-peek div { display: grid; grid-template-columns: 74px 1fr; gap: 6px; line-height: 19px; }
 .rl-cal-peek span { color: var(--rk-dim); }
 .rl-cal-peek em { font-style: normal; color: var(--rk-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The favourite star, first in a row: faint until it is one. */
+.rl-fav { display: flex; align-items: center; justify-content: center; border: 0; background: none; padding: 0; width: 100%; height: 100%; cursor: pointer; color: var(--rk-edge); }
+.rl-c:has(> .rl-fav) { padding: 0; }
+.rl-fav svg { flex: none; width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linejoin: round; }
+.rl-fav.on svg { fill: currentColor; }
+.rl-row:hover .rl-fav { color: var(--rk-mute); }
+.rl-fav.on, .rl-row:hover .rl-fav.on { color: #e6a700; }

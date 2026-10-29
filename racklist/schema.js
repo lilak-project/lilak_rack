@@ -161,9 +161,32 @@ const colOf = (f) => {
 
 /** The item table's columns: the checkbox, the number, then every field that
  *  asked for a column, in the order they are declared. */
+// ─── favourites ───────────────────────────────────────────────────────────
+// A favourite is an item wearing the tag FAV — in the item's tag field when it
+// has one (def.item.favorite: '<field>', or the first field of a tags type),
+// else in a `tags` of its own the declaration never names. It is a tag like
+// any other, so it shows, searches and filters where tags do; and favourites
+// come first in every list of items, whatever it is sorted by.
+export const FAV = 'favorite'
+export const favField = (def) => def.item.favorite
+  || def.item.fields.find((f) => f.type === 'tags' || f.type === 'maintags')?.k || 'tags'
+const tagList = (v) => (Array.isArray(v) ? v : String(v || '').split(/[\s,]+/)).filter(Boolean)
+export const isFav = (def, r) => tagList(r?.[favField(def)]).includes(FAV)
+/** The record with the tag on or off — added at the end, so a first tag that
+ *  means something (a paper's main tag) stays first. */
+export const withFav = (def, r, on) => {
+  const k = favField(def), now = tagList(r[k]).filter((t) => t !== FAV)
+  if (on) return { ...r, [k]: [...now, FAV] }
+  // Off, and nothing else was there: no field left behind.
+  if (!now.length && !def.item.fields.some((f) => f.k === k)) { const { [k]: _, ...rest } = r; return rest }
+  return { ...r, [k]: now }
+}
+const favFirst = (def, list) => [...list.filter((r) => isFav(def, r)), ...list.filter((r) => !isFav(def, r))]
+
 export function itemColumns(def) {
   return [
     { k: 'chk', w: 26, min: 26, fix: true },
+    { k: 'fav', w: 26, min: 26, fix: true },
     { k: 'num', w: 40, min: 30, fix: true, label: '#' },
     ...(def.item.columns
       ? def.item.columns.map((k) => def.item.fields.find((f) => f.k === k)).filter(Boolean)
@@ -335,7 +358,9 @@ export function fixedTabs(def) {
 
 /** The items a tab lists, sorted: every one, or those wearing one class. */
 export function itemScope(def, doc, tab, sort, sorters, tie) {
-  if (tab?.kind !== 'items') return []
+  return tab?.kind === 'items' ? favFirst(def, scopeOf(def, doc, tab, sort, sorters, tie)) : []
+}
+function scopeOf(def, doc, tab, sort, sorters, tie) {
   let list = doc?.[def.item.key] || []
   const cls = tab.of ? def.classes.find((c) => c.k === tab.of) : null
   if (cls?.list) {

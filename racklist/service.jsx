@@ -18,7 +18,7 @@ import { typeOf } from './types.jsx'
 import { useFolders, RackFolder, RackFilePane, RackSettings, hasRoots } from './files.jsx'
 import { asSorts, bumpSort, bySome } from './sort.js'
 import {
-  defineRack, itemColumns, classColumns, itemSorters, itemCells, itemSearch, itemTokens,
+  defineRack, isFav, withFav, itemColumns, classColumns, itemSorters, itemCells, itemSearch, itemTokens,
   classRows, wornBy, wears, isRef, fixedTabs, itemTabId, itemScope, labelOf, useRemoteDocs, valueOf,
   EMPTY_CELL as D,
 } from './schema.js'
@@ -49,6 +49,13 @@ import { tr } from '../i18n.jsx'
  * setNote, the selection (picked, chosen) and the current tab. A field's
  * widget and cell get much the same through `ctx`.
  */
+// The favourite star: soft at the points (round joins), filled when it is one (CSS).
+const STAR = (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <polygon points="12,3 14.7,8.8 21,9.5 16.3,13.9 17.6,20.2 12,17 6.4,20.2 7.7,13.9 3,9.5 9.3,8.8" />
+  </svg>
+)
+
 export function RackService({ def: declared, slots = {} }) {
   const def = useMemo(() => (declared.docKeys ? declared : defineRack(declared)), [declared])
   const [doc, setDoc] = useState(null)
@@ -178,6 +185,17 @@ export function RackService({ def: declared, slots = {} }) {
   }, [doc, def, setNote])
 
   const openEdit = useCallback((t) => panes.open(t), [panes])
+  // ☆ / ★ in a row: the favorite tag on or off, saved at once — the star turns
+  // as it is pressed, and back again only if the save does not go through.
+  const [favNow, setFavNow] = useState({})
+  const starred = (r) => (idOf(r) in favNow ? favNow[idOf(r)] : isFav(def, r))
+  const toggleFav = (r) => {
+    const id = idOf(r), on = !starred(r)
+    setFavNow((m) => ({ ...m, [id]: on }))
+    commit({ [def.item.key]: items.map((x) => (idOf(x) === id ? withFav(def, x, on) : x)) },
+      tr(on ? 'rk_fav_on' : 'rk_fav_off', labelOf(def, r)))
+      .finally(() => setFavNow((m) => { const { [id]: _, ...rest } = m; return rest }))
+  }
   // `rec` when the caller already has the record — right after creating one,
   // the document this closure sees does not have it yet, and the tab would be
   // named "새 …" for a record that has a name.
@@ -584,6 +602,11 @@ export function RackService({ def: declared, slots = {} }) {
                           chk: <input type="checkbox" checked={on} tabIndex={-1} readOnly
                             aria-label={tr("rk_select_x", labelOf(def, r))} />,
                           num: i + 1,
+                          fav: (
+                            <button type="button" className={`rl-fav${starred(r) ? ' on' : ''}`}
+                              title={starred(r) ? tr('rk_fav_remove') : tr('rk_fav_add')}
+                              onClick={(e) => { e.stopPropagation(); toggleFav(r) }}>{STAR}</button>
+                          ),
                           ...itemCells(def, doc, r, ctx),
                         }} />
                     )
