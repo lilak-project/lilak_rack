@@ -451,10 +451,11 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
    still reads. */
 .rl-tab.rl-opened {
   --t: var(--tone, var(--rk-brand, var(--rk-cite-t)));
-  /* 14% read as grey under a dark, unsaturated plate (author manager's navy),
-     which is most of them; at 24% the colour is the first thing you see. */
-  background: color-mix(in srgb, var(--t) 24%, #fff);
-  color: color-mix(in srgb, var(--t) 85%, #000);
+  /* A tenth of a dark, unsaturated plate (author manager's navy) just reads as
+     grey, so the fill carries 40% of it — and the label goes darker than the
+     plate to stay legible on top of that much colour. */
+  background: color-mix(in srgb, var(--t) 40%, #fff);
+  color: color-mix(in srgb, var(--t) 60%, #000);
 }
 .rl-tab.rl-opened.on {
   background: var(--rk-panel);
