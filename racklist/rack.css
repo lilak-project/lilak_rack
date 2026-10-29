@@ -769,7 +769,13 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
 
 /* ── the calendar (RackCalendar) — a month the way Apple's Calendar draws one ── */
 .rl-cal { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 4px 10px 0; user-select: none; }
-.rl-cal-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 6px 2px 8px; }
+/* One line: the legend loses its words before anything wraps (calendar.jsx, `tight`). */
+.rl-cal-head { display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; padding: 6px 2px 8px; }
+.rl-cal-head > :not(.rl-sp) { flex: none; }
+.rl-cal-head.tight .rl-cal-key-t { display: none; }
+.rl-cal-head.tight .rl-cal-key { padding: 2px 5px; }
+/* Narrower still: the colours themselves wrap, inside their own box. */
+.rl-cal-head.tight > .rl-cal-legend { flex: 0 1 auto; min-width: 0; }
 .rl-cal-title { margin: 0; font-size: var(--fs-title); font-weight: 700; color: var(--rk-ink); letter-spacing: -.01em; min-width: 140px; }
 .rl-cal-legend { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .rl-cal-key {
@@ -820,6 +826,16 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
 .rl-cal-cell.m-top { box-shadow: 0 -1px 0 var(--rk-ink); }
 .rl-cal-num.today { background: #ef4444; color: #fff; font-weight: 600; }
 .rl-cal-num.shown { background: var(--rk-ink); color: #fff; font-weight: 600; }   /* the day a date's label asked for */
+/* A day whose top two lanes are free: its number large, in the middle of them,
+   and the small one in the corner gone (on the 1st, the month large and the 1 kept). */
+.rl-cal-cell.big .rl-cal-num { visibility: hidden; }
+.rl-cal-num.big { place-self: center; translate: 0 -14px;   /* half the events' 28px top: the middle of the number's row and the two lanes */
+  font-size: var(--fs-display); line-height: 1.15; padding: 1px 12px; border-radius: 999px; white-space: nowrap; }
+/* Large, so lighter: the slate of secondary text, and never bold (the 1st's month either). */
+.rl-cal-num.big { font-weight: 400; }
+.rl-cal-num.big:not(.today):not(.shown) { color: var(--rk-dim); }
+.rl-cal-num.big.out:not(.today):not(.shown) { color: var(--rk-mute); }
+.rl-cal-num.big.sweep:not(.today):not(.shown) { background: var(--rk-cite-t, #2563eb); color: #fff; }
 .rl-cal-events {
   position: relative; z-index: 2; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); row-gap: 2px;   /* minmax: a name running on never widens a day */
   padding: 28px 0 6px; pointer-events: none;

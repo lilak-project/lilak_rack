@@ -56,14 +56,33 @@ const BEFORE = 10
 const AFTER = 30
 const MORE = 16
 const LANES = 2        // a week's room, at least, in lanes of 22px
+const OPEN = 220       // ms: weeks opening up, bars sliding to their places
+const UNROLL = 320     // ms: then a new bar unrolling from the left
+const NONE = []
+
+// Where each calendar was scrolled to, for as long as the page around it
+// lives. The portal frames one service at a time and loads it afresh on the
+// way back, so this rides on the portal's own window (the same origin): back
+// from another service, the calendar is where it was; opened anew, or after a
+// reload, it starts at today. A page of its own keeps it on its own window.
+// A name's width as a bar draws it (--fs-small), with its padding and room for
+// a mark before it (☐, ↻, the handed-in file).
+let pen
+const textW = (t) => {
+  pen ||= document.createElement('canvas').getContext('2d')
+  pen.font = `12px ${getComputedStyle(document.body).fontFamily}`
+  return pen.measureText(t || '').width + 14 + 16
+}
+const kept = () => { try { return (window.top.__rackCal ||= {}) } catch { return (window.__rackCal ||= {}) } }
 
 export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOpen, onNew, onResize, onCopy, onOccurrence, at }) {
   const cal = def.calendar
   const idk = def.item.id || 'id'
   const today = fmt(new Date())
-  const viewKey = projectKey(def.key, 'calmonth')
-  const [month, setMonth] = useState(() => load(viewKey, monthOf(today)))     // the month on screen
-  useEffect(() => { save(viewKey, month) }, [viewKey, month])
+  const viewKey = projectKey(def.key, 'calat')
+  // { week, off }: the week at the top of the view and how far into it — or, the first time, today.
+  const [was] = useState(() => kept()[viewKey] || null)
+  const [month, setMonth] = useState(() => monthOf(was ? addDays(was.week, 4) : today))     // the month on screen
   const [hidden, setHidden] = useState(() => new Set(load(projectKey(def.key, 'calhide'), [])))
   useEffect(() => { save(projectKey(def.key, 'calhide'), [...hidden]) }, [def.key, hidden])
   // The lines from a handed-in day to its talk: drawn, or not.
@@ -71,7 +90,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   useEffect(() => { save(projectKey(def.key, 'callinks'), showLinks) }, [def.key, showLinks])
 
   // The weeks drawn: [first, count]. Grows at either end as you scroll there.
-  const [span, setSpan] = useState(() => [addDays(sunday(`${month}-01`), -7 * BEFORE), BEFORE + AFTER])
+  const [span, setSpan] = useState(() => [addDays(was ? was.week : sunday(today), -7 * BEFORE), BEFORE + AFTER])
   const weeks = useMemo(() => Array.from({ length: span[1] }, (_, i) => addDays(span[0], 7 * i)), [span])
 
   const textOf = (r, k) => {
@@ -187,12 +206,52 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   // To a month with something found: its first find, in the middle.
   const toFound = (m) => goTo(m, events.filter((ev) => monthOf(ev.s) === m).map((ev) => ev.s).sort()[0], true)
 
+  // The head is one line. When the legend's words and the month buttons do
+  // not fit on it, the legend keeps its colours and drops the words (each
+  // says its name on hover); they come back once the line is wide enough
+  // for them again — `need` is how wide that was.
+  const headRef = useRef(null)
+  const [tight, setTight] = useState(false)
+  const need = useRef(0)
+  useLayoutEffect(() => {
+    const el = headRef.current
+    if (!el) return undefined
+    const fit = () => {
+      if (!el.classList.contains('tight')) {
+        need.current = el.scrollWidth
+        if (el.scrollWidth > el.clientWidth + 1) setTight(true)
+      } else if (el.clientWidth >= need.current) setTight(false)
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [feeds.length, query, tight])
+
   // ── scrolling ───────────────────────────────────────────────────────────
   const body = useRef(null)
+  // A day's width, and a name's in the bars' type: how far a name runs on.
+  const [dayW, setDayW] = useState(0)
+  useLayoutEffect(() => {
+    const el = body.current
+    if (!el) return undefined
+    const fit = () => setDayW(el.clientWidth / 7)
+    fit()                                       // now, before the first paint
+    const ro = new ResizeObserver(fit)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   // The week to bring into view after the next draw: at the top or in the
   // middle, scrolled to or (the first time, or from far away) simply shown.
-  const goal = useRef({ w: sunday(`${month}-01`), center: false, smooth: false })
+  const goal = useRef(was ? { w: was.week, off: was.off, smooth: false } : { w: sunday(today), center: true, smooth: false })
   const keep = useRef(null)                     // weeks added above: keep what is on screen still
+  const place = (el, g) => {
+    const w = el.querySelector(`[data-week="${g.w}"]`)
+    if (!w) return
+    const top = g.center ? w.offsetTop + w.offsetHeight / 2 - el.clientHeight / 2 : w.offsetTop + (g.off || 0)
+    if (g.smooth) el.scrollTo({ top, behavior: 'smooth' })
+    else el.scrollTop = top
+  }
   // To a month (its first week at the top) — or to a day, in the middle. The
   // weeks between are drawn first, so the way there is scrolled through;
   // further than FAR weeks it is a jump instead.
@@ -225,12 +284,71 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     const g = goal.current
     if (!g) return
     goal.current = null
-    const w = el.querySelector(`[data-week="${g.w}"]`)
-    if (!w) return
-    const top = g.center ? w.offsetTop + w.offsetHeight / 2 - el.clientHeight / 2 : w.offsetTop
-    if (g.smooth) el.scrollTo({ top, behavior: 'smooth' })
-    else el.scrollTop = top
-  }, [span])
+    place(el, g)
+  }, [span])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── moving, not jumping ─────────────────────────────────────────────────
+  // The calendar opens empty and the records come in after; and whenever they
+  // change (a group shown, a todo arriving) the weeks are not redrawn at
+  // once: a week that needs more lanes opens up, the bars already there slide
+  // to their new places, and then the new ones unroll from the left with
+  // their names. All the while the week line nearest the middle of the
+  // screen stays where it is — what grows above it grows upwards.
+  const [drawn, setDrawn] = useState(false)
+  useEffect(() => { const t = setTimeout(() => setDrawn(true), 60); return () => clearTimeout(t) }, [])
+  const shownEvents = drawn ? events : NONE
+  const flip = useRef(null)                     // the last layout: weeks, bars, big numbers
+  const moving = useRef([])                     // the animations under way
+  useLayoutEffect(() => {
+    const el = body.current
+    if (!el) return
+    moving.current.forEach((a) => a.cancel())
+    moving.current = []
+    const now = {
+      span, dayW,
+      weeks: new Map([...el.querySelectorAll('.rl-cal-week')].map((w) => [w.dataset.week, { el: w, top: w.offsetTop, h: w.offsetHeight }])),
+      bars: new Map([...el.querySelectorAll('.rl-cal-bar[data-ev]')].map((b) => [`${b.closest('.rl-cal-week').dataset.week}|${b.dataset.ev}|${b.dataset.piece}`, { el: b, x: b.offsetLeft, y: b.offsetTop }])),
+      bigs: new Map([...el.querySelectorAll('[data-big]')].map((n) => [n.dataset.big, n])),
+    }
+    const before = flip.current
+    flip.current = now
+    // Scrolling for more weeks, a new width, a drag under way, or asked for
+    // no motion: simply drawn.
+    if (!before || before.span !== span || before.dayW !== dayW || drag.current || copying
+      || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+    // The week line nearest the middle, and where it is on the screen.
+    const mid = el.scrollTop + el.clientHeight / 2
+    let anchor = null
+    for (const [w, r] of before.weeks) if (!anchor || Math.abs(r.top - mid) < Math.abs(anchor.top - mid)) anchor = { w, top: r.top }
+    const at = anchor && anchor.top - el.scrollTop
+    const go = (node, frames, opts) => { const a = node.animate(frames, { easing: 'cubic-bezier(.2,.7,.3,1)', ...opts }); moving.current.push(a); return a }
+    const opening = []
+    for (const [w, r] of now.weeks) {
+      const o = before.weeks.get(w)
+      if (!o || o.h === r.h) continue
+      r.el.style.overflow = 'clip'
+      const a = go(r.el, [{ height: `${o.h}px` }, { height: `${r.h}px` }], { duration: OPEN })
+      a.onfinish = a.oncancel = () => { r.el.style.overflow = '' }
+      opening.push(a)
+    }
+    const later = opening.length ? OPEN : 0
+    for (const [k, b] of now.bars) {
+      const o = before.bars.get(k)
+      if (!o) go(b.el, [{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0 0 0)' }], { duration: UNROLL, delay: later, fill: 'backwards' })
+      else if (o.x !== b.x || o.y !== b.y) go(b.el, [{ transform: `translate(${o.x - b.x}px, ${o.y - b.y}px)` }, { transform: 'none' }], { duration: OPEN })
+    }
+    for (const [d, n] of now.bigs) if (!before.bigs.has(d)) go(n, [{ opacity: 0 }, { opacity: 1 }], { duration: UNROLL, delay: later, fill: 'backwards' })
+    if (links.current && moving.current.length) go(links.current, [{ opacity: 0 }, { opacity: 1 }], { duration: 150, delay: later + UNROLL, fill: 'backwards' })
+    // Hold the line while the weeks open — every frame until they have, and
+    // once more at the end (a slow first frame starts them late).
+    const line = anchor && now.weeks.get(anchor.w)?.el
+    if (!opening.length || !line) return
+    const hold = () => { el.scrollTop = line.offsetTop - at }
+    const open = () => opening.some((a) => a.playState === 'running' || a.playState === 'pending')
+    const tick = () => { hold(); if (open()) requestAnimationFrame(tick) }
+    tick()
+    Promise.all(opening.map((a) => a.finished)).then(hold, () => {})
+  }, [shownEvents, span, dayW])   // eslint-disable-line react-hooks/exhaustive-deps
   // Today's week, in the middle.
   const toToday = () => { setShown(''); goTo(monthOf(today), today, true) }
   // Asked to show a day (a date's label pressed in an editor): its week in
@@ -249,6 +367,9 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     const ws = [...el.querySelectorAll('[data-week]')].find((w) => w.offsetTop + w.offsetHeight > y)
     // A week belongs to the month its Thursday is in.
     if (ws) { const m = monthOf(addDays(ws.dataset.week, 4)); if (m !== month) setMonth(m) }
+    // Where it is, to come back to (kept).
+    const top = [...el.querySelectorAll('[data-week]')].find((w) => w.offsetTop + w.offsetHeight > el.scrollTop)
+    if (top) kept()[viewKey] = { week: top.dataset.week, off: el.scrollTop - top.offsetTop }
     // More weeks before or after, before the edge is reached.
     if (el.scrollTop < el.clientHeight) {
       keep.current = el.scrollHeight
@@ -447,28 +568,42 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
 
   return (
     <div className="rl-cal">
-      <div className="rl-cal-head">
+      <div ref={headRef} className={`rl-cal-head${tight ? ' tight' : ''}`}>
         <h2 className="rl-cal-title">{tr('rk_year_month', ty, tm)}</h2>
         <div className="rl-cal-legend">
+          {(() => {
+            // Every group and feed at once: all shown → all hidden, else all shown.
+            const keys = [...(cal.groups || []).map((_, i) => i), ...feeds.map(([f]) => `feed:${f}`)]
+            const anyOff = keys.some((k) => hidden.has(k))
+            const colors = [...(cal.groups || []).map((g) => g.color), ...feeds.map(([, c]) => c)]
+            return (
+              <button type="button" className={`rl-cal-key${anyOff ? ' off' : ''}`}
+                title={`${tr("rk_cal_all")} · ${anyOff ? tr("rk_cal_show_all") : tr("rk_cal_hide_all")}`}
+                onClick={() => setHidden(anyOff ? new Set() : new Set(keys))}>
+                <i style={{ background: `conic-gradient(${colors.map((c, i) => `${c} ${(i / colors.length) * 360}deg ${((i + 1) / colors.length) * 360}deg`).join(', ')})` }} />
+                <span className="rl-cal-key-t">{tr("rk_cal_all")}</span>
+              </button>
+            )
+          })()}
           {(cal.groups || []).map((g, i) => (
             <button key={g.label} type="button" className={`rl-cal-key${hidden.has(i) ? ' off' : ''}`}
-              title={hidden.has(i) ? tr("rk_show") : tr("rk_hide")}
+              title={`${g.label} · ${hidden.has(i) ? tr("rk_show") : tr("rk_hide")}`}
               onClick={() => setHidden((s) => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n })}>
-              <i style={{ background: g.color }} />{g.label}
+              <i style={{ background: g.color }} /><span className="rl-cal-key-t">{g.label}</span>
             </button>
           ))}
           {feeds.map(([f, c]) => (
             <button key={`feed:${f}`} type="button" className={`rl-cal-key rl-cal-feed${hidden.has(`feed:${f}`) ? ' off' : ''}`}
               title={tr("rk_gcal_readonly", f, hidden.has(`feed:${f}`) ? tr("rk_show") : tr("rk_hide"))}
               onClick={() => setHidden((s) => { const n = new Set(s); const k = `feed:${f}`; if (n.has(k)) n.delete(k); else n.add(k); return n })}>
-              <i style={{ borderColor: c }} />{f}
+              <i style={{ borderColor: c }} /><span className="rl-cal-key-t">{f}</span>
             </button>
           ))}
           {cal.submit && cal.mark && (
             <button type="button" className={`rl-cal-key${showLinks ? '' : ' off'}`}
-              title={showLinks ? tr("rk_hide_links") : tr("rk_show_links")}
+              title={`${tr("rk_links_lines")} · ${showLinks ? tr("rk_hide_links") : tr("rk_show_links")}`}
               onClick={() => setShowLinks((v) => !v)}>
-              <i className="rl-cal-key-line" />{tr("rk_links_lines")}</button>
+              <i className="rl-cal-key-line" /><span className="rl-cal-key-t">{tr("rk_links_lines")}</span></button>
           )}
         </div>
         <span className="rl-sp" />
@@ -495,6 +630,11 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
         onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); toToday() } }}>
         <svg ref={links} className="rl-cal-links" />
         {weeks.map((ws) => {
+          // Where a name starts: at the record's first day, if two days or more
+          // are left from it to the bar's end here (the trip's end); else at the bar's beginning.
+          const skipOf = (ev, a, b) => (ev.s > addDays(ws, a) && ev.s <= addDays(ws, b) && b - diff(ws, ev.s) >= 1 ? diff(ws, ev.s) - a : 0)
+          const numClass = (d) => `rl-cal-num${d === today ? ' today' : d === shown ? ' shown' : ''}${d.slice(8) === '01' ? ' first' : ''}`
+          const numText = (d) => (d.slice(8) === '01' ? tr('rk_month_first', Number(d.slice(5, 7))) : tr('rk_day_num', Number(d.slice(8))))
           const we = addDays(ws, 6)
           const days = Array.from({ length: 7 }, (_, i) => addDays(ws, i))
           const col = (d) => diff(ws, d)
@@ -502,7 +642,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
           // declared, longest first in each, each in the first lane it fits —
           // and then the groups that fill from the bottom (calendar.groups[].bottom:
           // 1 lowest, then 2, …), each in the lowest lane it fits.
-          const segs = events.flatMap((ev) => ev.pieces.filter((p) => p.from <= we && p.to >= ws).map((p) => ({ ev, p })))
+          const segs = shownEvents.flatMap((ev) => ev.pieces.filter((p) => p.from <= we && p.to >= ws).map((p) => ({ ev, p })))
             .sort((x, y) => diff(y.p.from, y.p.to) - diff(x.p.from, x.p.to) || x.p.from.localeCompare(y.p.from) || x.ev.label.localeCompare(y.ev.label))
           const fits = (used, a, b) => used.every(([x, y]) => b < x || a > y)
           const lanes = []
@@ -536,7 +676,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
           // for its whole name.
           const total = Math.max(lanes.length, LANES)
           // A week a line leaves from has room between its lanes for it.
-          const gap = events.some((ev) => ev.sb && ev.sb !== ev.to
+          const gap = shownEvents.some((ev) => ev.sb && ev.sb !== ev.to
             && ((ev.sb >= ws && ev.sb <= we) || (ev.to >= ws && ev.to <= we))) ? GAP.wide : GAP.base
           const taken = Array.from({ length: total }, (_, i) => (lanes[i] || []).slice())
           for (const s of [...placed].sort((x, y) => x.lane - y.lane)) {
@@ -553,11 +693,22 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
             if (s.p.to > we) continue
             while (s.b + s.free < 6 && taken.slice(s.lane, s.lane + s.rows).every((used) => fits(used, s.b + s.free + 1, s.b + s.free + 1))) s.free += 1
           }
+          // A day whose top two lanes are free (no bar, no name running over
+          // them): its number large, in the middle of those two.
+          // How far a name really runs on is measured; until the days have a
+          // width, it is taken to run as far as it may.
+          const used = Array.from({ length: 7 }, () => new Array(total).fill(false))
+          for (const s of placed) {
+            const at = s.a + skipOf(s.ev, s.a, s.b)
+            const over = dayW ? Math.min(s.free, Math.max(0, at + Math.ceil(textW(s.ev.label) / s.rows / dayW) - 1 - s.b)) : s.free
+            for (let c = s.a; c <= s.b + over; c++) for (let r = s.lane; r < s.lane + s.rows; r++) used[c][r] = true
+          }
+          const open = used.map((lanes) => !lanes[0] && !lanes[1])
           return (
             <div key={ws} className="rl-cal-week" data-week={ws}>
               <div className="rl-cal-cells">
                 {days.map((d) => (
-                  <div key={d} className={`rl-cal-cell${monthOf(d) !== month ? ' out' : ''}${inSweep(d) ? ' sweep' : ''}${inDrop(d) ? ' drop' : ''}${monthOf(addDays(d, -7)) !== monthOf(d) ? ' m-top' : ''}`}
+                  <div key={d} className={`rl-cal-cell${monthOf(d) !== month ? ' out' : ''}${inSweep(d) ? ' sweep' : ''}${inDrop(d) ? ' drop' : ''}${monthOf(addDays(d, -7)) !== monthOf(d) ? ' m-top' : ''}${open[col(d)] && d.slice(8) !== '01' ? ' big' : ''}`}
                     onMouseDown={(e) => {
                       // The left button lights days: one, or as many as it drags across.
                       if (e.button !== 0) return
@@ -575,13 +726,16 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
                       } else onNew({ [cal.start]: d })
                       setSweep(null)
                     }}>
-                    <span className={`rl-cal-num${d === today ? ' today' : d === shown ? ' shown' : ''}${d.slice(8) === '01' ? ' first' : ''}`}>
-                      {d.slice(8) === '01' ? tr('rk_month_first', Number(d.slice(5, 7))) : tr('rk_day_num', Number(d.slice(8)))}
-                    </span>
+                    <span className={numClass(d)}>{open[col(d)] && d.slice(8) === '01' ? tr('rk_day_num', 1) : numText(d)}</span>
                   </div>
                 ))}
               </div>
               <div className="rl-cal-events" style={{ gridTemplateRows: `repeat(${total}, 22px)`, rowGap: gap }}>
+                {days.map((d) => open[col(d)] && (
+                  // On the 1st the month is large and the day stays small in its corner.
+                  <span key={d} data-big={d} className={`${d.slice(8) === '01' ? 'rl-cal-num first' : numClass(d)} big${monthOf(d) !== month ? ' out' : ''}${inSweep(d) ? ' sweep' : ''}`}
+                    style={{ gridColumn: col(d) + 1, gridRow: '1 / span 2' }}>{d.slice(8) === '01' ? tr('rk_month_short', Number(d.slice(5, 7))) : numText(d)}</span>
+                ))}
                 {placed.map(({ ev, p, a, b, lane, rows, free }) => {
                   const bottom = lane > 0 && lane + rows >= total     // in the bottom lane (and not the top): a line leaves from below
                   const n = b - a + 1
@@ -595,11 +749,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
                   // The ends that stretch are the record's own, and only on its main piece.
                   const own = p.key === 'main' && !ev.copy && !ev.ext && !ev.occ
                   const sIn = own && ev.s >= ws && ev.s <= we, eIn = own && ev.e >= ws && ev.e <= we
-                  // Where the name starts: at the record's first day, if two days
-                  // or more are left from it to the bar's end here (the trip's
-                  // end); else at the bar's beginning.
-                  const room = ev.s > addDays(ws, a) && ev.s <= addDays(ws, b) && b - col(ev.s) >= 1
-                  const skip = room ? col(ev.s) - a : 0
+                  const skip = skipOf(ev, a, b)
                   return (
                     <div key={`${ev.id}:${p.key}`} data-ev={ev.id} data-piece={p.key} data-bottom={bottom ? '1' : undefined} className={`rl-cal-bar${ev.paper ? ' paper' : ''}${ev.hatch ? ' hatch' : ''}${ev.online ? ' online' : ''}${ev.ext ? ' ext' : ''}${ev.ext?.done ? ' done' : ''}${ev.copy ? ' copy' : ''}${free ? ' spill' : ''}${ev.occ ? ' occ' : ''}${picked?.has(ev.base || ev.id) ? ' on' : ''}${p.from < ws ? ' cont-l' : ''}${p.to > we ? ' cont-r' : ''}${rows > 1 ? ' tall' : ''}`}
                       style={{ '--c': ev.color, gridRow: `${lane + 1} / span ${rows}`, gridColumn: `${a + 1} / ${b + 2}`, '--lines': Math.floor((rows * 22 + (rows - 1) * gap - 4) / 15) }} {...barProps(ev)}>
