@@ -56,16 +56,11 @@ const BEFORE = 10
 const AFTER = 30
 const MORE = 16
 const LANES = 2        // a week's room, at least, in lanes of 22px
-const OPEN = 220       // ms: weeks opening up, bars sliding to their places
-const UNROLL = 320     // ms: then a new bar unrolling from the left
-const FOLD = 200       // ms: before all that, a bar going rolling up to its left end
+const OPEN = 280       // ms: weeks opening up, bars sliding to their places
+const UNROLL = 400     // ms: then a new bar unrolling from the left
+const FOLD = 260       // ms: before all that, a bar going rolling up to its left end
 const NONE = []
 
-// Where each calendar was scrolled to, for as long as the page around it
-// lives. The portal frames one service at a time and loads it afresh on the
-// way back, so this rides on the portal's own window (the same origin): back
-// from another service, the calendar is where it was; opened anew, or after a
-// reload, it starts at today. A page of its own keeps it on its own window.
 // A name's width as a bar draws it (--fs-small), with its padding and room for
 // a mark before it (☐, ↻, the handed-in file).
 let pen
@@ -74,7 +69,15 @@ const textW = (t) => {
   pen.font = `12px ${getComputedStyle(document.body).fontFamily}`
   return pen.measureText(t || '').width + 14 + 16
 }
+
+// Where each calendar was scrolled to, for as long as the page around it
+// lives. The portal frames one service at a time and loads it afresh on the
+// way back, so this rides on the portal's own window (the same origin): back
+// from another service, the calendar is where it was; opened anew, or after a
+// reload — of the portal or of this frame alone — it starts at today. A page
+// of its own keeps it on its own window.
 const kept = () => { try { return (window.top.__rackCal ||= {}) } catch { return (window.__rackCal ||= {}) } }
+const reloaded = () => performance.getEntriesByType?.('navigation')[0]?.type === 'reload'
 
 export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOpen, onNew, onResize, onCopy, onOccurrence, at }) {
   const cal = def.calendar
@@ -82,7 +85,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   const today = fmt(new Date())
   const viewKey = projectKey(def.key, 'calat')
   // { week, off }: the week at the top of the view and how far into it — or, the first time, today.
-  const [was] = useState(() => kept()[viewKey] || null)
+  const [was] = useState(() => (reloaded() ? null : kept()[viewKey] || null))
   const [month, setMonth] = useState(() => monthOf(was ? addDays(was.week, 4) : today))     // the month on screen
   const [hidden, setHidden] = useState(() => new Set(load(projectKey(def.key, 'calhide'), [])))
   useEffect(() => { save(projectKey(def.key, 'calhide'), [...hidden]) }, [def.key, hidden])
@@ -246,7 +249,18 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   // middle, scrolled to or (the first time, or from far away) simply shown.
   const goal = useRef(was ? { w: was.week, off: was.off, smooth: false } : { w: sunday(today), center: true, smooth: false })
   const keep = useRef(null)                     // weeks added above: keep what is on screen still
-  const opened = useRef(goal.current)           // where it opened, held as the records come in
+  // Where it opened (today's week in the middle, or where it was left), held
+  // there while the records come in — however many times, and however late
+  // (todos, Google's) — until the person moves it themselves.
+  const opened = useRef(goal.current)
+  useEffect(() => {
+    const el = body.current
+    if (!el) return undefined
+    const off = () => { opened.current = null }
+    const evs = ['wheel', 'pointerdown', 'touchstart', 'keydown']
+    evs.forEach((t) => el.addEventListener(t, off, { passive: true }))
+    return () => evs.forEach((t) => el.removeEventListener(t, off))
+  }, [])
   const place = (el, g) => {
     const w = el.querySelector(`[data-week="${g.w}"]`)
     if (!w) return
@@ -321,18 +335,22 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     }
     const before = flip.current
     flip.current = now
-    // Scrolling for more weeks, a new width, a drag under way, or asked for
-    // no motion: simply drawn.
-    if (!before || before.span !== span || before.dayW !== dayW || drag.current || copying
-      || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
-    // The week line nearest the middle, and where it is on the screen — or,
-    // as the records first come in, the week opened to: in the middle once
-    // it has opened (today's), or where it was left.
+    // The week it opened to, while it is still held: in the middle once it
+    // has opened, or where it was left. Otherwise (below) the week line
+    // nearest the middle.
     let anchor = null, at = 0
-    if (!before.drawn && opened.current && now.weeks.has(opened.current.w)) {
+    if (opened.current && now.weeks.has(opened.current.w)) {
       anchor = { w: opened.current.w }
       at = opened.current.center ? Math.max(0, (el.clientHeight - now.weeks.get(anchor.w).h) / 2) : -opened.current.off
-    } else {
+    }
+    // Scrolling for more weeks, a new width, a drag under way, or asked for
+    // no motion: simply drawn (the week opened to still where it belongs).
+    if (!before || before.span !== span || before.dayW !== dayW || drag.current || copying
+      || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      if (anchor) el.scrollTop = now.weeks.get(anchor.w).el.offsetTop - at
+      return
+    }
+    if (!anchor) {
       const mid = st + el.clientHeight / 2
       for (const [w, r] of live || before.weeks) if (!anchor || Math.abs(r.top - mid) < Math.abs(anchor.top - mid)) anchor = { w, top: r.top }
       at = anchor && anchor.top - st
