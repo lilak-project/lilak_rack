@@ -58,6 +58,7 @@ const MORE = 16
 const LANES = 2        // a week's room, at least, in lanes of 22px
 const OPEN = 220       // ms: weeks opening up, bars sliding to their places
 const UNROLL = 320     // ms: then a new bar unrolling from the left
+const FOLD = 200       // ms: before all that, a bar going rolling up to its left end
 const NONE = []
 
 // Where each calendar was scrolled to, for as long as the page around it
@@ -245,6 +246,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   // middle, scrolled to or (the first time, or from far away) simply shown.
   const goal = useRef(was ? { w: was.week, off: was.off, smooth: false } : { w: sunday(today), center: true, smooth: false })
   const keep = useRef(null)                     // weeks added above: keep what is on screen still
+  const opened = useRef(goal.current)           // where it opened, held as the records come in
   const place = (el, g) => {
     const w = el.querySelector(`[data-week="${g.w}"]`)
     if (!w) return
@@ -257,6 +259,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   // further than FAR weeks it is a jump instead.
   const goTo = useCallback((ym, at = `${ym}-01`, center = false) => {
     const w = sunday(at)
+    opened.current = null
     goal.current = { w, center, smooth: true }
     setSpan(([a, n]) => {
       const last = addDays(a, 7 * (n - 1))
@@ -290,10 +293,11 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   // ── moving, not jumping ─────────────────────────────────────────────────
   // The calendar opens empty and the records come in after; and whenever they
   // change (a group shown, a todo arriving) the weeks are not redrawn at
-  // once: a week that needs more lanes opens up, the bars already there slide
-  // to their new places, and then the new ones unroll from the left with
-  // their names. All the while the week line nearest the middle of the
-  // screen stays where it is — what grows above it grows upwards.
+  // once: the bars going roll up to their left ends, a week that needs more
+  // lanes (or fewer) opens up (or closes), the bars staying slide to their
+  // new places, and then the new ones unroll from the left with their names.
+  // All the while the week line nearest the middle of the screen stays where
+  // it is — what grows above it grows upwards.
   const [drawn, setDrawn] = useState(false)
   useEffect(() => { const t = setTimeout(() => setDrawn(true), 60); return () => clearTimeout(t) }, [])
   const shownEvents = drawn ? events : NONE
@@ -302,12 +306,17 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   useLayoutEffect(() => {
     const el = body.current
     if (!el) return
+    // Changed again while still moving: go on from the weeks as they are on
+    // screen now, not from where the last change was going to leave them.
+    const live = moving.current.some((a) => a.playState === 'running' || a.playState === 'pending')
+      && new Map([...el.querySelectorAll('.rl-cal-week')].map((w) => [w.dataset.week, { top: w.offsetTop, h: w.offsetHeight }]))
+    const st = el.scrollTop
     moving.current.forEach((a) => a.cancel())
     moving.current = []
     const now = {
-      span, dayW,
+      span, dayW, drawn,
       weeks: new Map([...el.querySelectorAll('.rl-cal-week')].map((w) => [w.dataset.week, { el: w, top: w.offsetTop, h: w.offsetHeight }])),
-      bars: new Map([...el.querySelectorAll('.rl-cal-bar[data-ev]')].map((b) => [`${b.closest('.rl-cal-week').dataset.week}|${b.dataset.ev}|${b.dataset.piece}`, { el: b, x: b.offsetLeft, y: b.offsetTop }])),
+      bars: new Map([...el.querySelectorAll('.rl-cal-bar[data-ev]')].map((b) => [`${b.closest('.rl-cal-week').dataset.week}|${b.dataset.ev}|${b.dataset.piece}`, { el: b, x: b.offsetLeft, y: b.offsetTop, w: b.offsetWidth, h: b.offsetHeight }])),
       bigs: new Map([...el.querySelectorAll('[data-big]')].map((n) => [n.dataset.big, n])),
     }
     const before = flip.current
@@ -316,29 +325,52 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     // no motion: simply drawn.
     if (!before || before.span !== span || before.dayW !== dayW || drag.current || copying
       || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
-    // The week line nearest the middle, and where it is on the screen.
-    const mid = el.scrollTop + el.clientHeight / 2
-    let anchor = null
-    for (const [w, r] of before.weeks) if (!anchor || Math.abs(r.top - mid) < Math.abs(anchor.top - mid)) anchor = { w, top: r.top }
-    const at = anchor && anchor.top - el.scrollTop
+    // The week line nearest the middle, and where it is on the screen — or,
+    // as the records first come in, the week opened to: in the middle once
+    // it has opened (today's), or where it was left.
+    let anchor = null, at = 0
+    if (!before.drawn && opened.current && now.weeks.has(opened.current.w)) {
+      anchor = { w: opened.current.w }
+      at = opened.current.center ? Math.max(0, (el.clientHeight - now.weeks.get(anchor.w).h) / 2) : -opened.current.off
+    } else {
+      const mid = st + el.clientHeight / 2
+      for (const [w, r] of live || before.weeks) if (!anchor || Math.abs(r.top - mid) < Math.abs(anchor.top - mid)) anchor = { w, top: r.top }
+      at = anchor && anchor.top - st
+    }
     const go = (node, frames, opts) => { const a = node.animate(frames, { easing: 'cubic-bezier(.2,.7,.3,1)', ...opts }); moving.current.push(a); return a }
+    // The bars going: a copy of each where it was, rolled up, then gone.
+    let first = 0
+    for (const [k, o] of before.bars) {
+      const into = !now.bars.has(k) && now.weeks.get(k.split('|')[0])?.el.querySelector('.rl-cal-events')
+      if (!into) continue
+      const g = o.el.cloneNode(true)
+      // (Out of the grid: a grid's absolute child placed in a cell is placed from that cell.)
+      Object.assign(g.style, { position: 'absolute', gridRow: 'auto', gridColumn: 'auto', left: `${o.x}px`, top: `${o.y}px`, width: `${o.w}px`, height: `${o.h}px`, margin: 0, pointerEvents: 'none' })
+      into.appendChild(g)
+      const a = go(g, [{ clipPath: 'inset(0 0 0 0)' }, { clipPath: 'inset(0 100% 0 0)' }], { duration: FOLD, fill: 'forwards' })
+      a.onfinish = a.oncancel = () => g.remove()
+      first = FOLD
+    }
     const opening = []
     for (const [w, r] of now.weeks) {
-      const o = before.weeks.get(w)
+      const o = (live || before.weeks).get(w)
       if (!o || o.h === r.h) continue
       r.el.style.overflow = 'clip'
-      const a = go(r.el, [{ height: `${o.h}px` }, { height: `${r.h}px` }], { duration: OPEN })
+      const a = go(r.el, [{ height: `${o.h}px` }, { height: `${r.h}px` }], { duration: OPEN, delay: first, fill: 'backwards' })
       a.onfinish = a.oncancel = () => { r.el.style.overflow = '' }
       opening.push(a)
     }
-    const later = opening.length ? OPEN : 0
+    const later = first + (opening.length ? OPEN : 0)
     for (const [k, b] of now.bars) {
       const o = before.bars.get(k)
       if (!o) go(b.el, [{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0 0 0)' }], { duration: UNROLL, delay: later, fill: 'backwards' })
-      else if (o.x !== b.x || o.y !== b.y) go(b.el, [{ transform: `translate(${o.x - b.x}px, ${o.y - b.y}px)` }, { transform: 'none' }], { duration: OPEN })
+      else if (o.x !== b.x || o.y !== b.y) go(b.el, [{ transform: `translate(${o.x - b.x}px, ${o.y - b.y}px)` }, { transform: 'none' }], { duration: OPEN, delay: first, fill: 'backwards' })
     }
     for (const [d, n] of now.bigs) if (!before.bigs.has(d)) go(n, [{ opacity: 0 }, { opacity: 1 }], { duration: UNROLL, delay: later, fill: 'backwards' })
     if (links.current && moving.current.length) go(links.current, [{ opacity: 0 }, { opacity: 1 }], { duration: 150, delay: later + UNROLL, fill: 'backwards' })
+    // Settled: the weeks before and after it are looked at again (see onScroll).
+    const all = moving.current.slice()
+    if (all.length) Promise.all(all.map((x) => x.finished)).then(() => onScroll(), () => {})
     // Hold the line while the weeks open — every frame until they have, and
     // once more at the end (a slow first frame starts them late).
     const line = anchor && now.weeks.get(anchor.w)?.el
@@ -370,7 +402,9 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     // Where it is, to come back to (kept).
     const top = [...el.querySelectorAll('[data-week]')].find((w) => w.offsetTop + w.offsetHeight > el.scrollTop)
     if (top) kept()[viewKey] = { week: top.dataset.week, off: el.scrollTop - top.offsetTop }
-    // More weeks before or after, before the edge is reached.
+    // More weeks before or after, before the edge is reached — not while the
+    // weeks are moving (the place held would be lost); once they stop.
+    if (moving.current.some((a) => a.playState === 'running' || a.playState === 'pending')) return
     if (el.scrollTop < el.clientHeight) {
       keep.current = el.scrollHeight
       setSpan(([a, n]) => [addDays(a, -7 * MORE), n + MORE])
