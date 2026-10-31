@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mergeTags, spellTag, uniqueTags, sharedTagRows, whereText } from '../racklist/tags.js'
+import { mergeTags, spellTag, uniqueTags, sharedTagRows } from '../racklist/tags.js'
 import { defineRack, classRows, wears } from '../racklist/schema.js'
 
 describe('shared tags', () => {
@@ -27,7 +27,7 @@ describe('shared tags', () => {
     const rows = sharedTagRows(src, { svc: 'ref', tags: { SpiRIT: 27 } })
     const sp = rows.find((r) => r.key === 'spirit')
     expect(sp.name).toBe('SpiRIT')
-    expect(whereText(sp.by, 'ref')).toBe('노트 3')
+    expect(sp.by.find((b) => b.svc === 'note').n).toBe(3)
     expect(rows.map((r) => r.key).sort()).toEqual(['daily', 'spirit'])
   })
 })

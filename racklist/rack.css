@@ -945,3 +945,8 @@ body.rl-copying, body.rl-copying * { cursor: copy !important; }
 .rl-fav.on svg { fill: currentColor; }
 .rl-row:hover .rl-fav { color: var(--rk-mute); }
 .rl-fav.on, .rl-row:hover .rl-fav.on { color: #e6a700; }
+
+/* ?solo: one item's editor alone, filling the pane another service frames it
+   in — no .rl padding, so it sits exactly as it does in its own list's pane. */
+.rl-solo { height: 100vh; padding: 0; background: var(--rk-panel); }
+.rl-solo-note { padding: 4px 11px; border-top: 1px solid var(--rk-line); }

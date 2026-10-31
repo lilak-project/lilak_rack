@@ -11,7 +11,7 @@
  * spelling when one is already in use. Each service keeps its own records;
  * this only ever reads the others.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { authHeaders } from './portal.js'
 
 export const tagKey = (t) => String(t ?? '').trim().toLowerCase()
@@ -46,10 +46,32 @@ export function loadTagSources() {
       .filter((s) => s.tags && (s.tags_project || s.entry_project))
       .map((s) => fetch(`/pp/${s.name}/${s.tags_project || s.entry_project}/api/tags`, { headers: authHeaders() })
         .then((r) => (r.ok ? r.json() : null)).catch(() => null)
-        .then((x) => ({ svc: s.name, label: s.label || s.name, color: s.color || '', tags: x?.tags || {} })))))
+        // Named short where tags are counted: "activity", not "activity manager".
+        .then((x) => ({ svc: s.name, proj: s.tags_project || s.entry_project, label: (s.label || s.name).replace(/\s*manager$/i, ''),
+          color: s.color || '', tags: x?.tags || {} })))))
     .catch(() => [])
   return asked
 }
+/** Every record wearing `tag`, service by service: [{ svc, proj, label,
+ *  color, items: [{ key, rec }] }] — each service's GET /api/tagged. */
+export const loadTagged = (tag) => loadTagSources().then((src) => Promise.all(src.map((s) =>
+  fetch(`/pp/${s.svc}/${s.proj}/api/tagged?tag=${encodeURIComponent(tag)}`, { headers: authHeaders() })
+    .then((r) => (r.ok ? r.json() : null)).catch(() => null)
+    .then((x) => ({ ...s, items: x?.items || [] })))))
+/** Forget the answers: the next ask goes to the services again. */
+export const forgetTagSources = () => { asked = null }
+
+/** One tag renamed — or several merged into one — in EVERY sharing service
+ *  (but `skip`, which renames its own): each one's POST /api/tags/rename, in
+ *  turn. [{ svc, label, changed } | { svc, label, error }]; the answers are
+ *  forgotten after. */
+export const renameTagEverywhere = (from, to, { skip } = {}) => loadTagSources().then((src) => Promise.all(src.filter((s) => s.svc !== skip).map((s) =>
+  fetch(`/pp/${s.svc}/${s.proj}/api/tags/rename`, {
+    method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to }),
+  }).then(async (r) => (r.ok ? { svc: s.svc, label: s.label, changed: (await r.json()).changed }
+    : { svc: s.svc, label: s.label, error: (await r.json().catch(() => ({}))).detail || r.status }))
+    .catch((e) => ({ svc: s.svc, label: s.label, error: String(e.message || e) }))))
+  .finally(forgetTagSources))
 export const loadSharedTags = () => loadTagSources().then((src) => mergeTags(src.map((x) => x.tags)))
 
 /** One row per tag across the services: { key, name, count, by: [{ svc,
@@ -73,14 +95,15 @@ export function sharedTagRows(sources, own) {
   return [...names.entries()].map(([key, t]) => ({ key, name: t.name, count: t.count, by: by.get(key) || [] }))
 }
 
-/** The sharing services' answers ([] until they come). */
-export function useTagSources() {
+/** The sharing services' answers ([] until they come); asked again when
+ *  `again` changes (after a rename). */
+export function useTagSources(again) {
   const [src, setSrc] = useState([])
   useEffect(() => {
     let on = true
     loadTagSources().then((x) => { if (on) setSrc(x) })
     return () => { on = false }
-  }, [])
+  }, [again])
   return src
 }
 
@@ -90,9 +113,35 @@ export function useSharedTags() {
   return useMemo(() => mergeTags(src.map((x) => x.tags)).map((x) => x.name), [src])
 }
 
-/** Where else a tag is worn, as a tags tab says it: `노트 5 · 논문 26`. */
-export const whereText = (by, own) => by.filter((b) => b.svc !== own && b.n)
-  .sort((a, b) => b.n - a.n).map((b) => `${b.label} ${b.n}`).join(' · ')
+// ─── starred tags ──────────────────────────────────────────────────────────
+// The tags this ACCOUNT starred (the portal keeps them on the account:
+// prefs.favTags), first in every tags tab. One list for the page, every
+// screen that shows it kept in step.
+let favAsk = null
+let favNow = null
+const favSeen = new Set()
+const loadFavs = () => (favAsk ||= fetch('/api/account/prefs', { headers: authHeaders() })
+  .then((r) => (r.ok ? r.json() : null)).then((x) => (favNow = x?.prefs?.favTags || []))
+  .catch(() => (favNow = [])))
+/** { favTags, isFavTag(tag), toggleFavTag(tag) } — a star turns at once and
+ *  is saved behind it. */
+export function useFavTags() {
+  const [list, setList] = useState(favNow || [])
+  useEffect(() => {
+    favSeen.add(setList)
+    loadFavs().then(setList)
+    return () => { favSeen.delete(setList) }
+  }, [])
+  const isFavTag = useCallback((t) => list.some((x) => tagKey(x) === tagKey(t)), [list])
+  const toggleFavTag = useCallback((t) => {
+    const next = list.some((x) => tagKey(x) === tagKey(t)) ? list.filter((x) => tagKey(x) !== tagKey(t)) : [...list, t]
+    favNow = next
+    favSeen.forEach((f) => f(next))
+    fetch('/api/account/prefs', { method: 'PUT', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ favTags: next }) }).catch(() => {})
+  }, [list])
+  return { favTags: list, isFavTag, toggleFavTag }
+}
 
 /** The spelling to store for a tag typed: one already in use, whatever its
  *  case — else the tag as typed. */

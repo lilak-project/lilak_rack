@@ -207,12 +207,16 @@ export function itemColumns(def) {
 /** A class table's columns: its own fields, and how many items wear it. */
 export function classColumns(def, cls) {
   const own = cls.stored ? cls.fields.filter((f) => f.col) : [{ k: 'name', label: cls.label, col: 220 }]
+  const tags = !cls.stored && caseFree(wornBy(def, cls))
   return [
     { k: 'num', w: 40, min: 30, fix: true, label: '#' },
+    // Tags: a star for the ones this account keeps on top.
+    ...(tags ? [{ k: 'fav', w: 26, min: 26, fix: true }] : []),
     ...own.map(colOf),
-    { k: 'count', w: 70, min: 46, label: cls.countLabel || (def.unit === tr("rk_unit_items") ? 'count' : def.item.noun), num: true },
-    // Tags: the same tag in the other services, and how many wear it there.
-    ...(!cls.stored && caseFree(wornBy(def, cls)) ? [{ k: 'where', w: 320, min: 80, label: tr('rk_tags_elsewhere') }] : []),
+    // How many items wear it — unless nothing does (`count: false`: an inbox).
+    ...(cls.count === false ? [] : [{ k: 'count', w: 70, min: 46, label: cls.countLabel || (def.unit === tr("rk_unit_items") ? 'count' : def.item.noun), num: true }]),
+    // (Tags: a column per other service, how many wear it there — added where
+    // the services are known, service.jsx.)
   ]
 }
 

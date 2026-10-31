@@ -272,7 +272,7 @@ function Chips({ value, onChange, field, ctx, single, shared }) {
             {ctx.openClass && classRec(field, ctx, t)
               ? <button type="button" className="rl-lnk" onClick={() => ctx.openClass(field.of, classRec(field, ctx, t).id || t)}>
                 {nameOf(field, ctx, t)}</button>
-              : t}
+              : nameOf(field, ctx, t)}
             <button type="button" className="rl-x" title={tr("rk_detach")}
               onClick={() => onChange(single ? '' : vals.filter((x) => x !== t))}>×</button>
           </span>

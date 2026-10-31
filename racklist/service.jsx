@@ -22,9 +22,10 @@ import {
   classRows, wornBy, wears, isRef, fixedTabs, itemTabId, itemScope, labelOf, useRemoteDocs, valueOf,
   EMPTY_CELL as D,
 } from './schema.js'
-import { PORTAL_PROJECT, PORTAL_SERVICE, brandStyle, isManager, portalUser, fetchDoc, putDoc, newId, takeOpenRequest, load, save, projectKey } from './portal.js'
+import { PORTAL_PROJECT, PORTAL_SERVICE, brandStyle, isManager, portalUser, fetchDoc, putDoc, newId, takeOpenRequest, showInCalendar, calAsk, load, save, projectKey, serviceColor } from './portal.js'
 import { tr } from '../i18n.jsx'
-import { tagKey, useTagSources, sharedTagRows, whereText } from './tags.js'
+import { tagKey, useTagSources, sharedTagRows, useFavTags, renameTagEverywhere } from './tags.js'
+import { RackTagged, RackTaggedTab, TAGGED_COLS } from './tagged.jsx'
 
 /**
  * <RackService def={…} /> — a whole rack-list service from its declaration.
@@ -56,8 +57,64 @@ const STAR = (
     <polygon points="12,3 14.7,8.8 21,9.5 16.3,13.9 17.6,20.2 12,17 6.4,20.2 7.7,13.9 3,9.5 9.3,8.8" />
   </svg>
 )
+/** The star a row wears: an item's, a tag's. Pressing it does not press the row. */
+export const RackStar = ({ on, onToggle }) => (
+  <button type="button" className={`rl-fav${on ? ' on' : ''}`} title={on ? tr('rk_fav_remove') : tr('rk_fav_add')}
+    onClick={(e) => { e.stopPropagation(); onToggle() }}>{STAR}</button>
+)
 
-export function RackService({ def: declared, slots = {} }) {
+/** An item editor's "show in calendar": the calendar at the record's first day. */
+const calButton = (def, show) => (def.calendar && show ? (f) => {
+  const d = f[def.calendar.start || 'start']
+  return d ? <button type="button" className="rl-btn" onClick={() => show(d)}>{tr("rk_show_in_calendar")}</button> : null
+} : undefined)
+
+// ?solo=<id>: the page is one item's editor and nothing else — what another
+// service shows it as, in a pane of its own (project_manager's tags, its inbox).
+const SOLO = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('solo') : null
+
+export function RackService(props) {
+  return SOLO ? <RackSolo {...props} id={SOLO} /> : <RackList {...props} />
+}
+
+/** One item's editor, alone, the same editor the list opens. Its cancel has no
+ *  list to go back to; an item deleted here says so. */
+function RackSolo({ def: declared, id }) {
+  const def = useMemo(() => (declared.docKeys ? declared : defineRack(declared)), [declared])
+  const [doc, setDoc] = useState(null)
+  const [note, setNote] = useState('')
+  const [gone, setGone] = useState(false)
+  const remote = useRemoteDocs(def)
+  const [folders, reloadFolders] = useFolders(def)
+  useEffect(() => { fetchDoc().then(setDoc).catch((e) => setNote(String(e.message || e))) }, [])
+  const commit = useCallback(async (patch, said) => {
+    if (!doc) return false
+    try {
+      const r = await putDoc(doc.version, Object.fromEntries(def.docKeys.map((k) => [k, patch[k] ?? doc[k]])))
+      if (r.conflict) { if (r.doc) setDoc(r.doc); setNote(tr("rk_changed_meanwhile")); return false }
+      setDoc(r.doc)
+      setNote(said || tr("rk_saved"))
+      return true
+    } catch (e) { setNote(String(e.message || e)); return false }
+  }, [doc, def])
+  const rec = (doc?.[def.item.key] || []).find((r) => String(r?.[def.item.id || 'id']) === String(id))
+  // A day here is shown on this service's own calendar, in the portal's panel:
+  // the date labels, and one button for the record's first day.
+  const showDate = def.calendar ? (d) => d && showInCalendar(id, d) : undefined
+  const ctx = { remote, folders, reloadFolders, say: setNote, commit, isAdmin: isManager(), showDate }
+  return (
+    <div className="rl rl-solo" style={brandStyle()}>
+      {!doc ? <p className="rl-msg">{note || tr("rk_loading")}</p>
+        : gone || !rec ? <p className="rl-msg">{tr("rk_open_target_missing")}</p>
+          : <RackItemEditor key={id} def={def} doc={doc} rec={rec} ctx={ctx} onSave={commit} canDelete={isManager()}
+            onCancel={() => {}} onDeleted={() => setGone(true)}
+            actions={calButton(def, showDate)} />}
+      {doc && note && <div className="rl-hint rl-solo-note">{note}</div>}
+    </div>
+  )
+}
+
+function RackList({ def: declared, slots = {} }) {
   const def = useMemo(() => (declared.docKeys ? declared : defineRack(declared)), [declared])
   const [doc, setDoc] = useState(null)
   const [outOpen, setOutOpen] = useState(false)
@@ -152,7 +209,7 @@ export function RackService({ def: declared, slots = {} }) {
         return (f && items.some((r) => wears(r, f, t.key || t.name)))
           || (doc[t.of] || []).some((r) => r[c.keyBy || 'name'] === (t.key || t.name))
       }
-      if (t.ids) return true
+      if (t.ids || t.kind === 'tagged') return true
       return false
     })
     panes.keep((t) => {
@@ -224,6 +281,14 @@ export function RackService({ def: declared, slots = {} }) {
     onClose: () => { const cur = panes.current(panes.cols[0]); if (cur) panes.close(cur.id) },
   })
 
+  /** A record of ANOTHER service, in a pane here: that service's page for it
+   *  alone (?solo=), its tab in that service's colour. The one way every
+   *  service opens another's records (a note's to-do on the calendar, what
+   *  wears a shared tag, an approved candidate). */
+  const openRecord = useCallback(({ svc, proj, id, label }) => serviceColor(svc).then((color) =>
+    openEdit({ id: `rec:${svc}:${id}`, kind: 'frame', label, color,
+      src: `/pp/${svc}/${proj}/?solo=${encodeURIComponent(id)}` })), [openEdit])
+
   /** Open a stored class record by what items call it — what a chip in the
    *  editor does, so a class without a tab of its own (tab: false) is still
    *  one press away. */
@@ -244,8 +309,10 @@ export function RackService({ def: declared, slots = {} }) {
   useEffect(() => {
     if (!doc || !asked || answered) return
     setAnswered(true)
-    if (items.some((r) => idOf(r) === asked)) openItem(asked)
+    const [day, id] = calAsk(asked) || ['', asked]      // `cal:<day>:<id>`: on the calendar, at that day
+    if (items.some((r) => idOf(r) === id)) openItem(id)
     else setNote(tr("rk_open_target_missing"))
+    if (day) showDate(day)
   }, [doc, asked, answered])   // eslint-disable-line react-hooks/exhaustive-deps
   // A day to show on the calendar (a date's label pressed in an editor). The
   // calendar must be in sight: a full-width editor gives the list its width
@@ -265,18 +332,35 @@ export function RackService({ def: declared, slots = {} }) {
     showDate: def.calendar ? showDate : undefined,
     // Another service's page as an editor tab: { id, label, src }.
     openFrame: (t) => openEdit({ ...t, kind: 'frame' }),
+    openRecord,
   }), [remote, folders, reloadFolders, openFolder, openFile, setNote, openItem, openClassByName,
-    openTab, openEdit, commit, IS_ADMIN, tab, def.calendar, showDate])
+    openTab, openEdit, openRecord, commit, IS_ADMIN, tab, def.calendar, showDate])
   const api = { def, doc, commit, openTab, openEdit, closeEdit: (id) => panes.close(id), openItem, setNote,
     picked, setPicked, clearPicked, chosen, tab, rows, scope }
 
   // A column may belong to some tabs only (a group's core on that group's tab).
   const cols = useMemo(() => L.colsOf('').filter((c) => !c.when || c.when(tab)), [L.colsOf, tab])   // eslint-disable-line react-hooks/exhaustive-deps
-  const clsCols = useMemo(() => (cls ? L.colsOf('c:', classColumns(def, cls)).filter((c) => !c.when || c.when(tab)) : []), [L.colsOf, cls, def, tab])   // eslint-disable-line react-hooks/exhaustive-deps
+  const [tagAgain, setTagAgain] = useState(0)
+  const tagSources = useTagSources(tagAgain)
+  const { isFavTag, toggleFavTag } = useFavTags()
+  // A tags tab: after this service's count, a column per other service that
+  // shares tags (and per record kind here that wears them too: an author
+  // group), each saying how many wear the tag there.
+  const perCols = useMemo(() => {
+    if (!cls || cls.stored || !caseFree(clsField)) return []
+    const own = PORTAL_SERVICE.name
+    return [
+      ...def.classes.filter((c) => c.stored && (doc?.[c.k] || []).some((r) => Array.isArray(r?.tags) && r.tags.length))
+        .map((c) => ({ k: `cls:${c.k}`, w: 80, min: 46, label: c.label, num: true })),
+      ...tagSources.filter((s) => s.svc !== own).map((s) => ({ k: `svc:${s.svc}`, w: 96, min: 46, label: s.label, num: true })),
+    ]
+  }, [cls, clsField, def, doc, tagSources])
+  const clsCols = useMemo(() => (cls ? L.colsOf('c:', [...classColumns(def, cls), ...perCols]).filter((c) => !c.when || c.when(tab)) : []), [L.colsOf, cls, def, tab, perCols])   // eslint-disable-line react-hooks/exhaustive-deps
   const mergeCols = useMemo(() => [{ k: 'chk', w: 26, min: 26, fix: true }, ...clsCols], [clsCols])
-  // A tags tab lists every service's tags (tags.js): the ones worn here with
-  // their count, the rest with none — and where else each is worn.
-  const tagSources = useTagSources()
+  // A tags tab lists the tags worn here — by its items, or by its other
+  // records (an author group) — each with where else it is worn (tags.js),
+  // and the ones this account starred on top. A class that says `shared`
+  // lists every service's tags (project_manager).
   const classes = useMemo(() => {
     if (!cls) return []
     const q = query.trim().toLowerCase()
@@ -287,27 +371,30 @@ export function RackService({ def: declared, slots = {} }) {
       // What this service wears now: its items' tags, and its other records'
       // (an author group's) — the same as its /api/tags says.
       const worn = Object.fromEntries(all.map((r) => [r.name, r.count]))
-      const besides = new Map()           // tag → ['groups 1'], the records here that are not items
+      const besides = new Map()           // tag → { 'cls:groups': 1 }, the records here that are not items
       for (const c of def.classes.filter((x) => x.stored)) {
         const n = new Map()
         for (const r of doc?.[c.k] || []) for (const t of Array.isArray(r?.tags) ? r.tags : []) {
           worn[t] = (worn[t] || 0) + 1
           n.set(tagKey(t), (n.get(tagKey(t)) || 0) + 1)
         }
-        for (const [k, v] of n) besides.set(k, [...(besides.get(k) || []), `${c.label} ${v}`])
+        for (const [k, v] of n) besides.set(k, { ...(besides.get(k) || {}), [`cls:${c.k}`]: v })
       }
       all = sharedTagRows(tagSources, { svc: own, tags: worn })
+        .filter((t) => cls.shared || here.has(t.key) || besides.has(t.key))
         .map((t) => ({ ...(here.get(t.key) || { key: t.key, name: t.name, count: 0 }),
-          where: [...(besides.get(t.key) || []), whereText(t.by, own)].filter(Boolean).join(' · ') }))
+          per: { ...besides.get(t.key), ...Object.fromEntries(t.by.filter((b) => b.svc !== own).map((b) => [`svc:${b.svc}`, b.n])) } }))
     }
     // Every spelling the record holds is searched — an alias, a handle.
     all = all.filter((r) => !q || Object.values(r).flat().some((v) => typeof v === 'string' && v.toLowerCase().includes(q)))
     const f = cls.fields.find((x) => x.k === clsSort.k)
     const c = { def, doc, ...extra }
     const get = clsSort.k === 'count' ? (r) => r.count
-      : f?.get ? (r) => f.get(r, c) : (r) => r[clsSort.k]
-    return all.sort(bySome(get, clsSort.dir))
-  }, [cls, clsField, def, doc, query, clsSort, extra, tagSources])
+      : clsSort.k.includes(':') ? (r) => r.per?.[clsSort.k] ?? null
+        : f?.get ? (r) => f.get(r, c) : (r) => r[clsSort.k]
+    all.sort(bySome(get, clsSort.dir))
+    return !cls.stored && caseFree(clsField) ? [...all.filter((r) => isFavTag(r.name)), ...all.filter((r) => !isFavTag(r.name))] : all
+  }, [cls, clsField, def, doc, query, clsSort, extra, tagSources, isFavTag])
 
   const showEdit = L.showEdit && !!doc
   const showList = !showEdit || L.showList
@@ -432,7 +519,7 @@ export function RackService({ def: declared, slots = {} }) {
       return (
         <RackItemEditor key={etab.id} def={def} doc={doc} rec={rec} seed={etab.seed} ctx={ctx} onSave={commit}
           canDelete={IS_ADMIN} onCancel={() => panes.close(etab.id)}
-          onClone={(seed) => openItem(null, null, seed)}
+          onClone={(seed) => openItem(null, null, seed)} actions={calButton(def, ctx.showDate)}
           onCreated={(r) => { panes.close(etab.id); openItem(idOf(r), r) }}
           onDeleted={(r) => {
             panes.close(etab.id)
@@ -501,13 +588,23 @@ export function RackService({ def: declared, slots = {} }) {
           exists={names} wearing={(gone) => wearing(field, gone).map((r) => ({ id: idOf(r), label: labelOf(def, r) }))}
           onOpen={openItem}
           onSave={async (gone, to, said) => {
+            // A shared tag is renamed (or merged) in every other service too.
+            if (c.shared) {
+              const res = await renameTagEverywhere(gone, to, { skip: PORTAL_SERVICE.name })
+              const bad = res.filter((r) => r.error).map((r) => `${r.label} (${r.error})`)
+              if (bad.length) setNote(tr('rk_rename_failed_in', bad.join(' · ')))
+              setTagAgain((n) => n + 1)
+            }
             if (await commit({ [def.item.key]: foldNames(field, gone, to) }, said)) panes.close(etab.id)
           }}
           onCancel={() => panes.close(etab.id)}
           onDelete={IS_ADMIN ? async () => {
             if (await commit({ [def.item.key]: foldNames(field, [etab.who], '') },
               tr("rk_removed_name", etab.who))) panes.close(etab.id)
-          } : null} />
+          } : null}>
+          {/* A shared tag: what wears it in the other services, each opening in a pane here. */}
+          {c.shared && <RackTagged names={[etab.who]} skip={PORTAL_SERVICE.name} onOpen={openRecord} />}
+        </RackEditClass>
       )
     }
     return <p className="rl-msg">{tr("rk_cannot_draw_editor")}</p>
@@ -526,7 +623,8 @@ export function RackService({ def: declared, slots = {} }) {
       })),
       ...(cls.stored ? {} : { name: r.name || D }),
       count: r.count || D,
-      where: r.where || D,
+      ...Object.fromEntries(perCols.map((p) => [p.k, r.per?.[p.k] || D])),
+      fav: <RackStar on={isFavTag(r.name)} onToggle={() => toggleFavTag(r.name)} />,
     }
   }
 
@@ -663,9 +761,14 @@ export function RackService({ def: declared, slots = {} }) {
                   return (
                     <RackRow key={r.id || r.key || r.name} cols={merge.mode ? mergeCols : clsCols} tone={tone} mark={query.trim()}
                       className={`rl-hit${on ? ' on' : ''}`}
+                      // A class nothing wears (`count: false`: an inbox) has no list of
+                      // items to open; its row is opened by the right click alone.
                       onClick={() => (merge.mode ? merge.toggle(r.name)
-                        : openTab({ id: `${cls.k}:${r.key || r.name}`, kind: 'items', of: cls.k,
-                          key: r.key || r.name, name: r.name, label: rowLabel(cls, r) || r.name }))}
+                        : cls.count === false ? undefined
+                          // A shared tag: everything wearing it, in every service.
+                          : cls.shared ? openTab({ id: `tagged:${r.key || r.name}`, kind: 'tagged', names: [r.name], label: `#${r.name}` })
+                          : openTab({ id: `${cls.k}:${r.key || r.name}`, kind: 'items', of: cls.k,
+                            key: r.key || r.name, name: r.name, label: rowLabel(cls, r) || r.name }))}
                       onContextMenu={(e) => {
                         e.preventDefault()
                         // A class of links names people who live in another
@@ -748,6 +851,10 @@ export function RackService({ def: declared, slots = {} }) {
             )}
 
             {doc && tab?.kind === 'trash' && <RackTrash def={def} setDoc={setDoc} say={setNote} />}
+            {doc && tab?.kind === 'tagged' && (
+              <RackTaggedTab names={tab.names || []} cols={L.colsOf('t:', TAGGED_COLS)} onDrag={drag('t:')}
+                skip={PORTAL_SERVICE.name} onOpen={openRecord} />
+            )}
 
             {doc && tab?.kind === 'settings' && (
               <div className="rl-settings">
