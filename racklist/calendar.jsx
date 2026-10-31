@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import './strings.js'
 import { tr } from '../i18n.jsx'
 import { typeOf } from './types.jsx'
-import { ctxFor, labelOf, valueOf } from './schema.js'
+import { ctxFor, labelOf, valueOf, favField } from './schema.js'
+import { tagKey, useProjects, projectWears } from './tags.js'
 import { load, save, projectKey } from './portal.js'
 import { occurrences, DAYS, dow } from './rrule.js'
 
@@ -44,6 +45,8 @@ const min = (...xs) => xs.filter(Boolean).sort()[0]
 const max = (...xs) => xs.filter(Boolean).sort().at(-1)
 const sunday = (s) => addDays(s, -parse(s).getDay())
 const monthOf = (s) => s.slice(0, 7)
+/** 'YYYY-MM' as the month's short name: Sep, 9월. */
+const monthName = (ym) => tr('rk_month_short', Number(ym.slice(5, 7)))
 const shiftMonth = (ym, n) => { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}` }
 const GRAY = '#8a94a6'
 // Further than this many weeks, going to a day is a jump, not a scroll through them all.
@@ -92,6 +95,31 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   // The lines from a handed-in day to its talk: drawn, or not.
   const [showLinks, setShowLinks] = useState(() => load(projectKey(def.key, 'callinks'), true))
   useEffect(() => { save(projectKey(def.key, 'callinks'), showLinks) }, [def.key, showLinks])
+  // Tags and projects (+name, project_manager's: a set of tags, any or all) to
+  // show only: a record wearing any tag chosen, or in any project chosen
+  // (another calendar's item: by the #tags in its title). None chosen: everything.
+  const [tagSel, setTagSel] = useState(() => new Set(load(projectKey(def.key, 'caltags'), [])))
+  useEffect(() => { save(projectKey(def.key, 'caltags'), [...tagSel]) }, [def.key, tagSel])
+  const tagF = favField(def)
+  const tagsOf = (r) => (Array.isArray(r?.[tagF]) ? r[tagF] : String(r?.[tagF] || '').split(/[\s,]+/)).filter(Boolean)
+  const projects = useProjects()
+  const projOf = (k) => projects.find((p) => `+${tagKey(p.name)}` === k)
+  const tagged = (ts) => !tagSel.size || [...tagSel].some((k) => (k.startsWith('+')
+    ? !!projOf(k) && projectWears(projOf(k), ts) : ts.some((t) => tagKey(t) === k)))
+  // Every tag the records wear, most worn first, spelt as most often written.
+  const allTags = useMemo(() => {
+    const n = new Map()
+    for (const r of items) for (const t of tagsOf(r)) { const k = tagKey(t); const x = n.get(k) || { t, n: 0 }; x.n++; n.set(k, x) }
+    return [...n.entries()].sort((a, b) => b[1].n - a[1].n).map(([k, x]) => ({ k, t: x.t, n: x.n }))
+  }, [items])   // eslint-disable-line react-hooks/exhaustive-deps
+  const [tagIn, setTagIn] = useState('')
+  const addTag = (v) => {
+    const raw = String(v).trim()
+    // #tag, +project: the sign says which.
+    const k = raw.startsWith('+') ? `+${tagKey(raw.slice(1))}` : raw.startsWith('#') ? tagKey(raw.slice(1)) : ''
+    if (!k || !(k.startsWith('+') ? projOf(k) : allTags.some((x) => x.k === k))) return false
+    setTagSel((s) => new Set([...s, k])); setTagIn(''); return true
+  }
 
   // The weeks drawn: [first, count]. Grows at either end as you scroll there.
   const [span, setSpan] = useState(() => [addDays(was ? was.week : sunday(today), -7 * BEFORE), BEFORE + AFTER])
@@ -129,7 +157,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     if (te < ts) te = ts
     const mk = at(cal.mark ? day(r[cal.mark]) : '')
     const g = groupOf(r)
-    if (hidden.has(g)) return null
+    if (hidden.has(g) || !tagged(tagsOf(r))) return null
     const ev = { r, id: occ ? `${id}@${occ}` : shift ? `${id}:copy` : id, copy: !!shift && !occ, occ, base: id, s, e, ts, te, mk, sb, to: mk || s, color: g >= 0 ? cal.groups[g].color : GRAY, paper: g >= 0 && !!cal.groups[g].paper, g, low: (g >= 0 && Number(cal.groups[g].bottom)) || 0, hatch: !!cal.hatch?.(r), online,
       // Its time of day ('HH:MM', calendar.time: a field or (rec) => …): the
       // order records of one group take on one day.
@@ -187,7 +215,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     }
     if (!query) {
       for (const x of ext) {
-        if (!x.start || hidden.has(`feed:${x.feed}`)) continue
+        if (!x.start || hidden.has(`feed:${x.feed}`) || !tagged((x.title || '').match(/#[^\s#]+/g)?.map((t) => t.slice(1)) || [])) continue
         const e = x.end && x.end >= x.start ? x.end : x.start
         out.push({ r: { name: x.title }, id: `ext:${x.id}`, ext: x, s: x.start, e, ts: '', te: '', mk: '', sb: '', to: x.start,
           color: x.color || GRAY, g: -1, low: 0, label: x.time ? `${x.title} (${x.time})` : x.title,
@@ -198,7 +226,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     const c = r && build(r, copying.days)
     if (c) out.push(c)
     return out
-  }, [items, over, hidden, doc, copying, ext, query, weeks])   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [items, over, hidden, tagSel, projects, doc, copying, ext, query, weeks])   // eslint-disable-line react-hooks/exhaustive-deps
   // The days a carried copy would land on, lit.
   const drop = events.find((ev) => ev.copy)?.pieces[0]
   const inDrop = (d) => drop && d >= drop.from && d <= drop.to
@@ -209,28 +237,6 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   const nextFound = found.find((m) => m > month)
   // To a month with something found: its first find, in the middle.
   const toFound = (m) => goTo(m, events.filter((ev) => monthOf(ev.s) === m).map((ev) => ev.s).sort()[0], true)
-
-  // The head is one line. When the legend's words and the month buttons do
-  // not fit on it, the legend keeps its colours and drops the words (each
-  // says its name on hover); they come back once the line is wide enough
-  // for them again — `need` is how wide that was.
-  const headRef = useRef(null)
-  const [tight, setTight] = useState(false)
-  const need = useRef(0)
-  useLayoutEffect(() => {
-    const el = headRef.current
-    if (!el) return undefined
-    const fit = () => {
-      if (!el.classList.contains('tight')) {
-        need.current = el.scrollWidth
-        if (el.scrollWidth > el.clientWidth + 1) setTight(true)
-      } else if (el.clientWidth >= need.current) setTight(false)
-    }
-    fit()
-    const ro = new ResizeObserver(fit)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [feeds.length, query, tight])
 
   // ── scrolling ───────────────────────────────────────────────────────────
   const body = useRef(null)
@@ -256,11 +262,16 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   useEffect(() => {
     const el = body.current
     if (!el) return undefined
-    const off = () => { opened.current = null }
+    const off = () => { opened.current = null; heading.current = null }
     const evs = ['wheel', 'pointerdown', 'touchstart', 'keydown']
     evs.forEach((t) => el.addEventListener(t, off, { passive: true }))
-    return () => evs.forEach((t) => el.removeEventListener(t, off))
+    const arrived = () => { heading.current = null }
+    el.addEventListener('scrollend', arrived)
+    return () => { evs.forEach((t) => el.removeEventListener(t, off)); el.removeEventListener('scrollend', arrived) }
   }, [])
+  // The month a goTo is scrolling to: the title says it all the way there,
+  // not the months the scroll passes through on the way.
+  const heading = useRef(null)
   const place = (el, g) => {
     const w = el.querySelector(`[data-week="${g.w}"]`)
     if (!w) return
@@ -275,6 +286,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     const w = sunday(at)
     opened.current = null
     goal.current = { w, center, smooth: true }
+    heading.current = ym
     setSpan(([a, n]) => {
       const last = addDays(a, 7 * (n - 1))
       if (w >= a && w <= last) return [a, n]
@@ -402,9 +414,11 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   // Today's week, in the middle.
   const toToday = () => { setShown(''); goTo(monthOf(today), today, true) }
   // Asked to show a day (a date's label pressed in an editor): its week in
-  // the middle, the day lit, and its number painted until the next ask.
+  // the middle, the day lit, and its number painted until the next ask. An
+  // ask may bring the filter too (`tags`: a project's "show in calendar").
   useEffect(() => {
     if (!at?.d) return
+    if (at.tags) setTagSel(new Set(at.tags))
     goTo(monthOf(at.d), at.d, true)
     setSweep({ from: at.d, to: at.d })
     setShown(at.d)
@@ -416,7 +430,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     const y = el.scrollTop + el.clientHeight / 3
     const ws = [...el.querySelectorAll('[data-week]')].find((w) => w.offsetTop + w.offsetHeight > y)
     // A week belongs to the month its Thursday is in.
-    if (ws) { const m = monthOf(addDays(ws.dataset.week, 4)); if (m !== month) setMonth(m) }
+    if (ws && !heading.current) { const m = monthOf(addDays(ws.dataset.week, 4)); if (m !== month) setMonth(m) }
     // Where it is, to come back to (kept).
     const top = [...el.querySelectorAll('[data-week]')].find((w) => w.offsetTop + w.offsetHeight > el.scrollTop)
     if (top) kept()[viewKey] = { week: top.dataset.week, off: el.scrollTop - top.offsetTop }
@@ -620,7 +634,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
 
   return (
     <div className="rl-cal">
-      <div ref={headRef} className={`rl-cal-head${tight ? ' tight' : ''}`}>
+      <div className="rl-cal-head">
         <h2 className="rl-cal-title">{tr('rk_year_month', ty, tm)}</h2>
         <div className="rl-cal-legend">
           {(() => {
@@ -658,6 +672,26 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
               <i className="rl-cal-key-line" /><span className="rl-cal-key-t">{tr("rk_links_lines")}</span></button>
           )}
         </div>
+        {allTags.length > 0 && (
+          <div className="rl-cal-tags">
+            <span className="rl-hint">{tr("rk_cal_tags")}</span>
+            {[...tagSel].map((k) => (
+              <button key={k} type="button" className="rl-cal-key on" title={tr("rk_cal_tag_off")}
+                onClick={() => setTagSel((s) => { const n = new Set(s); n.delete(k); return n })}>
+                {k.startsWith('+') ? <span className="rl-proj">{projOf(k)?.name || k.slice(1)}</span>
+                  : <span className="rl-cal-key-t">#{allTags.find((x) => x.k === k)?.t || k}</span>}<b>×</b>
+              </button>
+            ))}
+            <input className="rl-cal-tag-in" list={`rl-cal-tags-${def.key}`} value={tagIn} placeholder={tr("rk_cal_tag_add")}
+              onChange={(e) => { if (!addTag(e.target.value)) setTagIn(e.target.value) }}
+              onKeyDown={(e) => { if (e.key === 'Enter') addTag(tagIn) }} />
+            <datalist id={`rl-cal-tags-${def.key}`}>
+              {projects.filter((p) => !tagSel.has(`+${tagKey(p.name)}`)).map((p) => (
+                <option key={`+${p.id}`} value={`+${p.name}`}>{(p.tags || []).map((t) => `#${t}`).join(p.match === 'and' ? ' & ' : ' ')}</option>))}
+              {allTags.filter((x) => !tagSel.has(x.k)).map((x) => <option key={x.k} value={`#${x.t}`}>{`${x.n}`}</option>)}
+            </datalist>
+          </div>
+        )}
         <span className="rl-sp" />
         {query && (
           <span className="rl-cal-found">
@@ -669,10 +703,10 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
           </span>
         )}
         <span className="rl-cal-nav">
-          <button type="button" className="rl-btn" title={tr("rk_prev_month")} onClick={() => goTo(shiftMonth(month, -1))}>‹</button>
-          <button type="button" className="rl-btn" onClick={toToday}>{tr("rk_today")}</button>
-          <button type="button" className="rl-btn" title={tr("rk_next_month")} onClick={() => goTo(shiftMonth(month, 1))}>›</button>
+          <button type="button" className="rl-btn" title={tr("rk_prev_month")} onClick={() => goTo(shiftMonth(month, -1))}>‹ {monthName(shiftMonth(month, -1))}</button>
+          <button type="button" className="rl-btn" title={tr("rk_next_month")} onClick={() => goTo(shiftMonth(month, 1))}>{monthName(shiftMonth(month, 1))} ›</button>
         </span>
+        <button type="button" className="rl-btn rl-cal-today" onClick={toToday}>{tr("rk_today")}</button>
       </div>
       <div className="rl-cal-days">
         {DAYS.map((_, d) => <span key={d}>{dow(d)}</span>)}

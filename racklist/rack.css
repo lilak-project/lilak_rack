@@ -794,15 +794,32 @@ button.rl-proj { cursor: pointer; }
 .rl-reload:hover { opacity: 1; }
 
 /* ── the calendar (RackCalendar) — a month the way Apple's Calendar draws one ── */
-.rl-cal { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 4px 10px 0; user-select: none; }
-/* One line: the legend loses its words before anything wraps (calendar.jsx, `tight`). */
-.rl-cal-head { display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; padding: 6px 2px 8px; }
+/* The head stands down the left, two thirds of a day wide (2 : 7 × 3), so
+   the weeks get the whole height. */
+.rl-cal {
+  flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(120px, 2fr) 21fr;
+  grid-template-rows: auto minmax(0, 1fr); padding: 4px 10px 0; user-select: none;
+}
+/* Month, the arrows that move it, today, then the legend, one key a line. A key too
+   long for the column is cut short; it says its name on hover. */
+.rl-cal-head { grid-row: 1 / span 2; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: stretch; gap: 10px; padding: 6px 10px 8px 2px; }
 .rl-cal-head > :not(.rl-sp) { flex: none; }
-.rl-cal-head.tight .rl-cal-key-t { display: none; }
-.rl-cal-head.tight .rl-cal-key { padding: 2px 5px; }
-/* Narrower still: the colours themselves wrap, inside their own box. */
-.rl-cal-head.tight > .rl-cal-legend { flex: 0 1 auto; min-width: 0; }
-.rl-cal-title { margin: 0; font-size: var(--fs-title); font-weight: 700; color: var(--rk-ink); letter-spacing: -.01em; min-width: 140px; }
+.rl-cal-head > .rl-sp { display: none; }
+/* As wide as the legend under them: the two arrows half each, today the whole. */
+.rl-cal-head > .rl-cal-nav { order: 1; }
+.rl-cal-head > .rl-cal-nav > .rl-btn { flex: 1; }
+.rl-cal-head > .rl-cal-nav > .rl-btn, .rl-cal-head > .rl-cal-today { justify-content: center; text-align: center; }
+.rl-cal-head > .rl-cal-today { order: 2; }
+.rl-cal-head > .rl-cal-found { order: 3; flex-wrap: wrap; }
+.rl-cal-head > .rl-cal-legend { order: 4; flex-direction: column; align-items: stretch; }
+.rl-cal-head .rl-cal-key { min-width: 0; }
+/* Tags to show only: the ones chosen (× takes one off), and a box to pick another. */
+.rl-cal-head > .rl-cal-tags { order: 5; display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+.rl-cal-tags .rl-cal-key.on { border-color: var(--rk-ink); color: var(--rk-ink); justify-content: space-between; }
+.rl-cal-tags .rl-cal-key b { font-weight: 400; color: var(--rk-dim); }
+.rl-cal-tag-in { min-width: 0; font: inherit; font-size: 11.5px; padding: 2px 6px; border: 1px solid var(--rk-line); background: none; color: var(--rk-ink); }
+.rl-cal-head .rl-cal-key-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rl-cal-title { margin: 0; font-size: var(--fs-title); font-weight: 700; color: var(--rk-ink); letter-spacing: -.01em; }
 .rl-cal-legend { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .rl-cal-key {
   display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border: 1px solid var(--rk-line);
