@@ -130,11 +130,15 @@ export function useViewState(key) {
  *  A pane that is always half the width is right for nobody: a wide record
  *  wants more, a long list wants less. The ratio is remembered per project,
  *  because it is a working habit rather than a preference about the app.
+ *
+ *  `edge: 'right'` measures the pane on the RIGHT of its handle instead (an
+ *  editor docked right of the list, with another on the left): its share is
+ *  `edgeStyle`. `min`/`max` bound the share, in percent.
  */
-export function usePaneSplit(key, initial = 50) {
+export function usePaneSplit(key, initial = 50, { edge = 'left', min = 20, max = 80 } = {}) {
   const [pct, setPct] = useState(() => {
     const v = Number(load(key, initial))
-    return Number.isFinite(v) && v >= 20 && v <= 80 ? v : initial
+    return Number.isFinite(v) && v >= min && v <= max ? v : initial
   })
   const [dragging, setDragging] = useState(false)
   const box = useRef(null)
@@ -160,8 +164,9 @@ export function usePaneSplit(key, initial = 50) {
   const onPointerMove = useCallback((e) => {
     if (!dragging || !span.current) return
     const { left, width } = span.current
-    setPct(Math.min(80, Math.max(20, ((e.clientX - left) / width) * 100)))
-  }, [dragging])
+    const at = edge === 'right' ? left + width - e.clientX : e.clientX - left
+    setPct(Math.min(max, Math.max(min, (at / width) * 100)))
+  }, [dragging, edge, min, max])
 
   const stop = useCallback(() => {
     setDragging(false)
@@ -175,6 +180,8 @@ export function usePaneSplit(key, initial = 50) {
     leftStyle: { flex: `0 0 ${pct}%`, maxWidth: `${pct}%` },
     /** on the one after the handle */
     rightStyle: { flex: '1 1 auto', minWidth: 0 },
+    /** with `edge: 'right'`: on the pane after the handle, which this measures */
+    edgeStyle: { flex: `0 0 ${pct}%`, maxWidth: `${pct}%` },
     /** spread onto a <div className="rl-split"> between them */
     handleProps: {
       ref: box,

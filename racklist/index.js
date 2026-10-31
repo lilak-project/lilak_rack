@@ -13,8 +13,8 @@ export {
   classRows, fixedTabs, itemTabId, itemScope, labelOf, useRemoteDocs, valueOf,
 } from './schema.js'
 export { RackTable, RackRow, RackTabs } from './table.jsx'
-export { useEditorPanes, RackPaneStrip } from './panes.jsx'
 export { tagKey, mergeTags, loadSharedTags, loadTagSources, loadTagged, forgetTagSources, renameTagEverywhere, sharedTagRows, useTagSources, useSharedTags, useFavTags, spellTag, uniqueTags, loadProjects, forgetProjects, projectWears, useProjects, loadReferences, forgetReferences, useReferences } from './tags.js'
+export { useEditorPanes, RackPaneStrip, paneLayout, paneStyles, LEFT, RIGHT, FULL } from './panes.jsx'
 export { RackActions } from './actions.jsx'
 export { RackField, RackTextRows } from './fields.jsx'
 export { useMergeMode, RackMergeButtons, RackMerge } from './merge.jsx'

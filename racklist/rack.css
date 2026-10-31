@@ -473,10 +473,9 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
 /* The settings tab: the kit's, then the service's own, one scroll. */
 .rl-settings { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 .rl-settings > *, .rl-settings > .rl-edit { flex: none; min-height: auto; overflow: visible; }
-.rl-trash { padding: 10px 14px; }
-.rl-trash table { border-collapse: collapse; margin-top: 8px; font-size: var(--rk-fs); }
-.rl-trash th { text-align: left; font-weight: 500; color: var(--rk-dim); padding: 4px 12px 4px 0; border-bottom: 1px solid var(--rk-edge); }
-.rl-trash td { padding: 4px 12px 4px 0; border-bottom: 1px solid var(--rk-line); }
+/* The way to the bin, in the foot's corner: small, and lit while it is open. */
+.rl-foot-btn { height: calc(var(--rk-row) - 8px); padding: 0 9px; font-size: var(--fs-small); }
+.rl-foot-btn.on { background: var(--rk-ink); color: #fff; border-color: var(--rk-ink); }
 
 /* Deleting is the one thing here that cannot be undone. */
 .rl-btn.rl-danger { border-color: #b91c1c; color: #b91c1c; }
@@ -752,7 +751,11 @@ button.rl-proj { cursor: pointer; }
   background: var(--rk-gut);
   color: var(--rk-dim);
 }
-.rl-btn.rl-pane-btn:hover { background: var(--rk-head); color: var(--rk-ink); }
+/* Hovered: the inside lights, the edge stays the strip's (not the toolbar button's dark border). */
+.rl-btn.rl-pane-btn:hover:not(:disabled) { background: var(--rk-head); border-color: var(--rk-edge); color: var(--rk-ink); }
+/* ◧ ▣ ◨ — where the record is: the one it is in, filled. */
+.rl-where { display: flex; flex: 0 0 auto; }
+.rl-btn.rl-pane-btn.on { background: color-mix(in srgb, var(--rk-ink) 14%, var(--rk-gut)); color: var(--rk-ink); }
 
 /* A name written down with nobody behind it: plain, not a chip that links. */
 .rl-tag.rl-unlinked { border-style: dashed; background: none; color: var(--rk-dim); }

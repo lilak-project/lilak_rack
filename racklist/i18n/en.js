@@ -194,6 +194,8 @@ export default {
   rk_tab_empty: "Nothing on this tab.",
   rk_dbl_full_width: "Double-click for full width",
   rk_send_left: "Send to the left",
+  rk_dock_left: "Dock left of the list",
+  rk_dock_right: "Dock right of the list",
   rk_send_right: "Send to the right",
   rk_show_list_again: "Show the list again",
   rk_full_width: "Full width",

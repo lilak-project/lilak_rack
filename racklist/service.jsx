@@ -1,10 +1,10 @@
 import './strings.js'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { RackTable, RackRow, RackTabs } from './table.jsx'
-import { RackPaneStrip } from './panes.jsx'
+import { RackPaneStrip, paneLayout, paneStyles, FULL } from './panes.jsx'
 import { RackBar } from './bar.jsx'
 import { RackCalendar } from './calendar.jsx'
-import { RackTrash } from './trash.jsx'
+import { RackTrash, TRASH_COLS } from './trash.jsx'
 import { occurrences, parseRule, withUntil, withCount } from './rrule.js'
 import { RackEditClass } from './classedit.jsx'
 import { FilterBar, FacetRows, useFacetFilter } from './filter.jsx'
@@ -137,7 +137,6 @@ function RackList({ def: declared, slots = {} }) {
       ...classTabs,
       ...(slots.tabs || []).map((t) => ({ id: t.id, kind: 'slot', label: t.label })),
       // What was deleted, and the way back — a manager's, as deleting is.
-      ...(IS_ADMIN ? [{ id: 'trash', kind: 'trash', label: tr("rk_trash") }] : []),
       // Where the service may read the disk is a manager's to say.
       ...(IS_ADMIN && (hasRoots(def) || slots.settings) ? [{ id: 'settings', kind: 'settings', label: tr("rk_tab_settings") }] : []),
     ]
@@ -678,6 +677,19 @@ function RackList({ def: declared, slots = {} }) {
     }
   }
 
+  // The editors: docked left of the list, right of it, or FULL (panes.jsx).
+  const lay = paneLayout(panes, showList && showEdit)
+  const ps = paneStyles(lay, split, L.sides)
+  const editorPane = (c, style) => {
+    const etab = panes.current(c)
+    return (
+      <div key={c} className="rl-pane rl-epane" onMouseDown={() => { if (c !== FULL) panes.setCol(c) }} style={style}>
+        <RackPaneStrip panes={panes} col={c} />
+        {etab && editorFor(etab)}
+      </div>
+    )
+  }
+
   return (
     <div className="rl" style={brandStyle()}>
       <section className="rl-mod">
@@ -921,7 +933,7 @@ function RackList({ def: declared, slots = {} }) {
                 }} />
             )}
 
-            {doc && tab?.kind === 'trash' && <RackTrash def={def} setDoc={setDoc} say={setNote} />}
+            {doc && tab?.kind === 'trash' && <RackTrash def={def} setDoc={setDoc} say={setNote} cols={L.colsOf('x:', TRASH_COLS)} onDrag={drag('x:')} />}
             {doc && tab?.kind === 'tagged' && (
               <RackTaggedTab rows={tgShown} cols={L.colsOf('t:', TAGGED_COLS)} onDrag={drag('t:')} onOpen={openRecord}
                 sort={tgSort} onSort={(k) => setTgSort((s2) => bumpSort(s2, k))} filter={tgFilter} mark={query.trim()} />
@@ -940,17 +952,8 @@ function RackList({ def: declared, slots = {} }) {
             {doc && slotTab && slotTab.render(api)}
           </div>)}
 
-          {showList && showEdit && <div {...split.handleProps} />}
-          {showEdit && panes.cols.map((c) => {
-            const etab = panes.current(c)
-            return (
-              <div key={c} className="rl-pane rl-epane" onMouseDown={() => panes.setCol(c)}
-                style={showList && panes.cols.length === 1 ? split.rightStyle : undefined}>
-                <RackPaneStrip panes={panes} col={c} />
-                {etab && editorFor(etab)}
-              </div>
-            )
-          })}
+          {ps.after && <div {...ps.after} />}
+          {showEdit && lay.right.map((c) => editorPane(c, ps.right))}
         </div>
 
         <footer className="rl-foot">
@@ -959,6 +962,12 @@ function RackList({ def: declared, slots = {} }) {
           <span className="rl-mono">
             {cls ? (classes.length ? tr("rk_n_rows", classes.length) : '') : (tab?.kind === 'items' && rows.length ? tr("rk_n_rows", rows.length) : '')}
           </span>
+          {/* What was deleted, and the way back — a manager's, as deleting is.
+              A tab of its own when opened, not one always in the strip. */}
+          {IS_ADMIN && (
+            <button type="button" className={`rl-btn rl-foot-btn${tab?.kind === 'trash' ? ' on' : ''}`} title={tr("rk_trash_hint")}
+              onClick={() => openTab({ id: 'trash', kind: 'trash', label: tr("rk_trash") })}>{tr("rk_trash")}</button>
+          )}
         </footer>
       </section>
     </div>

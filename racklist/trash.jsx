@@ -2,14 +2,26 @@ import './strings.js'
 import { useCallback, useEffect, useState } from 'react'
 import { PORTAL_BASE, authHeaders } from './portal.js'
 import { labelOf } from './schema.js'
+import { RackTable, RackRow } from './table.jsx'
 import { tr } from '../i18n.jsx'
 
 /**
  * The bin: what was deleted in the last 30 days (the store keeps it in
- * .trash/, GET /api/trash), newest first, each with a way back. Back, a
- * record goes to the top of its list as it was when it went.
+ * .trash/, GET /api/trash), newest first, each with a way back — a rack table
+ * like every other list here, the button in its last column. Back, a record
+ * goes to the top of its list as it was when it went. Opened from the button
+ * at the foot of the screen (a manager's), as a tab of its own.
  */
-export function RackTrash({ def, setDoc, say }) {
+export const TRASH_COLS = [
+  { k: 'num', w: 40, min: 30, fix: true, label: '#' },
+  { k: 'when', w: 140, min: 90, label: tr("rk_deleted_at") },
+  { k: 'what', w: 90, min: 50, label: tr("rk_kind") },
+  { k: 'name', w: 420, min: 120, label: tr("rk_name") },
+  { k: 'by', w: 200, min: 60, label: tr("rk_deleted_by") },
+  { k: 'act', w: 96, min: 80, fix: true },
+]
+
+export function RackTrash({ def, setDoc, say, cols = TRASH_COLS, onDrag }) {
   const [rows, setRows] = useState(null)
   const load = useCallback(() => {
     fetch(`${PORTAL_BASE}/api/trash`, { headers: authHeaders() })
@@ -25,7 +37,8 @@ export function RackTrash({ def, setDoc, say }) {
     : String((cls(t)?.rowLabel ? cls(t).rowLabel(t.record) : t.record.name) || t.record.id))
   const when = (s) => {
     const d = new Date(s)
-    return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' })
+    // 2026-10-21 22:33 — short enough for its column, and sorts as it reads.
+    return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })
   }
 
   async function restore(t) {
@@ -42,24 +55,13 @@ export function RackTrash({ def, setDoc, say }) {
 
   if (!rows) return <p className="rl-msg">{tr("rk_trash_loading")}</p>
   return (
-    <div className="rl-trash">
-      <p className="rl-hint">{tr("rk_trash_hint")}</p>
-      {rows.length === 0 ? <p className="rl-msg">{tr("rk_trash_empty")}</p> : (
-        <table>
-          <thead><tr><th>{tr("rk_deleted_at")}</th><th>{tr("rk_kind")}</th><th>{tr("rk_name")}</th><th>{tr("rk_deleted_by")}</th><th /></tr></thead>
-          <tbody>
-            {rows.map((t) => (
-              <tr key={`${t.key}:${t.record.id}`}>
-                <td>{when(t.deletedAt)}</td>
-                <td>{what(t)}</td>
-                <td>{name(t)}</td>
-                <td className="rl-hint">{t.by || ''}</td>
-                <td><button type="button" className="rl-btn" onClick={() => restore(t)}>{tr("rk_restore")}</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
+    <RackTable cols={cols} onDrag={onDrag}>
+      {rows.map((t, i) => (
+        <RackRow key={`${t.key}:${t.record.id}`} cols={cols} tone={{ name: 'ink', when: 'dim', by: 'dim' }}
+          cell={{ num: i + 1, when: when(t.deletedAt), what: what(t), name: name(t), by: t.by || '·',
+            act: <button type="button" className="rl-btn" onClick={() => restore(t)}>{tr("rk_restore")}</button> }} />
+      ))}
+      <p className="rl-msg">{rows.length ? tr("rk_trash_hint") : `${tr("rk_trash_empty")} ${tr("rk_trash_hint")}`}</p>
+    </RackTable>
   )
 }
