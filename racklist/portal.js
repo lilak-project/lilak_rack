@@ -94,9 +94,16 @@ export function serviceColor(name) {
 export function openInService(svc, proj, id) {
   const msg = { type: 'lilak:open', svc, proj, id }
   if (typeof window === 'undefined') return
-  if (window.parent && window.parent !== window) { window.parent.postMessage(msg, window.location.origin); return }
+  // The top, not the parent: a record's page framed in another service's pane
+  // (?solo=) is two frames down from the portal.
+  if (window.top && window.top !== window) { window.top.postMessage(msg, window.location.origin); return }
   window.location.href = `/pp/${svc}/${proj}/#open=${encodeURIComponent(id)}`
 }
+/** This record, in this service's own list, on its calendar at that day: an
+ *  open request `cal:<day>:<id>` (the list reads it, see service.jsx). */
+export const showInCalendar = (id, day) =>
+  openInService(PARTS[PARTS.length - 2] || '', PORTAL_PROJECT, `cal:${String(day).slice(0, 10)}:${id}`)
+export const calAsk = (asked) => /^cal:([^:]*):(.*)$/.exec(asked || '')?.slice(1) || null
 /** The record this page was asked to open, if any (and the ask is consumed). */
 export function takeOpenRequest() {
   if (typeof window === 'undefined') return ''
