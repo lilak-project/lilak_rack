@@ -5,7 +5,8 @@ import { RackField } from './fields.jsx'
 import { typeOf } from './types.jsx'
 import { ctxFor, labelOf, wornBy, valueOf } from './schema.js'
 import { useRackKeys } from './hooks.js'
-import { newId } from './portal.js'
+import { newId, openInService, PORTAL_SERVICE } from './portal.js'
+import { useProjects, projectWears } from './tags.js'
 import { tr } from '../i18n.jsx'
 
 /**
@@ -240,6 +241,11 @@ export function RackItemEditor({
     return <button type="button" className="rl-fl-go" title={tr("rk_show_in_calendar")} onClick={() => extra.showDate(v)}>{seg.group || fl.label}</button>
   }
   const patchF = (o) => setF((s) => ({ ...s, ...o }))
+  // The projects this item belongs to by its tags, as it stands in the form
+  // (project_manager's own items are the projects).
+  const projects = useProjects()
+  const inProjects = isItem && PORTAL_SERVICE.name !== 'project_manager' && Array.isArray(f.tags)
+    ? projects.filter((p) => projectWears(p, f.tags)) : []
 
   return (
     <div className="rl-edit">
@@ -278,6 +284,16 @@ export function RackItemEditor({
             </RackField>
           )
         })}
+        {inProjects.length > 0 && (
+          <RackField label={tr("rk_projects")}>
+            <div className="rl-projs">
+              {inProjects.map((p) => (
+                <button key={p.id} type="button" className="rl-proj" title={tr("rk_open_project", p.name)}
+                  onClick={() => openInService(p.svc, p.proj, p.id)}>{p.name}</button>
+              ))}
+            </div>
+          </RackField>
+        )}
       </div>
     </div>
   )

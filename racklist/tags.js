@@ -58,6 +58,12 @@ export const loadTagged = (tag) => loadTagSources().then((src) => Promise.all(sr
   fetch(`/pp/${s.svc}/${s.proj}/api/tagged?tag=${encodeURIComponent(tag)}`, { headers: authHeaders() })
     .then((r) => (r.ok ? r.json() : null)).catch(() => null)
     .then((x) => ({ ...s, items: x?.items || [] })))))
+/** Every record naming project `name` in its text (`+STARK`: a note, a
+ *  to-do), service by service — the same shape as loadTagged. */
+export const loadMentions = (name) => loadTagSources().then((src) => Promise.all(src.map((s) =>
+  fetch(`/pp/${s.svc}/${s.proj}/api/tagged?project=${encodeURIComponent(name)}`, { headers: authHeaders() })
+    .then((r) => (r.ok ? r.json() : null)).catch(() => null)
+    .then((x) => ({ ...s, items: x?.items || [] })))))
 /** Forget the answers: the next ask goes to the services again. */
 export const forgetTagSources = () => { asked = null }
 
@@ -151,4 +157,78 @@ export const spellTag = (t, names) => names.find((n) => tagKey(n) === tagKey(t))
 export const uniqueTags = (names) => {
   const seen = new Set()
   return names.filter((n) => { const k = tagKey(n); if (!k || seen.has(k)) return false; seen.add(k); return true })
+}
+
+// ─── projects ──────────────────────────────────────────────────────────────
+// A project (project_manager's record) is a set of tags matched all or any;
+// in text it is `+name`, as a tag is `#name`. What belongs to one is what
+// wears its tags — and, in a note, what names it (`+STARK`).
+const PM = 'project_manager'
+let projAsk = null
+/** Every project: [{ id, name, tags, match, svc, proj }] ([] without project_manager). */
+export function loadProjects() {
+  projAsk ||= fetch('/api/services', { headers: authHeaders() })
+    .then((r) => (r.ok ? r.json() : []))
+    .then((list) => (Array.isArray(list) ? list : []).find((s) => s.name === PM))
+    .then((s) => {
+      const proj = s && (s.tags_project || s.entry_project)
+      if (!proj) return []
+      return fetch(`/pp/${PM}/${proj}/api/data`, { headers: authHeaders() })
+        .then((r) => (r.ok ? r.json() : {}))
+        .then((d) => (d.projects || []).filter((p) => p?.name)
+          .map((p) => ({ id: p.id, name: p.name, tags: p.tags || [], match: p.match || 'or', svc: PM, proj })))
+    })
+    .catch(() => [])
+  return projAsk
+}
+export const forgetProjects = () => { projAsk = null }
+/** Does a record wearing `tags` belong to project `p`? All its tags or any (`p.match`). */
+export function projectWears(p, tags) {
+  const have = new Set((tags || []).map(tagKey))
+  const want = (p.tags || []).map(tagKey).filter(Boolean)
+  return want.length > 0 && (p.match === 'and' ? want.every((k) => have.has(k)) : want.some((k) => have.has(k)))
+}
+// ─── references ────────────────────────────────────────────────────────────
+// A reference (reference_manager's record) is one paper, known by its cite
+// key — the name `\cite{…}` uses. A document written elsewhere can say which
+// paper it IS; this only ever reads the list.
+const RM = 'reference_manager'
+let refAsk = null
+/** Every reference: [{ id, citeKey, title, svc, proj }] ([] without reference_manager). */
+export function loadReferences() {
+  refAsk ||= fetch('/api/services', { headers: authHeaders() })
+    .then((r) => (r.ok ? r.json() : []))
+    .then((list) => (Array.isArray(list) ? list : []).find((s) => s.name === RM))
+    .then((s) => {
+      const proj = s && (s.tags_project || s.entry_project)
+      if (!proj) return []
+      return fetch(`/pp/${RM}/${proj}/api/data`, { headers: authHeaders() })
+        .then((r) => (r.ok ? r.json() : {}))
+        .then((d) => (d.references || []).filter((r) => String(r?.citeKey || '').trim())
+          .map((r) => ({ id: r.id, citeKey: String(r.citeKey).trim(), title: r.title || '', svc: RM, proj })))
+    })
+    .catch(() => [])
+  return refAsk
+}
+export const forgetReferences = () => { refAsk = null }
+/** The references ([] until they come). */
+export function useReferences() {
+  const [list, setList] = useState([])
+  useEffect(() => {
+    let on = true
+    loadReferences().then((x) => { if (on) setList(x) })
+    return () => { on = false }
+  }, [])
+  return list
+}
+
+/** The projects ([] until they come). */
+export function useProjects() {
+  const [list, setList] = useState([])
+  useEffect(() => {
+    let on = true
+    loadProjects().then((x) => { if (on) setList(x) })
+    return () => { on = false }
+  }, [])
+  return list
 }

@@ -103,6 +103,10 @@ export function openInService(svc, proj, id) {
  *  open request `cal:<day>:<id>` (the list reads it, see service.jsx). */
 export const showInCalendar = (id, day) =>
   openInService(PARTS[PARTS.length - 2] || '', PORTAL_PROJECT, `cal:${String(day).slice(0, 10)}:${id}`)
+/** The calendar, filtered (`keys`: `#tag` keys and `+project` ones, as the
+ *  calendar's own filter keeps them): an open request `calf:<key>,<key>`. */
+export const showFilteredInCalendar = (svc, proj, keys) => openInService(svc, proj, `calf:${keys.join(',')}`)
+export const calFilterAsk = (asked) => /^calf:(.*)$/.exec(asked || '')?.[1].split(',').filter(Boolean) || null
 export const calAsk = (asked) => /^cal:([^:]*):(.*)$/.exec(asked || '')?.slice(1) || null
 /** The record this page was asked to open, if any (and the ask is consumed). */
 export function takeOpenRequest() {

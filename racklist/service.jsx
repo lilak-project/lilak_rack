@@ -7,7 +7,7 @@ import { RackCalendar } from './calendar.jsx'
 import { RackTrash } from './trash.jsx'
 import { occurrences, parseRule, withUntil, withCount } from './rrule.js'
 import { RackEditClass } from './classedit.jsx'
-import { FilterBar, FacetRows } from './filter.jsx'
+import { FilterBar, FacetRows, useFacetFilter } from './filter.jsx'
 import { RackListing } from './listing.jsx'
 import { RackItemEditor, cloneOf } from './editor.jsx'
 import { useMergeMode, RackMergeButtons, RackMerge } from './merge.jsx'
@@ -16,16 +16,16 @@ import { useRackList } from './list.js'
 import { useRackKeys, useToggleKey } from './hooks.js'
 import { typeOf } from './types.jsx'
 import { useFolders, RackFolder, RackFilePane, RackSettings, hasRoots } from './files.jsx'
-import { asSorts, bumpSort, bySome } from './sort.js'
+import { asSorts, bumpSort, bySome, byKeys } from './sort.js'
 import {
   defineRack, isFav, withFav, caseFree, itemColumns, classColumns, itemSorters, itemCells, itemSearch, itemTokens,
   classRows, wornBy, wears, isRef, fixedTabs, itemTabId, itemScope, labelOf, useRemoteDocs, valueOf,
   EMPTY_CELL as D,
 } from './schema.js'
-import { PORTAL_PROJECT, PORTAL_SERVICE, brandStyle, isManager, portalUser, fetchDoc, putDoc, newId, takeOpenRequest, showInCalendar, calAsk, load, save, projectKey, serviceColor } from './portal.js'
+import { PORTAL_PROJECT, PORTAL_SERVICE, brandStyle, isManager, portalUser, fetchDoc, putDoc, newId, takeOpenRequest, showInCalendar, calAsk, calFilterAsk, load, save, projectKey, serviceColor } from './portal.js'
 import { tr } from '../i18n.jsx'
 import { tagKey, useTagSources, sharedTagRows, useFavTags, renameTagEverywhere } from './tags.js'
-import { RackTagged, RackTaggedTab, TAGGED_COLS } from './tagged.jsx'
+import { RackTagged, RackTaggedTab, TAGGED_COLS, TAGGED_SORTERS, useTaggedRows } from './tagged.jsx'
 
 /**
  * <RackService def={…} /> — a whole rack-list service from its declaration.
@@ -68,6 +68,8 @@ const calButton = (def, show) => (def.calendar && show ? (f) => {
   const d = f[def.calendar.start || 'start']
   return d ? <button type="button" className="rl-btn" onClick={() => show(d)}>{tr("rk_show_in_calendar")}</button> : null
 } : undefined)
+
+const NONE = []                       // one empty list, so a hook sees the same one each render
 
 // ?solo=<id>: the page is one item's editor and nothing else — what another
 // service shows it as, in a pane of its own (project_manager's tags, its inbox).
@@ -209,7 +211,8 @@ function RackList({ def: declared, slots = {} }) {
         return (f && items.some((r) => wears(r, f, t.key || t.name)))
           || (doc[t.of] || []).some((r) => r[c.keyBy || 'name'] === (t.key || t.name))
       }
-      if (t.ids || t.kind === 'tagged') return true
+      if (t.kind === 'tagged') return !t.item || items.some((r) => idOf(r) === t.item)
+      if (t.ids) return true
       return false
     })
     panes.keep((t) => {
@@ -309,6 +312,8 @@ function RackList({ def: declared, slots = {} }) {
   useEffect(() => {
     if (!doc || !asked || answered) return
     setAnswered(true)
+    const keys = calFilterAsk(asked)                       // `calf:<keys>`: the calendar, filtered
+    if (keys) { showDate(new Date().toLocaleDateString('sv'), keys); return }
     const [day, id] = calAsk(asked) || ['', asked]      // `cal:<day>:<id>`: on the calendar, at that day
     if (items.some((r) => idOf(r) === id)) openItem(id)
     else setNote(tr("rk_open_target_missing"))
@@ -319,12 +324,12 @@ function RackList({ def: declared, slots = {} }) {
   // back, and where the two cannot stand side by side the editors close
   // (each saves what it holds as it goes).
   const [calAt, setCalAt] = useState(null)
-  const showDate = useCallback((d) => {
+  const showDate = useCallback((d, tags) => {
     if (!d) return
     panes.setFull(false)
     if (L.vw < (panes.cols.length > 1 ? 1500 : 1180)) panes.closeAll()     // as useRackList's showList
     openTab({ id: 'calendar', kind: 'calendar', label: tr("rk_tab_calendar") })
-    setCalAt({ d: String(d).slice(0, 10), n: Date.now() })
+    setCalAt({ d: String(d).slice(0, 10), n: Date.now(), ...(tags ? { tags } : {}) })
   }, [openTab, panes, L.vw])
   const ctx = useMemo(() => ({
     remote, folders, reloadFolders, openFolder, openFile, say: setNote, openItem,
@@ -395,6 +400,36 @@ function RackList({ def: declared, slots = {} }) {
     all.sort(bySome(get, clsSort.dir))
     return !cls.stored && caseFree(clsField) ? [...all.filter((r) => isFavTag(r.name)), ...all.filter((r) => !isFavTag(r.name))] : all
   }, [cls, clsField, def, doc, query, clsSort, extra, tagSources, isFavTag])
+  // A class tab (the tags) filters as the items tab does: by its columns' values.
+  const clsSorters = useMemo(() => {
+    if (!cls) return {}
+    const c = { def, doc, ...extra }
+    return Object.fromEntries(clsCols.map(({ k }) => {
+      const f = cls.fields.find((x) => x.k === k)
+      return [k, k === 'count' ? (r) => r.count : k.includes(':') ? (r) => r.per?.[k] ?? null
+        : f?.get ? (r) => f.get(r, c) : (r) => (Array.isArray(r[k]) ? r[k].join(', ') : r[k])]
+    }))
+  }, [cls, clsCols, def, doc, extra])
+  const clsFilter = useFacetFilter(classes, clsSorters)
+  const clsShown = clsFilter.on ? classes.filter(clsFilter.passes) : classes
+  // A tagged tab (a shared tag's, or a project's — which reads its tags now,
+  // so editing them changes what it shows): its rows, sorted and filtered here.
+  const tgRec = tab?.kind === 'tagged' && tab.item ? items.find((x) => idOf(x) === tab.item) : null
+  const tg = def.item.tagged || {}
+  const tgRows = useTaggedRows(tab?.kind !== 'tagged' ? NONE : tgRec ? (tgRec[tg.tags || 'tags'] || NONE) : (tab.names || NONE),
+    tgRec ? (tgRec[tg.match || 'match'] || 'or') : 'or', PORTAL_SERVICE.name, tgRec ? labelOf(def, tgRec) : '')
+  const [tgSort, setTgSort] = useState([{ k: 'date', dir: -1 }])
+  const tgFilter = useFacetFilter(tgRows || NONE, TAGGED_SORTERS)
+  const tgShown = useMemo(() => {
+    if (!tgRows) return null
+    const q = query.trim().toLowerCase()
+    return tgRows.filter((r) => (!tgFilter.on || tgFilter.passes(r))
+      && (!q || [r.svc, r.kind, r.date, r.what, r.sub].some((v) => String(v || '').toLowerCase().includes(q))))
+      .sort(byKeys(tgSort, TAGGED_SORTERS))
+  }, [tgRows, tgFilter.on, tgFilter.passes, query, tgSort])
+  // A filter is the tab's own: another tab starts without it.
+  useEffect(() => { clsFilter.clear(); tgFilter.clear() }, [tab?.id])   // eslint-disable-line react-hooks/exhaustive-deps
+  const fNow = tab?.kind === 'items' ? filter : tab?.kind === 'tagged' ? tgFilter : cls && !merge.mode ? clsFilter : null
 
   const showEdit = L.showEdit && !!doc
   const showList = !showEdit || L.showList
@@ -519,7 +554,8 @@ function RackList({ def: declared, slots = {} }) {
       return (
         <RackItemEditor key={etab.id} def={def} doc={doc} rec={rec} seed={etab.seed} ctx={ctx} onSave={commit}
           canDelete={IS_ADMIN} onCancel={() => panes.close(etab.id)}
-          onClone={(seed) => openItem(null, null, seed)} actions={calButton(def, ctx.showDate)}
+          onClone={(seed) => openItem(null, null, seed)}
+          actions={def.item.actions ? (f, setF) => def.item.actions(f, setF, ctx) : calButton(def, ctx.showDate)}
           onCreated={(r) => { panes.close(etab.id); openItem(idOf(r), r) }}
           onDeleted={(r) => {
             panes.close(etab.id)
@@ -558,6 +594,13 @@ function RackList({ def: declared, slots = {} }) {
           moved={field.moved ? (to) => field.moved(users, etab.names || [], to) : []}
           movedWhy={field.movedWhy}
           onMerge={async (gone, to) => {
+            // A shared tag is merged in every other service too.
+            if (c.shared) {
+              const res = await renameTagEverywhere(gone, to, { skip: PORTAL_SERVICE.name })
+              const bad = res.filter((r) => r.error).map((r) => `${r.label} (${r.error})`)
+              if (bad.length) setNote(tr('rk_rename_failed_in', bad.join(' · ')))
+              setTagAgain((n) => n + 1)
+            }
             if (await commit({ [def.item.key]: foldNames(field, gone, to) },
               tr("rk_merged_into_one_n", field.label || c.noun, gone.length + 1, to, users.length, def.unit))) {
               panes.close(etab.id); merge.off()
@@ -599,8 +642,15 @@ function RackList({ def: declared, slots = {} }) {
           }}
           onCancel={() => panes.close(etab.id)}
           onDelete={IS_ADMIN ? async () => {
+            // A shared tag goes from every other service too (an empty new name).
+            if (c.shared) {
+              const res = await renameTagEverywhere([etab.who], '', { skip: PORTAL_SERVICE.name })
+              const bad = res.filter((r) => r.error).map((r) => `${r.label} (${r.error})`)
+              if (bad.length) setNote(tr('rk_rename_failed_in', bad.join(' · ')))
+              setTagAgain((n) => n + 1)
+            }
             if (await commit({ [def.item.key]: foldNames(field, [etab.who], '') },
-              tr("rk_removed_name", etab.who))) panes.close(etab.id)
+              tr("rk_removed_name", etab.who)) || c.shared) panes.close(etab.id)
           } : null}>
           {/* A shared tag: what wears it in the other services, each opening in a pane here. */}
           {c.shared && <RackTagged names={[etab.who]} skip={PORTAL_SERVICE.name} onOpen={openRecord} />}
@@ -646,6 +696,19 @@ function RackList({ def: declared, slots = {} }) {
               onOpen={(names) => openEdit({ id: `merge:${cls.k}`, kind: 'merge', of: cls.k, names,
                 label: tr("rk_merge_n_x", cls.stored ? cls.noun : (clsField.label || cls.noun), names.length) })} />
           )}
+          {/* `bundle`: the names picked, as a new item wearing them (a project of
+              tags) — matching any of them, or (`bundle.match`, the item's field
+              for it) all of them. */}
+          {mergeable && merge.mode && cls.bundle && ['or', 'and'].map((m) => (
+            <button key={m} type="button" className={`rl-btn${m === 'or' ? ' rl-go' : ''}`} disabled={!merge.size}
+              onClick={() => {
+                openItem(null, null, { [clsField.k]: merge.names,
+                  ...(cls.bundle.match ? { [cls.bundle.match]: m } : {}),
+                  ...(def.item.label === 'name' || !def.item.label ? { name: merge.names.join('_') } : {}) })
+                merge.off()
+              }}>
+              {tr(m === 'or' ? 'rk_bundle_any_n' : 'rk_bundle_all_n', def.item.noun, merge.size)}</button>
+          ))}
           {slots.commands?.(api)}
           <button type="button" className="rl-btn" disabled={!picked.size} onClick={clearPicked}>clear</button>
           {picked.size > 0 && <span className="rl-n">{tr("rk_select_x", picked.size)}</span>}
@@ -680,21 +743,23 @@ function RackList({ def: declared, slots = {} }) {
           {panes.tabs.length > 0 && (
             <button type="button" className="rl-btn" title={tr("rk_close_editors_hint")} onClick={panes.closeAll}>{tr("rk_close_editors_n", panes.tabs.length)}</button>
           )}
-          {tab?.kind === 'items' && <FilterBar f={filter} />}
+          {fNow && <FilterBar f={fNow} />}
           {tab?.kind === 'items' && (def.item.quick || []).map((q) => (
             <button key={q.id} type="button" className={`rl-btn${quick.includes(q.id) ? ' on' : ''}`} title={q.title}
               onClick={() => setQuick((xs) => (xs.includes(q.id) ? xs.filter((x) => x !== q.id) : [...xs, q.id]))}>{q.label}</button>
           ))}
           <span className="rl-sp" />
           <input ref={findRef} type="search" className="rl-find"
-            value={filter.mode ? filter.find : query}
-            placeholder={filter.mode ? tr("rk_find_value")
+            value={fNow?.mode ? fNow.find : query}
+            placeholder={fNow?.mode ? tr("rk_find_value")
               : cls ? tr("rk_find_in_list") : (def.item.findHint || tr("rk_find_x", def.item.noun))}
-            onChange={(e) => (filter.mode ? filter.setFind : setQuery)(e.target.value)} />
+            onChange={(e) => (fNow?.mode ? fNow.setFind : setQuery)(e.target.value)} />
         </div>
 
         <div className="rl-body">
-          {showList && (<div className="rl-pane" style={showEdit ? split.leftStyle : undefined}>
+          {showEdit && lay.left.map((c) => editorPane(c, ps.left))}
+          {ps.before && <div {...ps.before} />}
+          {showList && (<div className="rl-pane" style={ps.list}>
             <RackTabs tabs={tabs} active={L.active} fixed={FIXED} onPick={L.setActive} onClose={closeTab} />
 
             {err && <p className="rl-msg">{err}</p>}
@@ -715,7 +780,11 @@ function RackList({ def: declared, slots = {} }) {
                     return (
                       <RackRow key={rid || i} cols={cols} tone={tone} mark={query.trim()}
                         className={`rl-hit${on ? ' on' : ''}${edited ? ' rl-edited' : ''}${now}`}
-                        onClick={(e) => hit(i, e.shiftKey)}
+                        // `item.tagged`: a row opens what wears its tags (a project's
+                        // own tab); the checkbox still picks it.
+                        onClick={(e) => (def.item.tagged && !e.target.closest('.rl-chk') && !e.shiftKey
+                          ? openTab({ id: `item-tagged:${rid}`, kind: 'tagged', item: rid, label: `+${labelOf(def, r)}` })
+                          : hit(i, e.shiftKey))}
                         onContextMenu={(e) => {
                           e.preventDefault()
                           // Right-clicking INSIDE a selection means the selection:
@@ -755,8 +824,10 @@ function RackList({ def: declared, slots = {} }) {
             {doc && cls && (
               <RackTable cols={merge.mode ? mergeCols : clsCols} onDrag={drag('c:')} sort={clsSort}
                 onSort={(k) => setClsSort((s2) => (s2.k === k ? { k, dir: -s2.dir } : { k, dir: 1 }))}
-                head={merge.mode ? merge.head(classes.map((r) => r.name)) : null}>
-                {classes.map((r, i) => {
+                facet={merge.mode ? null : clsFilter.tableFacet}
+                head={merge.mode ? merge.head(clsShown.map((r) => r.name)) : null}>
+                <FacetRows f={clsFilter} labels={{ empty: tr("rk_column_empty") }} />
+                {!clsFilter.mode && clsShown.map((r, i) => {
                   const on = merge.mode && merge.has(r.name)
                   return (
                     <RackRow key={r.id || r.key || r.name} cols={merge.mode ? mergeCols : clsCols} tone={tone} mark={query.trim()}
@@ -782,7 +853,7 @@ function RackList({ def: declared, slots = {} }) {
                       }} />
                   )
                 })}
-                {classes.length === 0 && <p className="rl-msg">{tr("rk_none_yet")}</p>}
+                {!clsFilter.mode && clsShown.length === 0 && <p className="rl-msg">{tr(classes.length ? "rk_none" : "rk_none_yet")}</p>}
               </RackTable>
             )}
 
@@ -852,8 +923,8 @@ function RackList({ def: declared, slots = {} }) {
 
             {doc && tab?.kind === 'trash' && <RackTrash def={def} setDoc={setDoc} say={setNote} />}
             {doc && tab?.kind === 'tagged' && (
-              <RackTaggedTab names={tab.names || []} cols={L.colsOf('t:', TAGGED_COLS)} onDrag={drag('t:')}
-                skip={PORTAL_SERVICE.name} onOpen={openRecord} />
+              <RackTaggedTab rows={tgShown} cols={L.colsOf('t:', TAGGED_COLS)} onDrag={drag('t:')} onOpen={openRecord}
+                sort={tgSort} onSort={(k) => setTgSort((s2) => bumpSort(s2, k))} filter={tgFilter} mark={query.trim()} />
             )}
 
             {doc && tab?.kind === 'settings' && (

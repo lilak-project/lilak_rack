@@ -32,6 +32,7 @@
   --rk-tab-t: #92400e;
   --rk-cite: #dbeafe;      /* the citation columns wear it on the HEAD only */
   --rk-cite-t: #1d4ed8;
+  --rk-proj: #0f766e;      /* a project's nameplate (project_manager's colour) */
   /* The fonts are the kit's (fonts/fonts.css): one definition for the portal
      and every rack service. These names stay so the rules below read as before. */
   --rk-mono: var(--font-mono);
@@ -536,6 +537,20 @@ body.rl-resizing .rl-hit:hover { background: transparent; }
    and as wide as the name. */
 .rl-rec .rl-tag { height: 26px; padding: 0 2px 0 8px; gap: 6px; font-size: var(--rk-fs); }
 .rl-chips { flex: 1; min-width: 0; align-items: stretch; }
+/* A project — `+name` in text — is a nameplate beside the tags: the same
+   height, no fill but a dark head cut on a slant, a screw at each end. */
+.rl-proj {
+  --hd: 11px; --sc: 3px;
+  display: inline-flex; align-items: center; gap: 5px; height: 17px; padding: 0 4px 0 3px;
+  border: 1px solid var(--rk-proj); color: var(--rk-proj); font-weight: 700;
+  font: inherit; font-weight: 700; font-size: var(--fs-tiny); white-space: nowrap; cursor: default;
+  background: linear-gradient(105deg, var(--rk-proj) 0 var(--hd), transparent var(--hd));
+}
+.rl-proj::before, .rl-proj::after { content: ''; width: var(--sc); height: var(--sc); border-radius: 50%; background: var(--rk-proj); flex: none; }
+.rl-proj::before { background: #fff; }
+button.rl-proj { cursor: pointer; }
+.rl-projs { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.rl-rec .rl-proj { --hd: 16px; --sc: 4px; height: 26px; gap: 7px; padding: 0 6px 0 5px; font-size: var(--rk-fs); }
 
 /* A warning in a form: said where the thing it is about is. */
 .rl-warn { color: #b91c1c; }
