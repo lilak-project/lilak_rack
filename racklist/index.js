@@ -9,10 +9,11 @@ export { RackListing } from './listing.jsx'
 export { RackFolder, RackFilePane, RackSettings, useFolders, fileSrc, fileUrl, scanFiles, onDesktop, copyText } from './files.jsx'
 export { registerType, typeOf, remoteDoc, forgetRemote, useRefOptions } from './types.jsx'
 export {
-  defineRack, FAV, isFav, withFav, itemColumns, classColumns, itemSorters, itemCells, itemSearch, itemTokens,
+  defineRack, FAV, isFav, withFav, caseFree, itemColumns, classColumns, itemSorters, itemCells, itemSearch, itemTokens,
   classRows, fixedTabs, itemTabId, itemScope, labelOf, useRemoteDocs, valueOf,
 } from './schema.js'
 export { RackTable, RackRow, RackTabs } from './table.jsx'
+export { tagKey, mergeTags, loadSharedTags, loadTagSources, sharedTagRows, useTagSources, useSharedTags, spellTag, uniqueTags, whereText } from './tags.js'
 export { useEditorPanes, RackPaneStrip } from './panes.jsx'
 export { RackActions } from './actions.jsx'
 export { RackField, RackTextRows } from './fields.jsx'

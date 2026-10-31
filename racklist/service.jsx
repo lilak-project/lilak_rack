@@ -18,12 +18,13 @@ import { typeOf } from './types.jsx'
 import { useFolders, RackFolder, RackFilePane, RackSettings, hasRoots } from './files.jsx'
 import { asSorts, bumpSort, bySome } from './sort.js'
 import {
-  defineRack, isFav, withFav, itemColumns, classColumns, itemSorters, itemCells, itemSearch, itemTokens,
+  defineRack, isFav, withFav, caseFree, itemColumns, classColumns, itemSorters, itemCells, itemSearch, itemTokens,
   classRows, wornBy, wears, isRef, fixedTabs, itemTabId, itemScope, labelOf, useRemoteDocs, valueOf,
   EMPTY_CELL as D,
 } from './schema.js'
-import { PORTAL_PROJECT, brandStyle, isManager, portalUser, fetchDoc, putDoc, newId, takeOpenRequest, load, save, projectKey } from './portal.js'
+import { PORTAL_PROJECT, PORTAL_SERVICE, brandStyle, isManager, portalUser, fetchDoc, putDoc, newId, takeOpenRequest, load, save, projectKey } from './portal.js'
 import { tr } from '../i18n.jsx'
+import { tagKey, useTagSources, sharedTagRows, whereText } from './tags.js'
 
 /**
  * <RackService def={…} /> — a whole rack-list service from its declaration.
@@ -273,18 +274,40 @@ export function RackService({ def: declared, slots = {} }) {
   const cols = useMemo(() => L.colsOf('').filter((c) => !c.when || c.when(tab)), [L.colsOf, tab])   // eslint-disable-line react-hooks/exhaustive-deps
   const clsCols = useMemo(() => (cls ? L.colsOf('c:', classColumns(def, cls)).filter((c) => !c.when || c.when(tab)) : []), [L.colsOf, cls, def, tab])   // eslint-disable-line react-hooks/exhaustive-deps
   const mergeCols = useMemo(() => [{ k: 'chk', w: 26, min: 26, fix: true }, ...clsCols], [clsCols])
+  // A tags tab lists every service's tags (tags.js): the ones worn here with
+  // their count, the rest with none — and where else each is worn.
+  const tagSources = useTagSources()
   const classes = useMemo(() => {
     if (!cls) return []
     const q = query.trim().toLowerCase()
-    const all = classRows(def, doc, cls, extra)
-      // Every spelling the record holds is searched — an alias, a handle.
-      .filter((r) => !q || Object.values(r).flat().some((v) => typeof v === 'string' && v.toLowerCase().includes(q)))
+    let all = classRows(def, doc, cls, extra)
+    if (!cls.stored && caseFree(clsField)) {
+      const here = new Map(all.map((r) => [r.key, r]))
+      const own = PORTAL_SERVICE.name
+      // What this service wears now: its items' tags, and its other records'
+      // (an author group's) — the same as its /api/tags says.
+      const worn = Object.fromEntries(all.map((r) => [r.name, r.count]))
+      const besides = new Map()           // tag → ['groups 1'], the records here that are not items
+      for (const c of def.classes.filter((x) => x.stored)) {
+        const n = new Map()
+        for (const r of doc?.[c.k] || []) for (const t of Array.isArray(r?.tags) ? r.tags : []) {
+          worn[t] = (worn[t] || 0) + 1
+          n.set(tagKey(t), (n.get(tagKey(t)) || 0) + 1)
+        }
+        for (const [k, v] of n) besides.set(k, [...(besides.get(k) || []), `${c.label} ${v}`])
+      }
+      all = sharedTagRows(tagSources, { svc: own, tags: worn })
+        .map((t) => ({ ...(here.get(t.key) || { key: t.key, name: t.name, count: 0 }),
+          where: [...(besides.get(t.key) || []), whereText(t.by, own)].filter(Boolean).join(' · ') }))
+    }
+    // Every spelling the record holds is searched — an alias, a handle.
+    all = all.filter((r) => !q || Object.values(r).flat().some((v) => typeof v === 'string' && v.toLowerCase().includes(q)))
     const f = cls.fields.find((x) => x.k === clsSort.k)
     const c = { def, doc, ...extra }
     const get = clsSort.k === 'count' ? (r) => r.count
       : f?.get ? (r) => f.get(r, c) : (r) => r[clsSort.k]
     return all.sort(bySome(get, clsSort.dir))
-  }, [cls, def, doc, query, clsSort, extra])
+  }, [cls, clsField, def, doc, query, clsSort, extra, tagSources])
 
   const showEdit = L.showEdit && !!doc
   const showList = !showEdit || L.showList
@@ -313,20 +336,23 @@ export function RackService({ def: declared, slots = {} }) {
   // ── a wearable class (tags): rename, merge or take it off every item ──────
   // A field may say how a record changes beyond the field itself (`fold`): a
   // main tag that was one of the names going.
+  // A tag is the same tag in any case: every spelling of one goes with it.
+  const goneHas = (field, gone) => (caseFree(field)
+    ? ((s) => new Set(gone.map(tagKey)).has(tagKey(s))) : (x) => gone.includes(x))
   const foldNames = (field, gone, to) => items.map((r) => {
     if (field.fold) return field.fold(r, gone, to)
-    const v = r[field.k]
+    const v = r[field.k], has = goneHas(field, gone)
     if (Array.isArray(v)) {
-      if (!v.some((x) => gone.includes(x))) return r
+      if (!v.some(has)) return r
       const next = []
-      for (const x of v) { const y = gone.includes(x) ? to : x; if (y && !next.includes(y)) next.push(y) }
+      for (const x of v) { const y = has(x) ? to : x; if (y && !next.includes(y)) next.push(y) }
       return { ...r, [field.k]: next }
     }
-    return gone.includes(v) ? { ...r, [field.k]: to || '' } : r
+    return has(v) ? { ...r, [field.k]: to || '' } : r
   })
   const wearing = (field, gone) => items.filter((r) => {
-    const v = r[field.k]
-    return Array.isArray(v) ? v.some((x) => gone.includes(x)) : gone.includes(v)
+    const v = r[field.k], has = goneHas(field, gone)
+    return Array.isArray(v) ? v.some(has) : has(v)
   })
 
   // ── the selection: edit it all at once, or put it in a list ──────────────
@@ -500,6 +526,7 @@ export function RackService({ def: declared, slots = {} }) {
       })),
       ...(cls.stored ? {} : { name: r.name || D }),
       count: r.count || D,
+      where: r.where || D,
     }
   }
 

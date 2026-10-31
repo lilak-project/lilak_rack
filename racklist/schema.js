@@ -3,6 +3,7 @@ import { asSorts, byKeys } from './sort.js'
 import { useEffect, useMemo, useState } from 'react'
 import { typeOf, refTarget, remoteDoc, refLabelOf, backlinksOf } from './types.jsx'
 import { portalUser } from './portal.js'
+import { tagKey } from './tags.js'
 import { tr } from '../i18n.jsx'
 
 /**
@@ -95,11 +96,20 @@ import { tr } from '../i18n.jsx'
  * (item) => string` is what its editor says beside each item it holds.
  */
 export function defineRack(def) {
-  const item = def.item || {}
+  let item = def.item || {}
   // A backlinks field is computed from the other service's links.
   const fields = (item.fields || []).map((f) => ({ label: f.k,
     ...(f.type === 'backlinks' && !f.get ? { get: (r, ctx) => backlinksOf(r, f, ctx) } : {}), ...f }))
-  const classes = (def.classes || []).map((c) => {
+  // Every service's items wear tags — the same tags as the other services'
+  // (tags.js): a `tags` field, a column and a tab of their own, unless it has
+  // a tag field already or says `item.tags: false`.
+  let declared = def.classes || []
+  if (item.tags !== false && !fields.some(caseFree)) {
+    fields.push({ k: 'tags', label: tr('rk_tags'), type: 'tags', bulk: true, col: { w: 140, min: 60, label: 'tags' } })
+    if (item.columns) item = { ...item, columns: [...item.columns, 'tags'] }
+    declared = [...declared, { k: 'tags', label: tr('rk_tags'), field: 'tags' }]
+  }
+  const classes = declared.map((c) => {
     let fields = (c.fields || [{ k: 'name', label: tr("rk_name"), type: 'text', col: 200 }]).map((f) => ({ label: f.k, ...f }))
     // A list holds its items: the field that does is the kit's, said or not.
     if (c.list && !fields.some((f) => f.k === c.list.ids)) {
@@ -171,11 +181,11 @@ export const FAV = 'favorite'
 export const favField = (def) => def.item.favorite
   || def.item.fields.find((f) => f.type === 'tags' || f.type === 'maintags')?.k || 'tags'
 const tagList = (v) => (Array.isArray(v) ? v : String(v || '').split(/[\s,]+/)).filter(Boolean)
-export const isFav = (def, r) => tagList(r?.[favField(def)]).includes(FAV)
+export const isFav = (def, r) => tagList(r?.[favField(def)]).some((t) => tagKey(t) === FAV)
 /** The record with the tag on or off — added at the end, so a first tag that
  *  means something (a paper's main tag) stays first. */
 export const withFav = (def, r, on) => {
-  const k = favField(def), now = tagList(r[k]).filter((t) => t !== FAV)
+  const k = favField(def), now = tagList(r[k]).filter((t) => tagKey(t) !== FAV)
   if (on) return { ...r, [k]: [...now, FAV] }
   // Off, and nothing else was there: no field left behind.
   if (!now.length && !def.item.fields.some((f) => f.k === k)) { const { [k]: _, ...rest } = r; return rest }
@@ -201,6 +211,8 @@ export function classColumns(def, cls) {
     { k: 'num', w: 40, min: 30, fix: true, label: '#' },
     ...own.map(colOf),
     { k: 'count', w: 70, min: 46, label: cls.countLabel || (def.unit === tr("rk_unit_items") ? 'count' : def.item.noun), num: true },
+    // Tags: the same tag in the other services, and how many wear it there.
+    ...(!cls.stored && caseFree(wornBy(def, cls)) ? [{ k: 'where', w: 320, min: 80, label: tr('rk_tags_elsewhere') }] : []),
   ]
 }
 
@@ -293,6 +305,8 @@ export function wornBy(def, cls) {
   return def.item.fields.find((f) => f.of === cls.k)
 }
 export const isRef = (f) => f?.type === 'ref' || f?.type === 'refs'
+/** A tag field: one tag whatever its case (tags.js). */
+export const caseFree = (f) => f?.type === 'tags' || f?.type === 'maintags'
 /** One link's identity: the record it points at, or — for a name with nobody
  *  behind it — the name. */
 export const linkKey = (l) => (l?.id ? `id:${l.id}` : `name:${l?.label || ''}`)
@@ -306,9 +320,9 @@ function worn(rec, field) {
   const T = typeOf(field)
   if (T.keys) return T.keys(v, field)
   const vs = (Array.isArray(v) ? v : (v ? [v] : [])).filter(Boolean)
-  return isRef(field) ? vs.map(linkKey) : vs.map(String)
+  return isRef(field) ? vs.map(linkKey) : caseFree(field) ? vs.map(tagKey) : vs.map(String)
 }
-export const wears = (rec, field, key) => worn(rec, field).includes(key)
+export const wears = (rec, field, key) => worn(rec, field).includes(caseFree(field) ? tagKey(key) : key)
 
 /** A class tab's rows: the class records (or the names in use), each with how
  *  many items wear it. A row's `key` is what an item wears; `name` is what is
@@ -330,6 +344,18 @@ export function classRows(def, doc, cls, extra = {}) {
       }
     }
     recs = [...seen.values()]
+  } else if (caseFree(field)) {
+    // One row per tag whatever its case, named by the spelling worn most.
+    const spell = new Map()
+    for (const it of items) {
+      const v = it[field.k]
+      for (const t of (Array.isArray(v) ? v : (v ? [v] : [])).filter(Boolean).map((x) => String(x).trim())) {
+        const m = spell.get(tagKey(t)) || new Map()
+        m.set(t, (m.get(t) || 0) + 1)
+        spell.set(tagKey(t), m)
+      }
+    }
+    recs = [...spell.entries()].map(([key, m]) => ({ key, name: [...m.entries()].sort((a, b) => b[1] - a[1])[0][0] }))
   } else {
     recs = [...new Set(items.flatMap((r) => worn(r, field)))].map((name) => ({ key: name, name }))
   }

@@ -11,6 +11,8 @@ export default {
   rk_cancel: "취소",
   rk_show: "보이기",
   rk_hide: "감추기",
+  rk_tags: "태그",
+  rk_tags_elsewhere: "다른 서비스",
   rk_fav_add: "즐겨찾기",
   rk_fav_remove: "즐겨찾기 해제",
   rk_fav_on: (a0) => `★ ${a0}`,

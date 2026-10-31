@@ -11,6 +11,8 @@ export default {
   rk_cancel: "Cancel",
   rk_show: "Show",
   rk_hide: "Hide",
+  rk_tags: "tags",
+  rk_tags_elsewhere: "elsewhere",
   rk_fav_add: "Favorite",
   rk_fav_remove: "Unfavorite",
   rk_fav_on: (a0) => `★ ${a0}`,

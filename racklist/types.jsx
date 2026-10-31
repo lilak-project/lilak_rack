@@ -3,6 +3,7 @@ import './strings.js'
 import { tr, currentLang } from '../i18n.jsx'
 import { RackTextRows } from './fields.jsx'
 import { authHeaders, openInService, serviceColor } from './portal.js'
+import { useSharedTags, spellTag, tagKey, uniqueTags } from './tags.js'
 import { parseRule, describe, withUntil, withCount, withoutEnd, DAYS, dow, nth } from './rrule.js'
 
 /**
@@ -247,16 +248,19 @@ const storedFor = (field, ctx, t) => {
 /** Chips, a box to add one, and the names in use on offer. Leaving the box is
  *  as good as pressing the button: a name typed and then saved used to vanish
  *  without a word. */
-function Chips({ value, onChange, field, ctx, single }) {
+function Chips({ value, onChange, field, ctx, single, shared }) {
   const [add, setAdd] = useState('')
   const vals = list(value)
-  const options = useMemo(() => namesFor(field, ctx), [field, ctx])
+  // Tags (`shared` given): this service's and every other's, one per tag
+  // whatever its case — and a tag typed takes the spelling already in use.
+  const options = useMemo(() => (shared ? uniqueTags([...namesFor(field, ctx), ...shared]) : namesFor(field, ctx)),
+    [field, ctx, shared])
   const id = `rl-dl-${field.k}`
   const put = () => {
-    const t = storedFor(field, ctx, add.trim())
+    const t = shared ? spellTag(add, options) : storedFor(field, ctx, add.trim())
     if (!t) return
     if (single) onChange(t)
-    else if (!vals.includes(t)) onChange([...vals, t])
+    else if (!vals.some((x) => (shared ? tagKey(x) === tagKey(t) : x === t))) onChange([...vals, t])
     setAdd('')
   }
   return (
@@ -290,10 +294,14 @@ function Chips({ value, onChange, field, ctx, single }) {
 
 /** Many free names: tags. The tag list is what the records wear — there is
  *  no record behind a tag. */
+function TagChips(p) {
+  const shared = useSharedTags()
+  return <Chips {...p} shared={shared} />
+}
 registerType('tags', {
   empty: () => [],
   text: (v) => nonBlank(v).join(' '),
-  Edit: (p) => <Chips {...p} />,
+  Edit: (p) => <TagChips {...p} />,
   tidy: (v) => [...new Set(nonBlank(v))],
 })
 
