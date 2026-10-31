@@ -159,7 +159,8 @@ export function RackTabs({ tabs, active, onPick, onClose, fixed = [], opened = f
         return (
           <span key={t.id} className={`rl-tab${isFixed ? '' : ' rl-opened'}${t.id === active ? ' on' : ''}`}
             style={t.color ? { '--tone': t.color } : undefined}>
-            <button type="button" className="rl-tabname" onClick={() => onPick(t.id)}>{t.label}</button>
+            <button type="button" className="rl-tabname" title={t.label}
+              onClick={() => onPick(t.id)}>{t.label}</button>
             {!isFixed && onClose && (
               <button type="button" className="rl-x" title={tr("rk_close")}
                 onClick={() => onClose(t.id)} aria-label={tr("rk_close_named", t.label)}>×</button>

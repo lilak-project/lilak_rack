@@ -278,6 +278,11 @@ body.rl-page {
   color: inherit;
   cursor: pointer;
   white-space: nowrap;
+  /* A long name used to push the × off the strip, so the tab could not be
+     closed. The name gives way; the × is what the tab is for. */
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .rl-x {
   width: 18px;

@@ -239,6 +239,10 @@ export function classRec(field, ctx, v) {
 }
 /** What a value is called: its record's name, or the text itself. */
 export const nameOf = (field, ctx, v) => classRec(field, ctx, v)?.name || str(v)
+/** What a chip wears: the field's `show` field when it names one, else the
+ *  name. A journal's full title is three lines wide; its shortName is not. */
+const shownAs = (field, ctx, v) =>
+  (field.show && classRec(field, ctx, v)?.[field.show]) || nameOf(field, ctx, v)
 /** What to store for a name typed or picked: the record's id when it has one. */
 const storedFor = (field, ctx, t) => {
   const rec = field?.of && (ctx.doc?.[field.of] || []).find((r) => r.name === t)
@@ -267,12 +271,15 @@ function Chips({ value, onChange, field, ctx, single, shared }) {
     <div className="rl-rows rl-chips">
       <div className="rl-rrow">
         {vals.map((t) => (
-          <span key={t} className="rl-tag">
+          /* `show` names a shorter field to wear — a journal's shortName. The
+             chip stays one line; the full name is the title and one press
+             away. The same rule the table's text() follows. */
+          <span key={t} className="rl-tag" title={nameOf(field, ctx, t)}>
             {/* A value that is a record of a stored class opens that record. */}
             {ctx.openClass && classRec(field, ctx, t)
               ? <button type="button" className="rl-lnk" onClick={() => ctx.openClass(field.of, classRec(field, ctx, t).id || t)}>
-                {nameOf(field, ctx, t)}</button>
-              : nameOf(field, ctx, t)}
+                {shownAs(field, ctx, t)}</button>
+              : shownAs(field, ctx, t)}
             <button type="button" className="rl-x" title={tr("rk_detach")}
               onClick={() => onChange(single ? '' : vals.filter((x) => x !== t))}>×</button>
           </span>
