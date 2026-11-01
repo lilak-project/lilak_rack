@@ -23,7 +23,7 @@ import {
   EMPTY_CELL as D,
 } from './schema.js'
 import { PORTAL_PROJECT, PORTAL_SERVICE, brandStyle, isManager, portalUser, fetchDoc, putDoc, newId, takeOpenRequest, showInCalendar, calAsk, calFilterAsk, load, save, projectKey, serviceColor } from './portal.js'
-import { tr } from '../i18n.jsx'
+import { tr } from 'lilak-ui/i18n.jsx'
 import { tagKey, useTagSources, sharedTagRows, useFavTags, renameTagEverywhere } from './tags.js'
 import { RackTagged, RackTaggedTab, TAGGED_COLS, TAGGED_SORTERS, useTaggedRows } from './tagged.jsx'
 
@@ -73,7 +73,14 @@ const NONE = []                       // one empty list, so a hook sees the same
 
 // ?solo=<id>: the page is one item's editor and nothing else — what another
 // service shows it as, in a pane of its own (project_manager's tags, its inbox).
+// `class:<k>:<id>` is a class record's editor (an author_manager group).
 const SOLO = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('solo') : null
+// ?bare=1: the list without its bar and tab strip — one tab of it (#open=tab:…)
+// shown inside another service's tab (a group's authors under a project).
+const BARE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('bare')
+// A save anywhere on this page's service and project (a solo editor in another
+// service's pane, the list itself) tells every open list of it to read again.
+const savedHere = (key) => (typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(projectKey(key, 'saved')))
 
 export function RackService(props) {
   return SOLO ? <RackSolo {...props} id={SOLO} /> : <RackList {...props} />
@@ -96,10 +103,14 @@ function RackSolo({ def: declared, id }) {
       if (r.conflict) { if (r.doc) setDoc(r.doc); setNote(tr("rk_changed_meanwhile")); return false }
       setDoc(r.doc)
       setNote(said || tr("rk_saved"))
+      savedHere(def.key)?.postMessage(r.doc.version)
       return true
     } catch (e) { setNote(String(e.message || e)); return false }
   }, [doc, def])
-  const rec = (doc?.[def.item.key] || []).find((r) => String(r?.[def.item.id || 'id']) === String(id))
+  const [, of, who] = /^class:([^:]+):(.+)$/.exec(id) || []
+  const c = of && def.classes.find((x) => x.k === of && x.stored)
+  const rec = c ? (doc?.[of] || []).find((r) => String(r.id) === who)
+    : (doc?.[def.item.key] || []).find((r) => String(r?.[def.item.id || 'id']) === String(id))
   // A day here is shown on this service's own calendar, in the portal's panel:
   // the date labels, and one button for the record's first day.
   const showDate = def.calendar ? (d) => d && showInCalendar(id, d) : undefined
@@ -109,8 +120,9 @@ function RackSolo({ def: declared, id }) {
       {!doc ? <p className="rl-msg">{note || tr("rk_loading")}</p>
         : gone || !rec ? <p className="rl-msg">{tr("rk_open_target_missing")}</p>
           : <RackItemEditor key={id} def={def} doc={doc} rec={rec} ctx={ctx} onSave={commit} canDelete={isManager()}
+            {...(c ? { fields: c.fields, listKey: c.k, noun: c.noun, cls: c } : {})}
             onCancel={() => {}} onDeleted={() => setGone(true)}
-            actions={calButton(def, showDate)} />}
+            actions={c ? undefined : calButton(def, showDate)} />}
       {doc && note && <div className="rl-hint rl-solo-note">{note}</div>}
     </div>
   )
@@ -169,7 +181,7 @@ function RackList({ def: declared, slots = {} }) {
   const IDK = def.item.id || 'id'
   const idOf = useCallback((r) => r?.[IDK], [IDK])
   const L = useRackList({ idOf,
-    key: def.key, fixed: FIXED, firstTab: FIRST, scopeOf, search,
+    key: BARE ? `${def.key}.bare` : def.key, fixed: FIXED, firstTab: FIRST, scopeOf, search,
     sorters: sortersFor, cols: colSets, clsSort: def.classSort || { k: 'count', dir: -1 },
   })
   const { tab, tabs, openTab, closeTab, rows, scope, filter, panes, split, findRef, drag } = L
@@ -195,6 +207,12 @@ function RackList({ def: declared, slots = {} }) {
     if (!PORTAL_PROJECT) { setErr(tr("rk_open_via_portal")); return }
     fetchDoc().then(setDoc).catch((e) => setErr(String(e.message || e)))
   }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+  const said = useMemo(() => savedHere(def.key), [def.key])
+  useEffect(() => {
+    if (!said) return undefined
+    said.onmessage = () => fetchDoc().then(setDoc).catch(() => {})
+    return () => said.close()
+  }, [said])
   // Sent here from another service (#open=<id>): open that record once the
   // document is in.
   const [asked] = useState(() => takeOpenRequest())
@@ -211,7 +229,7 @@ function RackList({ def: declared, slots = {} }) {
           || (doc[t.of] || []).some((r) => r[c.keyBy || 'name'] === (t.key || t.name))
       }
       if (t.kind === 'tagged') return !t.item || items.some((r) => idOf(r) === t.item)
-      if (t.ids) return true
+      if (t.ids || t.src) return true
       return false
     })
     panes.keep((t) => {
@@ -228,7 +246,7 @@ function RackList({ def: declared, slots = {} }) {
   /** Whole-document save, version-guarded: 409 means someone else got there
    *  first. Take what won and keep the edit — the form still holds it, and the
    *  next save is built from the document that is now current. */
-  const commit = useCallback(async (patch, said) => {
+  const commit = useCallback(async (patch, saidAs) => {
     if (!doc) return false
     try {
       const body = Object.fromEntries(def.docKeys.map((k) => [k, patch[k] ?? doc[k]]))
@@ -239,10 +257,11 @@ function RackList({ def: declared, slots = {} }) {
         return false
       }
       setDoc(r.doc)
-      setNote(said || tr("rk_saved"))
+      setNote(saidAs || tr("rk_saved"))
+      said?.postMessage(r.doc.version)
       return true
     } catch (e) { setNote(String(e.message || e)); return false }
-  }, [doc, def, setNote])
+  }, [doc, def, setNote, said])
 
   const openEdit = useCallback((t) => panes.open(t), [panes])
   // ☆ / ★ in a row: the favorite tag on or off, saved at once — the star turns
@@ -263,6 +282,13 @@ function RackList({ def: declared, slots = {} }) {
   // open gives way to it.
   const openItem = useCallback((id, rec, seed) => {
     const r = rec || (doc?.[def.item.key] || []).find((x) => idOf(x) === id)
+    // Bare inside another service's tab: a record opens in THAT page's editors
+    // (its openRecord), not in a second row of panes in here.
+    if (BARE && id && window.parent !== window) {
+      window.parent.postMessage({ rackOpen: { svc: PORTAL_SERVICE.name, proj: PORTAL_PROJECT, id,
+        label: r ? labelOf(def, r) : id } }, window.location.origin)
+      return
+    }
     if (!id && seed) panes.close('item:new')
     const open = () => openEdit({ id: `item:${id || 'new'}`, kind: 'item', who: id || null, seed,
       label: r ? labelOf(def, r) : tr("rk_new_x", def.item.noun) })
@@ -290,6 +316,11 @@ function RackList({ def: declared, slots = {} }) {
   const openRecord = useCallback(({ svc, proj, id, label }) => serviceColor(svc).then((color) =>
     openEdit({ id: `rec:${svc}:${id}`, kind: 'frame', label, color,
       src: `/pp/${svc}/${proj}/?solo=${encodeURIComponent(id)}` })), [openEdit])
+  useEffect(() => {                                     // …and what a bare list in a tab here asks for
+    const take = (e) => { if (e.origin === window.location.origin && e.data?.rackOpen) openRecord(e.data.rackOpen) }
+    window.addEventListener('message', take)
+    return () => window.removeEventListener('message', take)
+  }, [openRecord])
 
   /** Open a stored class record by what items call it — what a chip in the
    *  editor does, so a class without a tab of its own (tab: false) is still
@@ -312,6 +343,14 @@ function RackList({ def: declared, slots = {} }) {
     if (!doc || !asked || answered) return
     setAnswered(true)
     const keys = calFilterAsk(asked)                       // `calf:<keys>`: the calendar, filtered
+    const [, of, who] = /^tab:([^:]+):(.+)$/.exec(asked) || []   // `tab:<class>:<id>`: that class row's items
+    if (of) {
+      const c = def.classes.find((x) => x.k === of)
+      const r = c && classRows(def, doc, c, extra).find((x) => String(x.id ?? x.key) === who)
+      if (r) openTab({ id: `${c.k}:${r.key || r.name}`, kind: 'items', of: c.k, key: r.key || r.name, name: r.name, label: rowLabel(c, r) || r.name })
+      else setNote(tr("rk_open_target_missing"))
+      return
+    }
     if (keys) { showDate(new Date().toLocaleDateString('sv'), keys); return }
     const [day, id] = calAsk(asked) || ['', asked]      // `cal:<day>:<id>`: on the calendar, at that day
     if (items.some((r) => idOf(r) === id)) openItem(id)
@@ -693,9 +732,11 @@ function RackList({ def: declared, slots = {} }) {
   return (
     <div className="rl" style={brandStyle()}>
       <section className="rl-mod">
-        <RackBar title={def.title} count={doc ? `${items.length}${def.unit}` : ''} />
+        {!BARE && <RackBar title={def.title} count={doc ? `${items.length}${def.unit}` : ''} />}
 
-        <div className="rl-cmd">
+        {/* Another service's list in a tab (frame) brings its own buttons: this
+            page's step aside while it is in front. */}
+        <div className="rl-cmd" style={tab?.kind === 'frame' ? { display: 'none' } : undefined}>
           {cls?.stored ? (
             /* Mustard: it is only here while a class tab is, and the colour is
                what says so. */
@@ -749,7 +790,7 @@ function RackList({ def: declared, slots = {} }) {
               onClick={() => takeOutOfList(inList, tab.key)}>{tr("rk_remove_from_x_n", inList.label, picked.size)}</button>
           )}
           <span className="rl-gap" />
-          {L.opened > 0 && (
+          {!BARE && L.opened > 0 && (
             <button type="button" className="rl-btn" title={tr("rk_close_tabs_hint")} onClick={L.closeOpened}>{tr("rk_close_tabs_n", L.opened)}</button>
           )}
           {panes.tabs.length > 0 && (
@@ -772,7 +813,7 @@ function RackList({ def: declared, slots = {} }) {
           {showEdit && lay.left.map((c) => editorPane(c, ps.left))}
           {ps.before && <div {...ps.before} />}
           {showList && (<div className="rl-pane" style={ps.list}>
-            <RackTabs tabs={tabs} active={L.active} fixed={FIXED} onPick={L.setActive} onClose={closeTab} />
+            {!BARE && <RackTabs tabs={tabs} active={L.active} fixed={FIXED} onPick={L.setActive} onClose={closeTab} />}
 
             {err && <p className="rl-msg">{err}</p>}
             {!err && !doc && <p className="rl-msg">{tr("rk_loading")}</p>}
@@ -933,9 +974,13 @@ function RackList({ def: declared, slots = {} }) {
                 }} />
             )}
 
+            {tab?.kind === 'frame' && <iframe key={tab.src} className="rl-frame" src={tab.src} title={tab.label} />}
             {doc && tab?.kind === 'trash' && <RackTrash def={def} setDoc={setDoc} say={setNote} cols={L.colsOf('x:', TRASH_COLS)} onDrag={drag('x:')} />}
             {doc && tab?.kind === 'tagged' && (
               <RackTaggedTab rows={tgShown} cols={L.colsOf('t:', TAGGED_COLS)} onDrag={drag('t:')} onOpen={openRecord}
+                // A group's authors: that service's own list of it, as a tab here.
+                onList={({ svc, proj, tab: at, label }) => serviceColor(svc).then((color) => openTab({ id: `frame:${svc}:${at}`,
+                  kind: 'frame', label, color, src: `/pp/${svc}/${proj}/?bare=1#open=${encodeURIComponent(`tab:${at}`)}` }))}
                 sort={tgSort} onSort={(k) => setTgSort((s2) => bumpSort(s2, k))} filter={tgFilter} mark={query.trim()} />
             )}
 

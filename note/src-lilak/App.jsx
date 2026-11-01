@@ -26,7 +26,7 @@ import {
   PORTAL_BASE, PORTAL_PROJECT, brandStyle, projectKey, load, authHeaders, RackBar, takeOpenRequest,
   tagKey, mergeTags as tagCounts, useTagSources, sharedTagRows, uniqueTags, PORTAL_SERVICE,
   useFavTags, RackStar, useProjects, useReferences, openInService,
-} from 'lilak-ui/racklist'
+} from 'racklist'
 // The same renderer elog writes its logs with: GFM (so `- [ ]` is a checkbox)
 // and one newline means one line break, because a note is typed, not typeset.
 import ReactMarkdown from 'react-markdown'
@@ -37,7 +37,7 @@ import { remarkSoftBreaks } from 'lilak-ui/log/Markdown.jsx'
 import { TAG_RE, PROJ_RE, EMBED_RE, embedSpec, isImage, setTagChoices, setProjChoices, isProject } from './marks.js'
 import SourceArea from './SourceArea.jsx'
 import 'katex/dist/katex.min.css'
-import 'lilak-ui/racklist/rack.css'
+import 'racklist/rack.css'
 import './note.css'
 import { tr } from 'lilak-ui'
 

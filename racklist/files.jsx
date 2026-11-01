@@ -4,7 +4,7 @@ import { PORTAL_BASE, authHeaders } from './portal.js'
 import { registerType } from './types.jsx'
 import { RackActions } from './actions.jsx'
 import { RackField, RackTextRows } from './fields.jsx'
-import { tr } from '../i18n.jsx'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /**
  * Files on disk — the rack's one way to say "the material for this is over
@@ -15,14 +15,14 @@ import { tr } from '../i18n.jsx'
  *       Academic_20131207_HIM2013 has the folder of that name under a root in
  *       settings.folderRoots. Nothing is stored per record, so a folder made by
  *       hand in Finder is linked the moment it exists.
- *       backend: lilak_portal_auth.store.mount_folders
+ *       backend: rackstore.store.mount_folders
  *
  *   { k: 'pdf', type: 'file', roots: 'pdfRoots', find: 'citeKey', col: 38 }
  *       ONE FILE per record, stored as { mode: 'path', path } — a path under a
  *       root in settings[roots]. It arrives dropped from Finder, pasted, or
  *       found: `find` names the field the file is named after (JAlmeid_ApJ_1983
  *       → JAlmeid_ApJ_1983.pdf), and the settings page links them all at once.
- *       backend: lilak_portal_auth.store.mount_files
+ *       backend: rackstore.store.mount_files
  *
  * A browser cannot open file://… from an http page, so the service reads the
  * files for it — and opening something on the desktop happens on the machine

@@ -2,8 +2,8 @@
   "kind": "note",
   "mode": "managed",
   "start": {
-    "cmd": "sh /app/note/portal-serve.sh {port}",
-    "cwd": "/app/note",
+    "cmd": "sh /app/lilak_rack/note/portal-serve.sh {port}",
+    "cwd": "/app/lilak_rack/note",
     "env": {}
   },
   "health": "/",
@@ -16,10 +16,15 @@
   },
   "capabilities": {
     "multi_project": true,
-    "import_export": true
+    "import_export": true,
+    "tags": true
   },
   "icon": "pencil-line",
   "color": "#365944",
   "label": "note",
-  "open": "panel"
+  "open": "panel",
+  "entry_project": "note",
+  "autostart": [
+    "note"
+  ]
 }

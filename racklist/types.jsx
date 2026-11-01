@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import './strings.js'
-import { tr, currentLang } from '../i18n.jsx'
+import { tr, currentLang } from 'lilak-ui/i18n.jsx'
 import { RackTextRows } from './fields.jsx'
 import { authHeaders, openInService, serviceColor } from './portal.js'
 import { useSharedTags, spellTag, tagKey, uniqueTags } from './tags.js'

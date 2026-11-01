@@ -2,8 +2,8 @@
   "kind": "author",
   "mode": "managed",
   "start": {
-    "cmd": "sh /app/author_manager/portal-serve.sh {port}",
-    "cwd": "/app/author_manager",
+    "cmd": "sh /app/lilak_rack/author_manager/portal-serve.sh {port}",
+    "cwd": "/app/lilak_rack/author_manager",
     "env": {}
   },
   "health": "/",
@@ -16,10 +16,15 @@
   },
   "capabilities": {
     "multi_project": true,
-    "import_export": true
+    "import_export": true,
+    "tags": true
   },
   "icon": "users",
   "color": "#3d5a80",
   "open": "panel",
-  "label": "author manager"
+  "label": "author manager",
+  "entry_project": "authors",
+  "autostart": [
+    "authors"
+  ]
 }

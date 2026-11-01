@@ -1,7 +1,7 @@
 """The rack store's shared tags: what it wears, who wears one, and renaming
 one (or merging several) in every record, whatever the case.
 
-    service_manager/.venv/bin/python lilak_portal_auth/test_store_tags.py
+    service_manager/.venv/bin/python lilak_rack/tests/test_store_tags.py
 """
 import os
 import tempfile
@@ -18,7 +18,7 @@ from fastapi import FastAPI                  # noqa: E402
 from fastapi.testclient import TestClient    # noqa: E402
 from jose import jwt                         # noqa: E402
 
-from lilak_portal_auth.store import Document  # noqa: E402
+from rackstore.store import Document  # noqa: E402
 
 H = {"Authorization": "Bearer " + jwt.encode({"sub": "1", "username": "kim", "email": "kim@x", "role": "user",
                                               "portal": True, "exp": time.time() + 600}, "test-secret", algorithm="HS256")}

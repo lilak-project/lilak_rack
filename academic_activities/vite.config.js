@@ -9,7 +9,7 @@ export default defineConfig({
   resolve: {
     // One React for the app and the source-aliased kit.
     dedupe: ['react', 'react-dom'],
-    alias: { 'lilak-ui': resolve(process.env.LILAK_UI_PATH || resolve(__dirname, '../lilak_ui'), 'src') },
+    alias: { racklist: resolve(__dirname, '../racklist'), 'lilak-ui': resolve(process.env.LILAK_UI_PATH || resolve(__dirname, '../../lilak_ui'), 'src') },
   },
-  server: { fs: { allow: [resolve(__dirname), resolve(__dirname, '../lilak_ui')] } },
+  server: { fs: { allow: [resolve(__dirname), resolve(__dirname, '../racklist'), resolve(__dirname, '../../lilak_ui')] } },
 })

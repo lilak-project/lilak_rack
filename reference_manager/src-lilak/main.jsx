@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client'
-import { RackService } from 'lilak-ui/racklist'
-import 'lilak-ui/racklist/rack.css'
+import { RackService } from 'racklist'
+import 'racklist/rack.css'
 import './widgets.jsx'
 import def from './def.jsx'
 

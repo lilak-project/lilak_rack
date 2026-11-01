@@ -3,13 +3,13 @@
  * new-rack-service — a rack-list service from a declaration.
  *
  * A rack-list service is the kit's <RackService> fed one `def.js`; everything
- * else around it — the build, the 33-line backend on lilak_portal_auth.store,
+ * else around it — the build, the 33-line backend on rackstore.store,
  * the portal manifest, the first project — is the same every time. This writes
  * that, and leaves you the declaration.
  *
  *   node scripts/new-rack-service.mjs academic_activities \
  *        --title "학술 활동" --noun 활동 --unit 건 --color "#b45309" --icon calendar \
- *        [--project activities] [--out ~/web_service] [--force]
+ *        [--project activities] [--out ~/web_service/lilak_rack] [--force]
  *
  *   # after editing <name>/src-lilak/def.js:
  *   node scripts/new-rack-service.mjs academic_activities --sync
@@ -23,9 +23,9 @@
  */
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { resolve, join } from 'node:path'
+import { resolve, join, dirname } from 'node:path'
 import { homedir } from 'node:os'
-import { pathToFileURL } from 'node:url'
+import { pathToFileURL, fileURLToPath } from 'node:url'
 
 const argv = process.argv.slice(2)
 const args = { _: [] }
@@ -43,9 +43,10 @@ if (!NAME || !/^[a-z][a-z0-9_]*$/.test(NAME)) {
   console.error('error: a lowercase service name is required (e.g. academic_activities)')
   process.exit(1)
 }
-const ROOT = resolve(expand(args.out) || join(homedir(), 'web_service'))
+// Beside the other rack services: the lilak_rack checkout this script is in.
+const ROOT = resolve(expand(args.out) || join(dirname(fileURLToPath(import.meta.url)), '..'))
 const DIR = join(ROOT, NAME)
-const DATA = resolve(expand(args.data) || join(ROOT, 'data'))
+const DATA = resolve(expand(args.data) || join(ROOT, '..', 'data'))
 const ENV = NAME.toUpperCase()
 const put = (rel, text, keep = false) => {
   const p = join(DIR, rel)
@@ -88,7 +89,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from lilak_portal_auth.store import Document, ${folders ? 'mount_folders, ' : ''}mount_spa
+from rackstore.store import Document, ${folders ? 'mount_folders, ' : ''}mount_spa
 
 DATA = Path(os.environ.get("${ENV}_DATA_DIR", "./data"))
 PROJECT = os.environ.get("PORTAL_PROJECT", "")
@@ -140,9 +141,9 @@ export default defineConfig({
   resolve: {
     // One React for the app and the source-aliased kit.
     dedupe: ['react', 'react-dom'],
-    alias: { 'lilak-ui': resolve(process.env.LILAK_UI_PATH || resolve(__dirname, '../lilak_ui'), 'src') },
+    alias: { racklist: resolve(__dirname, '../racklist'), 'lilak-ui': resolve(process.env.LILAK_UI_PATH || resolve(__dirname, '../../lilak_ui'), 'src') },
   },
-  server: { fs: { allow: [resolve(__dirname), resolve(__dirname, '../lilak_ui')] } },
+  server: { fs: { allow: [resolve(__dirname), resolve(__dirname, '../racklist'), resolve(__dirname, '../../lilak_ui')] } },
 })
 `)
 put('index.html', `<!doctype html>
@@ -165,17 +166,17 @@ put('index.html', `<!doctype html>
 </html>
 `)
 put('src-lilak/main.jsx', `import { createRoot } from 'react-dom/client'
-import { RackService } from 'lilak-ui/racklist'
-import 'lilak-ui/racklist/rack.css'
+import { RackService } from 'racklist'
+import 'racklist/rack.css'
 import def from './def.js'
 
 // The whole service is its declaration. Anything it cannot say goes in
-// <RackService slots={…}> or registerType() — see lilak_ui/src/racklist/service.jsx.
+// <RackService slots={…}> or registerType() — see racklist/service.jsx.
 createRoot(document.getElementById('root')).render(<RackService def={def} />)
 `)
 put('src-lilak/def.js', `/**
  * ${TITLE} — the declaration. Fields, classes and the listing rule; the screen
- * is derived from it. See lilak_ui/src/racklist/schema.js for every option.
+ * is derived from it. See racklist/schema.js for every option.
  */
 export default {
   name: '${NAME}', title: '${TITLE}', unit: '${UNIT}', key: '${KEY}',
@@ -198,23 +199,27 @@ put('portal-serve.sh', `#!/usr/bin/env sh
 # Portal entry: build the app (non-fatal), then run the backend on the shared venv.
 set -u
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# The stack (web_service/) holds lilak_ui/ and service_manager/. This service
+# sits in lilak_rack/ beside racklist/ — or, in the image, flat in the stack.
+STACK=$(cd -P "$ROOT_DIR/.." && pwd)
+[ -d "$STACK/service_manager" ] || STACK=$(cd -P "$STACK/.." && pwd)
 PORT="\${1:-8050}"
 PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"
 export PATH
 # Build only when the app's sources — or the kit's — are newer than the last build.
-KIT="\${LILAK_UI_PATH:-$ROOT_DIR/../lilak_ui}"
+KIT="\${LILAK_UI_PATH:-$STACK/lilak_ui}"
 stale() {
   [ ! -f "$ROOT_DIR/dist/index.html" ] && return 0
   [ -n "$(find "$ROOT_DIR/src-lilak" "$ROOT_DIR/index.html" "$ROOT_DIR/vite.config.js" "$ROOT_DIR/package.json" \\
-    "$KIT/src" -newer "$ROOT_DIR/dist/index.html" -print 2>/dev/null | head -n 1)" ]
+    "$KIT/src" "$ROOT_DIR/../racklist" -newer "$ROOT_DIR/dist/index.html" -print 2>/dev/null | head -n 1)" ]
 }
 if command -v npm >/dev/null 2>&1 && stale; then
-  LILAK_UI_PATH="\${LILAK_UI_PATH:-$ROOT_DIR/../lilak_ui}" npm --prefix "$ROOT_DIR" run build \\
+  LILAK_UI_PATH="\${LILAK_UI_PATH:-$STACK/lilak_ui}" npm --prefix "$ROOT_DIR" run build \\
     || echo "[portal-serve] build failed; serving existing dist/" >&2
 fi
 cd "$ROOT_DIR/backend"
 ${ENV}_DATA_DIR="\${PORTAL_PROJECT_DATA:-$ROOT_DIR/data}" ${ENV}_DIST_DIR="$ROOT_DIR/dist" \\
-  exec "$ROOT_DIR/../service_manager/.venv/bin/python" -m uvicorn main:app --host 127.0.0.1 --port "$PORT"
+  exec "$STACK/service_manager/.venv/bin/python" -m uvicorn main:app --host 127.0.0.1 --port "$PORT"
 `)
 await writeBackend()
 
@@ -228,7 +233,8 @@ if (!existsSync(mf) || args.force) {
     start: { cmd: `sh ${join(DIR, 'portal-serve.sh')} {port}`, cwd: DIR, env: {} },
     health: '/', entry: '/', url: null, token: null,
     identity: { accepts_portal_token: true, link_by: 'email' },
-    capabilities: { multi_project: true, import_export: true },
+    capabilities: { multi_project: true, import_export: true, tags: true },
+    entry_project: PROJECT, autostart: [PROJECT],
     icon: ICON, color: COLOR, open: 'panel',
   }, null, 2) + '\n')
   console.log(`  wrote ${mf}`)

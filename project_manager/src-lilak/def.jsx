@@ -6,8 +6,8 @@
  */
 import './strings.js'
 import { tr } from 'lilak-ui'
-import { isManager, loadTagSources, showFilteredInCalendar, tagKey } from 'lilak-ui/racklist'
-import { InboxActions, MakesField } from './inbox.jsx'
+import { isManager, loadTagSources, showFilteredInCalendar, tagKey } from 'racklist'
+import { InboxActions, MakesField, MatchName } from './inbox.jsx'
 
 // The kinds an activity is stored with (Korean in the data) — as academic_activities/src-lilak/def.js GROUPS has them.
 const KINDS = ['학회', '워크샵', '학술미팅', '연구출장', '미팅', '세미나', '강연', '교육', '실험', '보고서', '제안서', '기타', '행사']
@@ -19,6 +19,20 @@ const CAL = 'academic_activities'
 const showInCalendar = async (name) => {
   const proj = (await loadTagSources()).find((s) => s.svc === CAL)?.proj || 'activities'
   showFilteredInCalendar(CAL, proj, [`+${tagKey(name)}`])
+}
+
+// A project's folder is `NN__<name>`, the numbering the projects folder
+// already has (05__STARK): found with or without its number, any case; a new
+// one is numbered after the last.
+const NUMBERED = /^(\d+)__(.+)$/
+function folderOf(name, folders) {
+  if (!name || !folders?.dirs) return name || ''
+  const dirs = Object.keys(folders.dirs)
+  const want = name.normalize('NFC').toLowerCase()
+  const hit = dirs.find((d) => (NUMBERED.exec(d)?.[2] ?? d).toLowerCase() === want)
+  if (hit) return hit
+  const n = Math.max(0, ...dirs.map((d) => Number(NUMBERED.exec(d)?.[1]) || 0)) + 1
+  return `${String(n).padStart(2, '0')}__${name}`
 }
 
 export default {
@@ -44,7 +58,7 @@ export default {
       { k: 'end', label: tr('pm_end'), type: 'date', col: 96 },
       { k: 'description', label: tr('pm_description'), type: 'longtext' },
       // The project's folder, under settings.folderRoots — named after it.
-      { k: 'folder', label: tr('pm_folder'), type: 'folder', col: 40, get: (r) => r.name || '' },
+      { k: 'folder', label: tr('pm_folder'), type: 'folder', col: 40, get: (r, ctx) => folderOf(r.name, ctx?.folders) },
     ],
   },
   classes: [
@@ -59,7 +73,8 @@ export default {
       fields: [
         { k: 'target', label: tr('pm_ib_kind'), type: 'select', col: 56, disabled: fromMail,
           options: [['activity', tr('pm_ib_activity')], ['note', tr('pm_ib_note')]] },
-        { k: 'what', label: tr('pm_ib_title'), col: 280, get: (r) => (isNote(r) ? r.title : r.name) || '' },
+        { k: 'what', label: tr('pm_ib_title'), col: 280, get: (r) => (isNote(r) ? r.title : r.name) || '',
+          cell: (r) => (isNote(r) ? r.title : r.name) || (r.match?.id ? <MatchName r={r} /> : '·') },
         { k: 'status', label: tr('pm_ib_status'), type: 'select', col: 80, disabled: fromMail,
           options: [['waiting', tr('pm_ib_waiting_s')], ['approved', tr('pm_ib_approved_s')], ['checked', tr('pm_ib_checked_s')], ['discarded', tr('pm_ib_discarded_s')]] },
         // new, or about a record that exists (`match`): update it, or seen — nothing new

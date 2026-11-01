@@ -1,7 +1,7 @@
 import './strings.js'
 import { useCallback, useMemo, useState } from 'react'
 import { facetOf, passesFilter } from './sort.js'
-import { tr } from '../i18n.jsx'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /**
  * Filtering, the RACK way, in one place so every list service does it the same.

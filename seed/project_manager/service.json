@@ -2,8 +2,8 @@
   "kind": "rack",
   "mode": "managed",
   "start": {
-    "cmd": "sh /app/project_manager/portal-serve.sh {port}",
-    "cwd": "/app/project_manager",
+    "cmd": "sh /app/lilak_rack/project_manager/portal-serve.sh {port}",
+    "cwd": "/app/lilak_rack/project_manager",
     "env": {}
   },
   "health": "/",
@@ -16,11 +16,15 @@
   },
   "capabilities": {
     "multi_project": true,
-    "import_export": true
+    "import_export": true,
+    "tags": true
   },
   "icon": "folder",
   "color": "#0f766e",
   "label": "프로젝트",
   "open": "panel",
-  "entry_project": "projects"
+  "entry_project": "projects",
+  "autostart": [
+    "projects"
+  ]
 }

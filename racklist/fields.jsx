@@ -1,5 +1,5 @@
 import './strings.js'
-import { tr } from '../i18n.jsx'
+import { tr } from 'lilak-ui/i18n.jsx'
 /**
  * The two shapes every record form is made of.
  *

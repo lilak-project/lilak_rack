@@ -2,8 +2,8 @@
 // module that shows text imports this first, so its entries exist before any
 // tr() call — including ones made while a service's definition is evaluated.
 // Adding a language: add i18n/<lang>.js and list it here.
-import { addStrings, currentLang, LANG_KEY } from '../i18n.jsx'
-import { applyLangFont } from '../theme/applyTheme.js'
+import { addStrings, currentLang, LANG_KEY } from 'lilak-ui/i18n.jsx'
+import { applyLangFont } from 'lilak-ui/theme/applyTheme.js'
 import ko from './i18n/ko.js'
 import en from './i18n/en.js'
 

@@ -4,7 +4,7 @@ import { RackField } from './fields.jsx'
 import { RackTable, RackRow } from './table.jsx'
 import { FacetRows } from './filter.jsx'
 import { loadTagged, loadMentions } from './tags.js'
-import { tr } from '../i18n.jsx'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /**
  * Under a shared tag's editor (a class with `shared: true`): what wears it in
@@ -61,8 +61,9 @@ export function RackTagged({ names, onOpen, skip }) {
 const subOf = (k, r) => (k === 'activities' ? [r.kind, r.place] : k === 'authors' ? [r.repEmail]
   : k === 'references' ? [r.citeKey] : k === 'todos' ? [r.title]
     : k === 'groups' ? [r.fullName] : k === 'assets' ? [r.assetId, r.location] : []).filter(Boolean).join(' · ')
-/** Its date: an event's day (to its last), a note's, a to-do's due, a paper's year. */
-const dateOf = (k, r) => (k === 'activities' ? [r.start, r.end && r.end !== r.start ? r.end : ''].filter(Boolean).join(' ~ ')
+/** Its date: an event's day (to its last), a group's period, a note's, a to-do's due, a paper's year. */
+const span = (a, b) => [a, b && b !== a ? b : ''].filter(Boolean).join(' ~ ')
+const dateOf = (k, r) => (k === 'activities' ? span(r.start, r.end) : k === 'groups' ? span(r.creationDate, r.endDate)
   : k === 'notes' ? r.date : k === 'todos' ? r.due : k === 'references' ? r.year : '') || ''
 const KINDS = ['activities', 'authors', 'groups', 'references', 'assets', 'records', 'notes', 'todos']
 
@@ -101,7 +102,10 @@ export function useTaggedRows(names, match = 'or', skip, mention = '') {
             m.set(`${s.svc}|${x.key}|${x.rec.id ?? x.rec.assetId}|${x.rec.line ?? ''}`, {
               svc: s.label, kind: KINDS.includes(x.key) ? tr(`rk_tk_${x.key}`) : x.key,
               date: String(dateOf(x.key, x.rec)), what: labelOf(x.key, x.rec), sub: subOf(x.key, x.rec),
-              open: id && { svc: s.svc, proj: s.proj, id, label: labelOf(x.key, x.rec) } })
+              // A group opens as that service's list of it (left) or its editor (right).
+              open: x.key === 'groups' ? { svc: s.svc, proj: s.proj, id: `class:groups:${x.rec.id}`, label: labelOf(x.key, x.rec) }
+                : id && { svc: s.svc, proj: s.proj, id, label: labelOf(x.key, x.rec) },
+              list: x.key === 'groups' && { svc: s.svc, proj: s.proj, tab: `groups:${x.rec.id}`, label: labelOf(x.key, x.rec) } })
           }
         }
         return m
@@ -119,14 +123,16 @@ export function useTaggedRows(names, match = 'or', skip, mention = '') {
 
 /** A shared tag's own tab — or a project's — one table of those rows, sorted
  *  and filtered like any rack list (the service holds the sort and the filter).
- *  The right click opens a record in a pane here (openRecord). */
-export function RackTaggedTab({ rows, cols, onDrag, onOpen, sort, onSort, filter, mark }) {
+ *  The right click opens a record in a pane here (openRecord); the left click
+ *  opens a group's list as a tab (onList). */
+export function RackTaggedTab({ rows, cols, onDrag, onOpen, onList, sort, onSort, filter, mark }) {
   if (!rows) return <p className="rl-msg">…</p>
   return (
     <RackTable cols={cols} onDrag={onDrag} sort={sort} onSort={onSort} facet={filter.tableFacet}>
       <FacetRows f={filter} labels={{ empty: tr('rk_column_empty') }} />
       {!filter.mode && rows.map((r, i) => (
         <RackRow key={i} cols={cols} tone={{ what: 'ink', sub: 'dim', svc: 'dim', date: 'dim' }} className="rl-hit" mark={mark}
+          onClick={() => { if (r.list && onList) onList(r.list) }}
           onContextMenu={(e) => { e.preventDefault(); if (r.open) onOpen(r.open) }}
           cell={{ num: i + 1, svc: r.svc, kind: r.kind, date: r.date || '·', what: r.what, sub: r.sub || '·' }} />
       ))}

@@ -1,6 +1,6 @@
 import './strings.js'
 import { useCallback, useEffect, useState } from 'react'
-import { PORTAL_BASE, authHeaders } from 'lilak-ui/racklist'
+import { PORTAL_BASE, authHeaders } from 'racklist'
 import './gcal.css'
 import { tr } from 'lilak-ui'
 

@@ -14,7 +14,7 @@ import './strings.js'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   registerType, RackActions, RackField as Fld, fill as fillTpl, newId,
-} from 'lilak-ui/racklist'
+} from 'racklist'
 import { tr } from 'lilak-ui'
 import {
   anyName, engName, citeShort, currentAffs, isCurrent, inGrp, TOKENS, PRESETS, nameIn, recOf, choices,

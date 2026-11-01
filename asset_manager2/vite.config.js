@@ -12,13 +12,14 @@ export default defineConfig({
     // can't pull in its own React and trigger "Invalid hook call".
     dedupe: ['react', 'react-dom'],
     alias: {
-      // env-overridable (build-all sets LILAK_UI_PATH); default = sibling checkout.
-      'lilak-ui': resolve(process.env.LILAK_UI_PATH || resolve(__dirname, '../lilak_ui'), 'src'),
+      // env-overridable (build-all sets LILAK_UI_PATH); default = the stack's checkout.
+      racklist: resolve(__dirname, '../racklist'),
+      'lilak-ui': resolve(process.env.LILAK_UI_PATH || resolve(__dirname, '../../lilak_ui'), 'src'),
     },
   },
   server: {
     fs: {
-      allow: [resolve(__dirname), resolve(__dirname, '../lilak_ui')],
+      allow: [resolve(__dirname), resolve(__dirname, '../racklist'), resolve(__dirname, '../../lilak_ui')],
     },
   },
   optimizeDeps: {

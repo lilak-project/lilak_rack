@@ -1,7 +1,7 @@
 import './strings.js'
 import { useEffect, useState } from 'react'
 import { tr } from 'lilak-ui'
-import { authHeaders, loadTagSources } from 'lilak-ui/racklist'
+import { authHeaders, loadTagSources } from 'racklist'
 
 /**
  * The inbox class's moving parts (def.jsx declares its fields): what approving
@@ -17,6 +17,8 @@ import { authHeaders, loadTagSources } from 'lilak-ui/racklist'
  * mail brought nothing new — [확인]. Either way [열기] opens the record.
  */
 const ACTIVITY = ['name', 'kind', 'start', 'startTime', 'end', 'endTime', 'place', 'link', 'comment']
+// an update may also touch the trip/talk side of an existing activity
+const UPDATABLE = [...ACTIVITY, 'tripKind', 'tripStart', 'tripEnd', 'role', 'title', 'host', 'talkDate', 'talkTime']
 const SVC = { activity: 'academic_activities', note: 'note' }
 const RANK = { waiting: 0, approved: 1, checked: 1, discarded: 2 }
 const now = () => new Date().toISOString()
@@ -41,7 +43,7 @@ const fromLine = (r) => [r.from, r.date].filter(Boolean).join(', ') + (r.subject
 
 /** What an update lays over: the activity's filled fields, or the note's added part. */
 function changes(r) {
-  if (r.target === 'activity') return Object.fromEntries(ACTIVITY.filter((k) => String(r[k] || '')).map((k) => [k, String(r[k])]))
+  if (r.target === 'activity') return Object.fromEntries(UPDATABLE.filter((k) => String(r[k] || '')).map((k) => [k, String(r[k])]))
   const from = fromLine(r)
   return { add: `\n\n## ${tr('pm_ib_update_head', today())}\n\n${String(r.body || '').trim()}\n${from ? `\n출처: ${from}\n` : ''}` }
 }
@@ -87,6 +89,19 @@ export function MakesField({ rec: r, ctx }) {
   )
 }
 
+/** A candidate with no title of its own (an update naming only what changes):
+ *  the record it is about, by the name it has now, dimmed. Asked once per record. */
+const named = new Map()
+export function MatchName({ r }) {
+  const key = `${r.target}:${r.match.id}`
+  const [name, setName] = useState(null)
+  useEffect(() => {
+    if (!named.has(key)) named.set(key, current(r).then((c) => (r.target === 'note' ? c.title : c.name) || '', () => ''))
+    named.get(key).then(setName)
+  }, [key])  // eslint-disable-line react-hooks/exhaustive-deps
+  return <span className="rl-dim">{name ?? '…'}</span>
+}
+
 /** An update's preview: each field old → new, or the note's added part. */
 function UpdateField({ r }) {
   const [cur, setCur] = useState(null)
@@ -105,7 +120,7 @@ function UpdateField({ r }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr 1fr', gap: '1px 10px', alignItems: 'baseline' }}>
       <b style={{ gridColumn: '1 / -1' }}>{cur.name}</b>
-      {ACTIVITY.filter((k) => k !== 'name' || k in ch).map((k) => {
+      {UPDATABLE.filter((k) => k in ch || (k !== 'name' && String(cur[k] || ''))).map((k) => {
         const old = String(cur[k] || ''), neu = k in ch ? ch[k] : old, diff = neu !== old
         return [
           <span key={k} className="rl-dim">{k}</span>,

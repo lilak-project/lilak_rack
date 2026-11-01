@@ -1,7 +1,7 @@
 import './strings.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { load, save } from './portal.js'
-import { tr } from '../i18n.jsx'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /** Column widths, dragged by the edge and remembered per project. `prefix`
  *  separates two tables in one service (the records and their classes). */

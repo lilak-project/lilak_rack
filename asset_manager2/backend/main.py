@@ -11,7 +11,7 @@ list is built up by the people who share it.
 
 The document is stored whole and carries a `version`; a PUT that was edited
 from an older one is refused with 409 + the current document. That machinery
-is the shared `lilak_portal_auth.store`.
+is the shared `rackstore.store`.
 
 Every save keeps what it replaces (keep_days=30): `data.prev.json` is the step
 back, `backups/data-<date>.json` the first save of each day, thirty kept. The
@@ -23,7 +23,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from lilak_portal_auth.store import Document, mount_spa
+from rackstore.store import Document, mount_spa
 
 DATA = Path(os.environ.get("ASSET2_DATA_DIR", "./data"))
 PROJECT = os.environ.get("PORTAL_PROJECT", "")

@@ -1,7 +1,7 @@
 import './strings.js'
 import { useState } from 'react'
 import { fill } from './sort.js'
-import { tr } from '../i18n.jsx'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /**
  * [나열] — the drawer under a table that turns its records into text by a rule.

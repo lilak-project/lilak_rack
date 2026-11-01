@@ -1,7 +1,7 @@
 import './strings.js'
 import { asSorts } from './sort.js'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { tr } from '../i18n.jsx'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /**
  * The table shell: one column template, a sticky head, draggable edges.

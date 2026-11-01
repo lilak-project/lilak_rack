@@ -1,7 +1,7 @@
 """mount_folders / mount_files: a folder by its name, a file by its path —
 nothing outside the roots.
 
-    service_manager/.venv/bin/python lilak_portal_auth/test_store_folders.py
+    service_manager/.venv/bin/python lilak_rack/tests/test_store_folders.py
 """
 import os
 import tempfile
@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from lilak_portal_auth import identity
-from lilak_portal_auth.store import Document, mount_files, mount_folders
+from rackstore.store import Document, mount_files, mount_folders
 
 
 def main():

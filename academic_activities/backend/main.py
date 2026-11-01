@@ -12,7 +12,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from lilak_portal_auth.store import Document, mount_folders, mount_spa
+from rackstore.store import Document, mount_folders, mount_spa
 
 from gcal import mount_gcal
 

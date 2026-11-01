@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { PORTAL_BASE, authHeaders } from './portal.js'
 import { labelOf } from './schema.js'
 import { RackTable, RackRow } from './table.jsx'
-import { tr } from '../i18n.jsx'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /**
  * The bin: what was deleted in the last 30 days (the store keeps it in

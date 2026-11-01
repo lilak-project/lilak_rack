@@ -14,19 +14,23 @@
 set -u
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# The stack (web_service/) holds lilak_ui/ and service_manager/. This service
+# sits in lilak_rack/ beside racklist/ — or, in the image, flat in the stack.
+STACK=$(cd -P "$ROOT_DIR/.." && pwd)
+[ -d "$STACK/service_manager" ] || STACK=$(cd -P "$STACK/.." && pwd)
 PORT="${1:-${PORT:-8041}}"
 
 # Build only when the app's sources — or the kit's — are newer than the last
 # build: a start with nothing changed skips Vite's ~2 s (the portal starts
 # several of these at once, and each waited on its own build).
-KIT="${LILAK_UI_PATH:-$ROOT_DIR/../lilak_ui}"
+KIT="${LILAK_UI_PATH:-$STACK/lilak_ui}"
 stale() {
   [ ! -f "$ROOT_DIR/dist/index.html" ] && return 0
   [ -n "$(find "$ROOT_DIR/src-lilak" "$ROOT_DIR/index.html" "$ROOT_DIR/vite.config.js" "$ROOT_DIR/package.json" \
-    "$KIT/src" -newer "$ROOT_DIR/dist/index.html" -print 2>/dev/null | head -n 1)" ]
+    "$KIT/src" "$ROOT_DIR/../racklist" -newer "$ROOT_DIR/dist/index.html" -print 2>/dev/null | head -n 1)" ]
 }
 if command -v npm >/dev/null 2>&1 && stale; then
-  LILAK_UI_PATH="${LILAK_UI_PATH:-$ROOT_DIR/../lilak_ui}" \
+  LILAK_UI_PATH="${LILAK_UI_PATH:-$STACK/lilak_ui}" \
     npm --prefix "$ROOT_DIR" run build \
     || echo "[portal-serve] build failed; serving existing dist/" >&2
 else
@@ -34,7 +38,7 @@ else
 fi
 
 # The shared portal venv has fastapi/uvicorn + lilak_portal_auth.
-VENV_PY="${REFERENCE_PYTHON:-$ROOT_DIR/../service_manager/.venv/bin/python}"
+VENV_PY="${REFERENCE_PYTHON:-$STACK/service_manager/.venv/bin/python}"
 if [ -x "$VENV_PY" ] && [ -f "$ROOT_DIR/backend/main.py" ]; then
   cd "$ROOT_DIR/backend"
   REFERENCE_DATA_DIR="${PORTAL_PROJECT_DATA:-$ROOT_DIR/data}" \

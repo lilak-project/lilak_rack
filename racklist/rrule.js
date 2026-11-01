@@ -12,7 +12,7 @@
  * Days are 'YYYY-MM-DD' strings throughout, as the calendar's are.
  */
 import './strings.js'
-import { tr } from '../i18n.jsx'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 const DAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
 /** A weekday's short name, 0 = Sunday, in the active language. */

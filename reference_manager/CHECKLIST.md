@@ -1,7 +1,7 @@
 # reference_manager — 만들 것 / 만든 것
 
 author_manager와 같은 구조, 데이터만 다른 서비스. 표·탭·선택·편집패널은
-`lilak_ui/src/racklist`를 공유하므로, 여기 있는 것은 "논문에 대한 것"뿐이다.
+`racklist`를 공유하므로, 여기 있는 것은 "논문에 대한 것"뿐이다.
 
 ## 데이터
 ```

@@ -14,7 +14,7 @@
  */
 import './strings.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { registerType, newId, useSharedTags, spellTag, tagKey, uniqueTags } from 'lilak-ui/racklist'
+import { registerType, newId, useSharedTags, spellTag, tagKey, uniqueTags } from 'racklist'
 import {
   authorRows, autRoles, handleFor, refLabel, linkedCites, citesOf, mainTag, tagsOf,
   ruleFor, citeKeyFor, parseCitation, splitAuthors, authorList, ROLE_LABEL,

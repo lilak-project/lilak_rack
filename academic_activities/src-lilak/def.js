@@ -16,7 +16,7 @@
  */
 
 import './strings.js'
-import { PORTAL_BASE, authHeaders, serviceColor } from 'lilak-ui/racklist'
+import { PORTAL_BASE, authHeaders, serviceColor } from 'racklist'
 import { tr } from 'lilak-ui'
 
 // The note service's todos (GFM checkboxes in any note) that have a due day,

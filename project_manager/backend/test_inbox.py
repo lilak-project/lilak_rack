@@ -21,7 +21,7 @@ os.environ.pop("PORTAL_PORT", None)
 (TMP / "dist").mkdir()
 (TMP / "dist" / "index.html").write_text("<html></html>")
 sys.path.insert(0, str(Path(__file__).parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lilak_portal_auth"))   # the package, not its repo folder
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lilak_portal_auth"))   # the package, not its repo folder
 
 import main                                    # noqa: E402
 

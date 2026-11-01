@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import './strings.js'
-import { tr, currentLang } from '../i18n.jsx'
+import { tr, currentLang } from 'lilak-ui/i18n.jsx'
 import { RackActions } from './actions.jsx'
 import { RackField } from './fields.jsx'
 

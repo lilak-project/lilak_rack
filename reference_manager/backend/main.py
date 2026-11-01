@@ -5,7 +5,7 @@
   authors     a class: one person, a #handle, and the spellings they appear under
   settings    service-wide, e.g. pdfRoots — where a linked PDF may live
 
-The document is stored whole and guarded by a version (lilak_portal_auth.store):
+The document is stored whole and guarded by a version (rackstore.store):
 a save edited from an older version is refused with 409 and the current
 document, so two people editing at once cannot silently overwrite each other.
 
@@ -18,7 +18,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from lilak_portal_auth.store import Document, mount_files, mount_spa
+from rackstore.store import Document, mount_files, mount_spa
 
 # The portal hands each project process its own data dir via {project_data}.
 DATA = Path(os.environ.get("REFERENCE_DATA_DIR", "./data"))

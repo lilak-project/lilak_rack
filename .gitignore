@@ -1,0 +1,11 @@
+# deps & build output
+**/node_modules/
+**/dist/
+**/__pycache__/
+**/*.pyc
+**/*.egg-info/
+# per-service runtime markers (written at start)
+**/.port
+**/.pid
+.DS_Store
+*.log

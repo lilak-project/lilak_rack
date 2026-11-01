@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { RackActions } from './actions.jsx'
 import { RackField, RackTextRows } from './fields.jsx'
 import { useRackKeys } from './hooks.js'
-import { tr } from '../i18n.jsx'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /**
  * The editor for ONE class — a tag, a journal, a group: a name that records

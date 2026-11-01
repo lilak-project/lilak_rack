@@ -1,6 +1,6 @@
 import './strings.js'
 import { useState } from 'react'
-import { tr } from '../i18n.jsx'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /**
  * The bar at the foot of an editor. Every record in every rack-list service is

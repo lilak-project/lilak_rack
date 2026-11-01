@@ -2,8 +2,8 @@
   "kind": "asset",
   "mode": "managed",
   "start": {
-    "cmd": "sh /app/asset_manager2/portal-serve.sh {port}",
-    "cwd": "/app/asset_manager2",
+    "cmd": "sh /app/lilak_rack/asset_manager2/portal-serve.sh {port}",
+    "cwd": "/app/lilak_rack/asset_manager2",
     "env": {}
   },
   "health": "/",
@@ -16,10 +16,15 @@
   },
   "capabilities": {
     "multi_project": true,
-    "import_export": true
+    "import_export": true,
+    "tags": true
   },
   "icon": "scroll",
   "color": "#8a5cf6",
   "open": "panel",
-  "label": "asset manager"
+  "label": "asset manager",
+  "entry_project": "assets",
+  "autostart": [
+    "assets"
+  ]
 }

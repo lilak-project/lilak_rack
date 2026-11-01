@@ -33,7 +33,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from lilak_portal_auth.store import Document, mount_folders, mount_spa
+from rackstore.store import Document, mount_folders, mount_spa
 
 DATA = Path(os.environ.get("PROJECT_MANAGER_DATA_DIR", "./data"))
 PROJECT = os.environ.get("PORTAL_PROJECT", "")

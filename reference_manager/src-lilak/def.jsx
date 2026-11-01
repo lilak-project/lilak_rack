@@ -16,7 +16,7 @@ import {
 } from './paper.js'
 import { citedBy, papersOf, authorStats, NameWith } from './widgets.jsx'
 import { tr } from 'lilak-ui'
-import { tagKey } from 'lilak-ui/racklist'
+import { tagKey } from 'racklist'
 
 /** Every paper wearing one of `gone` wears `to` instead — once — and its main
  *  tag follows. A key is filed under the main tag, so one left naming a tag

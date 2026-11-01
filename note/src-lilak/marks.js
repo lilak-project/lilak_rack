@@ -41,7 +41,7 @@ export function embedSpec(spec) {
 /** The names `#` and `+` offer under the caret.
  *
  *  Tags are this list's and every service's that shares them (the rack
- *  services: lilak-ui/racklist tags.js); projects are project_manager's. Both
+ *  services: racklist tags.js); projects are project_manager's. Both
  *  are the page's to hand over (setTagChoices / setProjChoices), in the order
  *  it gives them — most worn first — and the spelling already in use wins
  *  whatever the case.

@@ -2,7 +2,7 @@ import './strings.js'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { RackTabs } from './table.jsx'
 import { load, save } from './portal.js'
-import { tr } from '../i18n.jsx'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /**
  * The editors beside the list: some docked LEFT of it, some RIGHT, or all of

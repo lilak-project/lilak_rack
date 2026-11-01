@@ -1,7 +1,7 @@
 """The rack store's gate: who may read and write, and what the folder settings
 may reach.
 
-    service_manager/.venv/bin/python lilak_portal_auth/test_store_security.py
+    service_manager/.venv/bin/python lilak_rack/tests/test_store_security.py
 """
 import os
 import tempfile
@@ -18,7 +18,7 @@ from fastapi import FastAPI                  # noqa: E402
 from fastapi.testclient import TestClient    # noqa: E402
 from jose import jwt                         # noqa: E402
 
-from lilak_portal_auth.store import Document, mount_files, mount_spa  # noqa: E402
+from rackstore.store import Document, mount_files, mount_spa  # noqa: E402
 
 
 def token(role="user", **extra):

@@ -5,7 +5,7 @@ import { RackField } from './fields.jsx'
 import { typeOf } from './types.jsx'
 import { ctxFor, labelOf, linkKey, isRef } from './schema.js'
 import { dropItems } from './editor.jsx'
-import { tr } from '../i18n.jsx'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /**
  * Editing several items at once — the ones picked in the table.

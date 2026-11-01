@@ -1,7 +1,7 @@
 import './strings.js'
 import { useEffect } from 'react'
 import { PORTAL_PROJECT } from './portal.js'
-import { tr } from '../i18n.jsx'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /**
  * The title bar of a rack service — its name and how many, the project, and ↻.

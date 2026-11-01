@@ -8,7 +8,7 @@ version it was edited from, answer the version cheaply, say who you are, and
 serve the built SPA with a catch-all that must come last. Only the KEYS
 differed.
 
-    from lilak_portal_auth.store import Document, mount_spa
+    from rackstore.store import Document, mount_spa
 
     doc = Document(DATA / "data.json", keys=("references", "journals", "settings"))
     doc.mount(app, project=PROJECT)
@@ -34,7 +34,7 @@ from fastapi import Body, Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import identity, is_manager, manager, signed_in
+from lilak_portal_auth import identity, is_manager, manager, signed_in
 
 
 def _now() -> str:

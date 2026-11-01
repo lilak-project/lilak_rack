@@ -2,8 +2,8 @@
   "kind": "rack",
   "mode": "managed",
   "start": {
-    "cmd": "sh /app/academic_activities/portal-serve.sh {port}",
-    "cwd": "/app/academic_activities",
+    "cmd": "sh /app/lilak_rack/academic_activities/portal-serve.sh {port}",
+    "cwd": "/app/lilak_rack/academic_activities",
     "env": {}
   },
   "health": "/",
@@ -16,10 +16,15 @@
   },
   "capabilities": {
     "multi_project": true,
-    "import_export": true
+    "import_export": true,
+    "tags": true
   },
   "icon": "calendar",
   "color": "#3f4651",
   "label": "activity manager",
-  "open": "panel"
+  "open": "panel",
+  "entry_project": "activities",
+  "autostart": [
+    "activities"
+  ]
 }

@@ -7,7 +7,7 @@ import { ctxFor, labelOf, wornBy, valueOf } from './schema.js'
 import { useRackKeys } from './hooks.js'
 import { newId, openInService, PORTAL_SERVICE } from './portal.js'
 import { useProjects, projectWears } from './tags.js'
-import { tr } from '../i18n.jsx'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /**
  * The editor for one [항목] — or one stored [클래스] record — built from its

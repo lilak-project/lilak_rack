@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { typeOf, refTarget, remoteDoc, refLabelOf, backlinksOf } from './types.jsx'
 import { portalUser } from './portal.js'
 import { tagKey } from './tags.js'
-import { tr } from '../i18n.jsx'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /**
  * A service, declared.

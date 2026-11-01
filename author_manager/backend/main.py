@@ -7,7 +7,7 @@ The document holds the authors and the two kinds of class they point at. It is
 stored whole and carries a `version`; a PUT sends the `baseVersion` it edited
 and is refused with 409 + the current document if someone saved first, so the
 client reloads instead of overwriting them. That machinery is the shared
-`lilak_portal_auth.store`, the same one every rack-list service runs on.
+`rackstore.store`, the same one every rack-list service runs on.
 
 Per-user working state (what you ticked, which tabs are open) stays in the
 browser and is never sent here.
@@ -17,7 +17,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from lilak_portal_auth.store import Document, mount_spa
+from rackstore.store import Document, mount_spa
 
 DATA = Path(os.environ.get("AUTHOR_DATA_DIR", "./data"))
 PROJECT = os.environ.get("PORTAL_PROJECT", "")

@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rackstore"
+version = "0.1.0"
+description = "The rack services' shared backend: one document per portal project (records, trash, tags, folders)"
+requires-python = ">=3.10"
+# Sign-in checks come from the portal's SSO package (web_service/lilak_portal_auth).
+dependencies = ["fastapi", "lilak-portal-auth"]
+
+[tool.setuptools]
+packages = ["rackstore"]

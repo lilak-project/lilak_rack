@@ -1,6 +1,6 @@
 import './strings.js'
 import { tr } from 'lilak-ui'
-import { FAV, tagKey } from 'lilak-ui/racklist'
+import { FAV, tagKey } from 'racklist'
 /**
  * What makes a reference a REFERENCE — the parts of reference_manager that are
  * about papers rather than about lists: how a name is spelled three ways, the

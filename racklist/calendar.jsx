@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import './strings.js'
-import { tr } from '../i18n.jsx'
+import { tr } from 'lilak-ui/i18n.jsx'
 import { typeOf } from './types.jsx'
 import { ctxFor, labelOf, valueOf, favField } from './schema.js'
 import { tagKey, useProjects, projectWears } from './tags.js'
