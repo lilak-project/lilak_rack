@@ -1,0 +1,992 @@
+@import '../fonts/fonts.css';
+/* ══ rack list — RACK at sheet density ════════════════════════════════════
+ *
+ * The stylesheet for a service that IS one table: author_manager was the first,
+ * reference_manager the second, and a rule changed here reaches both. Written
+ * for a service whose whole screen is a list, not for a page with a list on it.
+ *
+ * The portal's vocabulary, denser: grey ground, white module, the nameplate IS
+ * the title, square corners, no bold, one text size — 26px lines and 15px text
+ * against the portal's 36 and 14: the rows are packed tighter than the portal's
+ * because the job here is scanning hundreds of them, but the text is the text
+ * you read all day and it is not made smaller for that.
+ *
+ * Class prefix: rl-. Colour and metric tokens: --rk-* (RACK's own).
+ */
+
+:root {
+  --rk-row: 26px;          /* one height for every line: head and record alike */
+  --rk-fs: var(--fs-plate, 15px);   /* one size — the kit's nameplate rank */
+  --rk-ground: #f1f5f9;
+  --rk-panel: #ffffff;
+  --rk-head: #e2e8f0;
+  --rk-line: #e2e8f0;      /* between rows */
+  --rk-edge: #cbd5e1;      /* the module's own edge, a step stronger */
+  --rk-text: #1e293b;
+  --rk-dim: #475569;
+  --rk-mute: #94a3b8;
+  --rk-ink: #0f172a;
+  --rk-gut: #f8fafc;
+  --rk-hover: #e9eef5;   /* a row under the pointer */
+  --rk-tab: #f3e5bb;     /* a control that belongs to ONE tab */
+  --rk-tab-t: #92400e;
+  --rk-cite: #dbeafe;      /* the citation columns wear it on the HEAD only */
+  --rk-cite-t: #1d4ed8;
+  --rk-proj: #0f766e;      /* a project's nameplate (project_manager's colour) */
+  /* The fonts are the kit's (fonts/fonts.css): one definition for the portal
+     and every rack service. These names stay so the rules below read as before. */
+  --rk-mono: var(--font-mono);
+  --rk-sans: var(--font-sans);
+}
+
+/* The page-level rules belong to an app that IS a rack list — it says so with
+   `rl-page` on its body. An app that only wants a table somewhere (a desktop
+   view inside a phone-first app, say) imports this file and keeps its own page.
+   The .rl-* parts below are scoped by their own names and work either way. */
+body.rl-page, body.rl-page * { box-sizing: border-box; }
+html:has(> body.rl-page), body.rl-page, body.rl-page > #root { height: 100%; }
+body.rl-page {
+  margin: 0;
+  background: var(--rk-ground);
+  color: var(--rk-text);
+  font-family: var(--rk-sans);
+  font-size: var(--rk-fs);
+  /* Inside the portal's panel there is nothing to scroll but the table. */
+  overflow: hidden;
+}
+/* Borrowed into another app's page, the rack still owns its own box model. */
+.rl, .rl * { box-sizing: border-box; }
+
+.rl {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
+  /* RACK is a light design, and a native control must not flip with the OS:
+     in a browser set to dark, an unchecked checkbox rendered as a black
+     square. Also pins the text colour, since the rack may be borrowed into a
+     page whose own colour is anything. */
+  color-scheme: light;
+  color: var(--rk-text);
+}
+
+/* The module. One per screen, filling it. */
+.rl-mod {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--rk-panel);
+  border: 1px solid var(--rk-edge);
+  overflow: hidden;
+}
+
+/* The nameplate keeps the portal's 36px: a denser table does not make the
+   module's own name smaller. */
+/* The nameplate wears the service's OWN colour — the one on the card the user
+   pressed to get here — so the screen and the icon are the same thing. The
+   portal injects it (__PORTAL_SERVICE__); outside the portal there is no colour
+   and the plate stays RACK's grey. */
+.rl-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 36px;
+  padding: 0 11px;
+  background: var(--rk-brand, var(--rk-head));
+  color: var(--rk-brand-t, var(--rk-dim));
+  border-bottom: 1px solid var(--rk-edge);
+}
+.rl-bar b { font-weight: 400; color: var(--rk-brand-t, var(--rk-ink)); }
+.rl-bar .rl-n { color: var(--rk-brand-t, var(--rk-dim)); font-family: var(--rk-mono); opacity: .75; }
+
+/* The table. One grid template, shared by the head and every row, so a column
+   is a column all the way down. (The container is .rl-tab-body, below — a rule
+   for `.rl-tab` used to live here, which is the TAB's class, and it was quietly
+   handing every tab an overflow it had no use for.) */
+.rl-row {
+  display: grid;
+  height: var(--rk-row);
+  /* As wide as its columns, not only the pane: when the table scrolls
+     sideways, a row's colour (picked, today, hover) goes all the way along. */
+  min-width: max-content;
+}
+.rl-row + .rl-row { border-top: 1px solid var(--rk-line); }
+
+.rl-c {
+  padding: 0 6px;
+  line-height: calc(var(--rk-row) - 1px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rl-dim { color: var(--rk-dim); }
+.rl-ink { color: var(--rk-ink); }
+.rl-mono { font-family: var(--rk-mono); }
+.rl-num { text-align: right; color: var(--rk-dim); }
+/* A column head is a word, not a value: never the monospace of what is
+   under it. */
+.rl-head .rl-mono { font-family: var(--rk-sans); }
+.rl-mid { text-align: center; }
+
+/* The row number: the sheet's, and what you say out loud. */
+.rl-gut {
+  padding: 0 6px;
+  text-align: right;
+  line-height: calc(var(--rk-row) - 1px);
+  background: var(--rk-gut);
+  border-right: 1px solid var(--rk-line);
+  font-family: var(--rk-mono);
+  font-size: var(--fs-tiny);
+  color: var(--rk-mute);
+}
+
+/* The head. Sticky, because a column name you have scrolled past is a column
+   you have to guess at. */
+.rl-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--rk-head);
+  border-bottom: 1px solid var(--rk-edge);
+}
+.rl-head .rl-c { color: var(--rk-dim); }
+.rl-head .rl-gut { color: var(--rk-dim); background: var(--rk-gut); }
+
+.rl-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: var(--rk-row);
+  padding: 0 11px;
+  background: var(--rk-gut);
+  border-top: 1px solid var(--rk-edge);
+  color: var(--rk-dim);
+}
+.rl-sp { flex: 1; }
+.rl-msg { padding: 14px 11px; color: var(--rk-mute); }
+
+/* Narrower than the design width, columns LEAVE rather than the table
+   scrolling sideways — a name scrolled away from its own row is worse than a
+   column you can read somewhere else. Reverse order of need. */
+
+/* ── the command line ─────────────────────────────────────────────────────
+   What the selection can do, and the one search field. Buttons are 22px —
+   one step inside the 26px line, the portal's rule for what sits in a row. */
+.rl-cmd {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;          /* narrow: a second row, not squashed buttons */
+  align-items: center;
+  gap: 5px 6px;
+  min-height: 32px;
+  padding: 4px 11px;
+  border-bottom: 1px solid var(--rk-line);
+}
+.rl-btn {
+  /* A toolbar button is as wide as its word: shrinking it wraps the label onto
+     a second line that a 22px box cannot show. */
+  flex: 0 0 auto;
+  white-space: nowrap;
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--rk-dim);
+  border-radius: 0;
+  background: var(--rk-panel);
+  font: inherit;
+  font-size: var(--rk-fs);
+  color: var(--rk-dim);
+  cursor: pointer;
+  /* An <a> wearing this class is still a button: no underline. */
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.rl-btn:hover:not(:disabled) { background: var(--rk-gut); border-color: var(--rk-ink); color: var(--rk-ink); }
+.rl-btn:disabled { border-color: var(--rk-line); color: var(--rk-mute); cursor: default; }
+.rl-btn.rl-go { border-color: var(--rk-cite-t); background: var(--rk-cite); color: var(--rk-cite-t); }
+/* About to save on its own: the border runs round, clockwise, as dashes. */
+.rl-btn.rl-pending {
+  border-color: transparent;
+  background-image: linear-gradient(90deg, var(--rk-cite-t) 50%, transparent 0), linear-gradient(90deg, var(--rk-cite-t) 50%, transparent 0),
+    linear-gradient(0deg, var(--rk-cite-t) 50%, transparent 0), linear-gradient(0deg, var(--rk-cite-t) 50%, transparent 0);
+  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+  background-size: 8px 1px, 8px 1px, 1px 8px, 1px 8px;
+  background-position: 0 0, 0 100%, 0 0, 100% 0;
+  background-origin: border-box;
+  animation: rl-ants .8s linear infinite;
+}
+@keyframes rl-ants { to { background-position: 8px 0, -8px 100%, 0 -8px, 100% 8px; } }
+@media (prefers-reduced-motion: reduce) { .rl-btn.rl-pending { animation: none; } }
+.rl-find {
+  /* The one thing in the row that may give up width before it wraps. */
+  flex: 1 1 240px;
+  min-width: 120px;
+  max-width: 240px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--rk-edge);
+  border-radius: 0;
+  background: var(--rk-panel);
+  font: inherit;
+  font-size: var(--rk-fs);
+  color: var(--rk-text);
+}
+
+/* ── the tabs ─────────────────────────────────────────────────────────────
+   They sit ON the table: the chosen one is the table's own white, the rest
+   are the head's grey, so a tab reads as the front sheet of a folder. */
+/* Tabs WRAP rather than scroll. A 26px strip with a horizontal scrollbar in it
+   has ~16px left for the tab, so the scrollbar was covering the names it was
+   there to let you reach. Three rows is as tall as it goes; past that it
+   scrolls, without a bar over the text. */
+.rl-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  align-content: flex-start;
+  gap: 0;
+  min-height: 26px;
+  max-height: 78px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  background: var(--rk-gut);
+  border-bottom: 1px solid var(--rk-edge);
+}
+.rl-tabs::-webkit-scrollbar { width: 0; height: 0; }
+.rl-tab {
+  display: flex;
+  align-items: center;
+  /* Its own height, not one borrowed from the strip: wrapped onto a second row
+     a tab was stretching to half of 26px instead of standing 26px tall. */
+  flex: 0 0 auto;
+  height: var(--rk-row);
+  background: var(--rk-head);
+  border-right: 1px solid var(--rk-edge);
+  color: var(--rk-dim);
+}
+.rl-tab.on { background: var(--rk-panel); color: var(--rk-ink); }
+.rl-tabname {
+  height: 100%;
+  padding: 0 11px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--rk-fs);
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  /* A long name used to push the × off the strip, so the tab could not be
+     closed. The name gives way; the × is what the tab is for. */
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rl-x {
+  width: 18px;
+  height: 100%;
+  padding: 0;
+  margin-right: 3px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--rk-fs);
+  line-height: 1;
+  color: var(--rk-mute);
+  cursor: pointer;
+}
+.rl-x:hover { color: #b91c1c; }
+
+/* ── rows you can hit ─────────────────────────────────────────────────────
+   Hover says "this line is a thing you can act on"; the selected fill is the
+   portal's own selected blue. */
+.rl-tab-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.rl-hit { cursor: default; }
+.rl-hit:hover { background: var(--rk-hover); }
+.rl-hit.on { background: var(--rk-cite); }
+.rl-hit.on:hover { background: #cfe0fb; }
+.rl-chk { display: grid; place-items: center; }
+.rl-chk input { width: 12px; height: 12px; margin: 0; accent-color: var(--rk-cite-t); }
+
+
+
+/* ── one record, at the readable size ─────────────────────────────────────
+   Finding is dense; reading and typing are not. */
+.rl-rec {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);   /* a long path wraps, the form stays in the pane */
+  align-items: stretch;
+  font-size: var(--rk-fs);
+}
+.rl-fl {
+  display: flex;
+  align-items: center;
+  padding: 7px 12px;
+  border-top: 1px solid var(--rk-line);
+  color: var(--rk-dim);
+}
+.rl-grow { resize: none; overflow: hidden; }
+/* A field that does not apply to this record now (field.disabled): greyed, and
+   the browser keeps every input in it from being used. */
+.rl-off { display: contents; }
+.rl-fl.off { color: var(--rk-mute); }
+/* A date's label: pressed, the calendar shows that day. */
+.rl-fl-go { border: 0; padding: 0; background: none; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.rl-fl-go:hover { color: var(--rk-ink); text-decoration: underline; text-underline-offset: 2px; }
+.rl-fl.fit { color: var(--rk-ink); background: color-mix(in srgb, var(--c) 16%, transparent); box-shadow: inset 3px 0 0 var(--c); }
+.rl-fv {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 7px 12px;
+  border-top: 1px solid var(--rk-line);
+}
+.rl-rec > :nth-child(1), .rl-rec > :nth-child(2) { border-top: 0; }
+.rl-in {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--rk-edge);
+  border-radius: 0;
+  background: var(--rk-panel);
+  font: inherit;
+  font-size: var(--rk-fs);
+  color: var(--rk-text);
+}
+.rl-hint { color: var(--rk-mute); }
+
+/* ── a draggable column edge ───────────────────────────────────────────────
+   The head cell holds it; it is 7px wide so it can be caught without being
+   seen, and only shows itself under the pointer. */
+.rl-head .rl-c, .rl-head .rl-gut { position: relative; }
+.rl-grip {
+  position: absolute;
+  top: 0; right: -3px; bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+  z-index: 2;
+}
+.rl-grip:hover { background: var(--rk-cite-t); opacity: .35; }
+/* While a column is being dragged nothing else should select or hover. */
+body.rl-resizing { cursor: col-resize; user-select: none; }
+/* An iframe swallows the pointer; while the line is moving, nothing in the
+   panes may take it. */
+body.rl-resizing iframe { pointer-events: none; }
+body.rl-resizing .rl-hit:hover { background: transparent; }
+
+/* ── My List's output ─────────────────────────────────────────────────────
+   Under the table, because it is what the table is FOR: the list goes in, a
+   paper's author block comes out. */
+.rl-out {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--rk-edge);
+  background: var(--rk-gut);
+}
+.rl-outbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 7px 11px;
+}
+.rl-outfoot { border-top: 1px solid var(--rk-line); }
+.rl-gap { width: 10px; }
+.rl-outbox {
+  margin: 0 11px 9px;
+  min-height: 92px;
+  max-height: 200px;
+  padding: 7px 9px;
+  border: 1px solid var(--rk-edge);
+  border-radius: 0;
+  background: var(--rk-panel);
+  font-family: var(--rk-mono);
+  font-size: var(--rk-fs);
+  line-height: 1.5;
+  color: var(--rk-text);
+  resize: vertical;
+  white-space: pre;
+}
+.rl-newgrp { margin: 0 11px 4px; background: var(--rk-panel); border: 1px solid var(--rk-edge); }
+/* One name in My List, with the way to take it out again. */
+.rl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 19px;
+  padding: 0 2px 0 7px;
+  border: 1px solid var(--rk-edge);
+  background: var(--rk-panel);
+  color: var(--rk-dim);
+  white-space: nowrap;
+}
+.rl-chip .rl-x { width: 15px; height: 100%; margin: 0; font-size: var(--fs-small); }
+
+/* ── the listing rule ─────────────────────────────────────────────────────
+   The buttons above only fill this in; this is what makes the text. */
+.rl-rule-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px 6px;
+}
+.rl-tokens { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 0 11px 7px; }
+.rl-tok {
+  height: 18px;
+  padding: 0 6px;
+  border: 1px dashed var(--rk-edge);
+  background: var(--rk-panel);
+  font-family: var(--rk-mono);
+  font-size: var(--fs-tiny);
+  color: var(--rk-dim);
+  cursor: pointer;
+}
+.rl-tok:hover:not(:disabled) { border-style: solid; border-color: var(--rk-cite-t); color: var(--rk-cite-t); }
+.rl-tok:disabled { color: var(--rk-mute); cursor: default; }
+/* The preset you are on fills, like the portal's own switches. */
+.rl-btn.on { background: var(--rk-cite); border-color: var(--rk-cite-t); color: var(--rk-cite-t); }
+
+/* A tab you opened, against the ones that are always there: tinted in the
+   service's own colour (its nameplate's) — or, for a page of another service
+   opened here (a note), in that service's (--tone). When it is the front sheet
+   it goes white like any other tab, with a cap of the colour so the family
+   still reads. */
+.rl-tab.rl-opened {
+  --t: var(--tone, var(--rk-brand, var(--rk-cite-t)));
+  /* A tenth of a dark, unsaturated plate (author manager's navy) just reads as
+     grey, so the fill carries 40% of it — and the label goes darker than the
+     plate to stay legible on top of that much colour. */
+  background: color-mix(in srgb, var(--t) 40%, #fff);
+  color: color-mix(in srgb, var(--t) 60%, #000);
+}
+.rl-tab.rl-opened.on {
+  background: var(--rk-panel);
+  color: var(--rk-ink);
+  box-shadow: inset 0 2px 0 var(--t);
+}
+.rl-tab.rl-opened .rl-x { color: inherit; }
+/* The bin. */
+/* The settings tab: the kit's, then the service's own, one scroll. */
+.rl-settings { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.rl-settings > *, .rl-settings > .rl-edit { flex: none; min-height: auto; overflow: visible; }
+/* The way to the bin, in the foot's corner: small, and lit while it is open. */
+.rl-foot-btn { height: calc(var(--rk-row) - 8px); padding: 0 9px; font-size: var(--fs-small); }
+.rl-foot-btn.on { background: var(--rk-ink); color: #fff; border-color: var(--rk-ink); }
+
+/* Deleting is the one thing here that cannot be undone. */
+.rl-btn.rl-danger { border-color: #b91c1c; color: #b91c1c; }
+.rl-btn.rl-danger:hover:not(:disabled) { background: #fee2e2; border-color: #b91c1c; color: #b91c1c; }
+
+/* The column label is the sort button; the arrow says which way it went. */
+.rl-head > .rl-c:has(.rl-sort) { padding: 0; }
+/* The whole cell is the control: aiming at four characters of label was work
+   for nothing, and the head row is exactly as tall as a target needs. */
+.rl-sort {
+  display: flex; align-items: center; gap: 4px;
+  width: 100%; height: 100%; padding: 0 6px;
+  border: 0; background: none;
+  font: inherit; color: inherit; cursor: pointer; text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rl-head > .rl-c.rl-num:has(.rl-sort) .rl-sort { justify-content: flex-end; }
+.rl-sort:hover { background: rgba(15, 23, 42, .06); }
+.rl-sort:hover { color: var(--rk-ink); }
+.rl-arrow { font-style: normal; font-size: var(--fs-micro); color: var(--rk-cite-t); }
+
+/* A line between the labels — only in the head. The rows stay clean (a table
+   of people is not a grid of cells), but the head is where a column begins and
+   ends, and it is also where the edge is dragged: the line shows where to
+   take hold. */
+.rl-head > .rl-c + .rl-c { border-left: 1px solid var(--rk-edge); }
+
+/* Filter mode: the label you are picking values from, and how many are picked. */
+.rl-facet.on { color: var(--rk-cite-t); }
+.rl-head:has(.rl-facet) { background: var(--rk-tab); }
+/* One value on offer, and how many rows it would keep. */
+.rl-row.rl-frow { grid-template-columns: 26px 34px minmax(160px, 1fr) 80px; }
+
+/* The listing drawer's handle. */
+.rl-outhead {
+  display: flex; align-items: center; gap: 7px;
+  width: 100%; height: 26px; padding: 0 11px;
+  border: 0; background: none;
+  font: inherit; font-size: var(--rk-fs); color: var(--rk-dim);
+  cursor: pointer; text-align: left;
+}
+.rl-outhead:hover { background: var(--rk-hover); color: var(--rk-ink); }
+.rl-outhead.on { color: var(--rk-ink); }
+.rl-caret { font-style: normal; font-size: var(--fs-micro); color: var(--rk-mute); }
+
+/* A field that holds SEVERAL entries: one line each, and a way to add another. */
+.rl-rows { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; min-width: 0; max-width: 100%; }
+.rl-rrow { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.rl-rrow .rl-x { width: 18px; height: 22px; color: var(--rk-mute); }
+.rl-rrow .rl-x:hover { color: #b91c1c; }
+.rl-tag {
+  display: inline-flex; align-items: center; height: 17px; padding: 0 7px;
+  border: 1px solid var(--rk-cite-t); background: var(--rk-cite);
+  font-size: var(--fs-tiny); color: var(--rk-cite-t);
+}
+.rl-rows select.rl-in { padding: 0 4px; }
+/* In a record's form a name it wears is as tall as a text box, in its type,
+   and as wide as the name. */
+.rl-rec .rl-tag { height: 26px; padding: 0 2px 0 8px; gap: 6px; font-size: var(--rk-fs); }
+.rl-chips { flex: 1; min-width: 0; align-items: stretch; }
+/* A project — `+name` in text — is a nameplate beside the tags: the same
+   height, no fill but a dark head cut on a slant, a screw at each end. */
+.rl-proj {
+  --hd: 11px; --sc: 3px;
+  display: inline-flex; align-items: center; gap: 5px; height: 17px; padding: 0 4px 0 3px;
+  border: 1px solid var(--rk-proj); color: var(--rk-proj); font-weight: 700;
+  font: inherit; font-weight: 700; font-size: var(--fs-tiny); white-space: nowrap; cursor: default;
+  background: linear-gradient(105deg, var(--rk-proj) 0 var(--hd), transparent var(--hd));
+}
+.rl-proj::before, .rl-proj::after { content: ''; width: var(--sc); height: var(--sc); border-radius: 50%; background: var(--rk-proj); flex: none; }
+.rl-proj::before { background: #fff; }
+button.rl-proj { cursor: pointer; }
+.rl-projs { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.rl-rec .rl-proj { --hd: 16px; --sc: 4px; height: 26px; gap: 7px; padding: 0 6px 0 5px; font-size: var(--rk-fs); }
+
+/* A warning in a form: said where the thing it is about is. */
+.rl-warn { color: #b91c1c; }
+
+/* Two panes side by side: the lists, and the editor with its own tabs. Each
+   keeps its own scroll, so reading one does not move the other. */
+.rl-body { flex: 1; min-height: 0; display: flex; align-items: stretch; }
+.rl-pane { flex: 1 1 50%; min-width: 0; display: flex; flex-direction: column; }
+/* The pane scrolls its CONTENT, not itself: a tab strip that scrolls away is
+   not a tab strip, and the way out of a record was leaving with it.
+
+   It is also drawn as its own thing — a border all the way round and a step of
+   ground between it and the list — because what is in it is one record rather
+   than the list's continuation. */
+.rl-epane {
+  margin: 6px 6px 6px 0;
+  /* A darker edge than the table's own lines: the pane is a different thing,
+     not another section of the list. */
+  border: 1px solid var(--rk-dim);
+  box-shadow: 0 1px 6px rgba(15, 23, 42, .10);
+  overflow: hidden;
+  background: var(--rk-panel);
+}
+/* Two of them side by side need the gap between them, not two margins. */
+.rl-epane + .rl-epane { margin-left: 0; }
+.rl-edit { flex: 1; min-height: 0; overflow-y: auto; }
+/* author_manager's editors put the record straight in a .rl-tab-body, which
+   already scrolls — named here too so the rule cannot depend on which wrapper
+   a service happened to use. */
+.rl-epane > .rl-tab-body { flex: 1; min-height: 0; overflow-y: auto; }
+/* Same rule for the strip itself: it stays put while the record moves. */
+.rl-epane > .rl-tabs { position: sticky; top: 0; z-index: 3; }
+/* A row that is open in the editor, while the selection blue means something
+   else entirely. */
+.rl-hit.rl-edited { box-shadow: inset 2px 0 0 var(--rk-cite-t); }
+
+/* A button that is only here while this tab is: mustard, so it is not read as
+   part of the row that is always there. */
+.rl-btn.rl-tabonly { border-color: var(--rk-tab-t); background: var(--rk-tab); color: var(--rk-tab-t); }
+.rl-btn.rl-tabonly:hover:not(:disabled) { background: #ecd89f; border-color: var(--rk-tab-t); color: var(--rk-tab-t); }
+.rl-btn.rl-tabonly:disabled { border-color: var(--rk-line); background: none; color: var(--rk-mute); }
+
+/* The group picker is a button that happens to open its own list. */
+.rl-btn.rl-pick { padding-right: 2px; }
+
+/* A number or a name that is also the way to the thing it names. */
+.rl-lnk {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--rk-fs);
+  color: var(--rk-cite-t);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.rl-lnk:hover { color: var(--rk-ink); }
+
+/* The editor's actions, at the TOP of the pane and stuck there. The record is
+   as long as it is; the things you do to it are always in the same place,
+   right under the tab that says which record it is. */
+.rl-acts {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--rk-edge);
+  background: var(--rk-gut);
+}
+
+/* Rows whose first cell is a name of its own width — a tag, a group — do not
+   line up by themselves: every row starts where its own chip ends. Here the
+   LIST is the grid and each row hands its cells to it, so a column is as wide
+   as the widest thing in it and the fields below a field. */
+.rl-rows.rl-grid {
+  display: grid;
+  grid-template-columns: repeat(5, max-content);
+  gap: 4px 5px;
+  align-items: center;
+  justify-content: start;
+}
+.rl-rows.rl-grid > .rl-rrow { display: contents; }
+/* A row that is not part of the table of fields — an add control, a note —
+   takes the whole width back. */
+.rl-rows.rl-grid > .rl-full { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; }
+
+/* A tag that is also a choice: the main one wears the plate, the others an
+   outline of it. */
+.rl-tagpick {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  font-size: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+/* A name on its way out: struck through is the one thing that reads as gone
+   without a word next to it. */
+.rl-gone { text-decoration: line-through; color: var(--rk-mute); }
+
+.rl-tag.rl-main { border-color: var(--rk-tab-t); background: var(--rk-tab); color: var(--rk-tab-t); }
+
+/* A fact that is either there or not: the tick is the whole cell. */
+.rl-ok { color: var(--rk-cite-t); }
+
+/* A PDF, read by the service because the browser may not read the disk. */
+.rl-pdf { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* The path is long and the buttons are not: each gets its own line, so neither
+   is squeezed by the other. */
+.rl-pdfbar {
+  flex: 0 0 auto;
+  display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+  padding: 6px 11px;
+  border-bottom: 1px solid var(--rk-line);
+}
+.rl-pdfacts { display: flex; align-items: center; gap: 6px; }
+.rl-pdfbar .rl-mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rl-pdfview { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--rk-ground); }
+/* A folder's files: one line each, the name first and long. */
+.rl-files { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0; }
+.rl-file {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center;
+  width: 100%; padding: 4px 11px; border: 0; background: none; text-align: left;
+  font: inherit; color: var(--rk-text); cursor: pointer;
+}
+.rl-file > * { white-space: nowrap; }
+.rl-file > :first-child { overflow: hidden; text-overflow: ellipsis; }
+.rl-file > .rl-dim { text-align: right; }
+.rl-file:hover { background: var(--rk-hover); }
+/* A field you can drop a file on. */
+.rl-rows.rl-over { outline: 2px dashed var(--rk-cite-t); outline-offset: 2px; }
+/* A path is a fact you take with you: press it and it is on the clipboard. */
+.rl-path {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+  border: 0; padding: 0; background: none;
+  font: inherit; font-size: var(--rk-fs); color: var(--rk-dim);
+  cursor: copy; text-align: left;
+}
+.rl-path:hover { color: var(--rk-ink); }
+
+/* ── the line between the list and the editor ─────────────────────────────
+   Dragged, remembered, and double-clicked back to half. Narrow enough to be a
+   line, with a hit area wider than it looks. */
+.rl-split {
+  flex: 0 0 5px;
+  margin: 0 -2px;
+  z-index: 2;
+  background: none;
+  border-left: 1px solid var(--rk-edge);
+  cursor: col-resize;
+}
+.rl-split:hover, .rl-split.on { border-left-color: var(--rk-cite-t); box-shadow: inset 1px 0 0 var(--rk-cite-t); }
+
+/* ── reaching the columns that fell off the end ───────────────────────────
+   The body scrolls sideways without a bar (one lies across the rows); the
+   arrows at the edges move it a column at a time. */
+.rl-tab-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.rl-tab-body { overflow-x: auto; scrollbar-width: none; }
+.rl-tab-body::-webkit-scrollbar { height: 0; }
+.rl-edge {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 18px;
+  z-index: 4;
+  border: 0;
+  padding: 0;
+  background: linear-gradient(to right, var(--rk-panel), transparent);
+  font: inherit;
+  font-size: var(--rk-fs);
+  color: var(--rk-dim);
+  cursor: pointer;
+}
+.rl-edge-l { left: 0; }
+.rl-edge-r { right: 0; background: linear-gradient(to left, var(--rk-panel), transparent); }
+.rl-edge:hover { color: var(--rk-ink); background-color: var(--rk-gut); }
+
+/* ── an editor column's strip ─────────────────────────────────────────────
+   Its tabs, then the two things you may do with the column itself: send the
+   record across, or take the list's width. */
+.rl-strip { flex: 0 0 auto; display: flex; align-items: stretch; background: var(--rk-gut); }
+.rl-strip-tabs { flex: 1; min-width: 0; }
+.rl-strip-tabs .rl-tabs { background: none; }
+.rl-btn.rl-pane-btn {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: var(--rk-row);
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--rk-edge);
+  border-bottom: 1px solid var(--rk-edge);
+  background: var(--rk-gut);
+  color: var(--rk-dim);
+}
+/* Hovered: the inside lights, the edge stays the strip's (not the toolbar button's dark border). */
+.rl-btn.rl-pane-btn:hover:not(:disabled) { background: var(--rk-head); border-color: var(--rk-edge); color: var(--rk-ink); }
+/* ◧ ▣ ◨ — where the record is: the one it is in, filled. */
+.rl-where { display: flex; flex: 0 0 auto; }
+.rl-btn.rl-pane-btn.on { background: color-mix(in srgb, var(--rk-ink) 14%, var(--rk-gut)); color: var(--rk-ink); }
+
+/* A name written down with nobody behind it: plain, not a chip that links. */
+.rl-tag.rl-unlinked { border-style: dashed; background: none; color: var(--rk-dim); }
+
+/* Today, in a table of dated records (item.now): what is on now, and the
+   line where today falls between what has begun and what has not. */
+.rl-hit.rl-now:not(.on) { background: #fff8c5; }
+.rl-hit.rl-now:not(.on):hover { background: #fbefa0; }
+.rl-row.rl-nowline { border-top: 2px solid #e5484d; }
+
+/* A photo field (type: 'image'): a thumbnail, and the picture at its own size
+   over everything until it is pressed again. */
+.rl-shot { display: inline-flex; flex-direction: column; gap: 4px; margin-right: 12px; }
+.rl-shot-img {
+  display: grid; place-items: center; width: 132px; height: 92px; padding: 0;
+  border: 1px solid var(--rk-edge); background: var(--rk-gut); cursor: pointer; overflow: hidden;
+}
+.rl-shot-img.is-empty { color: var(--rk-mute); cursor: default; }
+.rl-shot-img img { width: 100%; height: 100%; object-fit: cover; }
+.rl-shot-line { display: flex; align-items: center; gap: 5px; }
+.rl-lightbox {
+  position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px;
+  border: 0; background: rgba(15, 23, 42, .72); cursor: zoom-out;
+}
+.rl-lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+/* The search box's words, where a row shows them. */
+.rl-hl { background: #fde68a; color: inherit; padding: 0; border-radius: 2px; }
+.rl-hit.on .rl-hl { background: #fcd34d; }
+
+/* The title bar's ↻: this service again, the portal left as it is. */
+.rl-reload {
+  margin-left: 6px; padding: 0 4px; border: 0; background: none; cursor: pointer;
+  color: inherit; font: inherit; font-size: var(--rk-fs); line-height: 1; opacity: .7;
+}
+.rl-reload:hover { opacity: 1; }
+
+/* ── the calendar (RackCalendar) — a month the way Apple's Calendar draws one ── */
+/* The head stands down the left, two thirds of a day wide (2 : 7 × 3), so
+   the weeks get the whole height. */
+.rl-cal {
+  flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(120px, 2fr) 21fr;
+  grid-template-rows: auto minmax(0, 1fr); padding: 4px 10px 0; user-select: none;
+}
+/* Month, the arrows that move it, today, then the legend, one key a line. A key too
+   long for the column is cut short; it says its name on hover. */
+.rl-cal-head { grid-row: 1 / span 2; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: stretch; gap: 10px; padding: 6px 10px 8px 2px; }
+.rl-cal-head > :not(.rl-sp) { flex: none; }
+.rl-cal-head > .rl-sp { display: none; }
+/* As wide as the legend under them: the two arrows half each, today the whole. */
+.rl-cal-head > .rl-cal-nav { order: 1; }
+.rl-cal-head > .rl-cal-nav > .rl-btn { flex: 1; }
+.rl-cal-head > .rl-cal-nav > .rl-btn, .rl-cal-head > .rl-cal-today { justify-content: center; text-align: center; }
+.rl-cal-head > .rl-cal-today { order: 2; }
+.rl-cal-head > .rl-cal-found { order: 3; flex-wrap: wrap; }
+.rl-cal-head > .rl-cal-legend { order: 4; flex-direction: column; align-items: stretch; }
+.rl-cal-head .rl-cal-key { min-width: 0; }
+/* Tags to show only: the ones chosen (× takes one off), and a box to pick another. */
+.rl-cal-head > .rl-cal-tags { order: 5; display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+.rl-cal-tags .rl-cal-key.on { border-color: var(--rk-ink); color: var(--rk-ink); justify-content: space-between; }
+.rl-cal-tags .rl-cal-key b { font-weight: 400; color: var(--rk-dim); }
+.rl-cal-tag-in { min-width: 0; font: inherit; font-size: 11.5px; padding: 2px 6px; border: 1px solid var(--rk-line); background: none; color: var(--rk-ink); }
+.rl-cal-head .rl-cal-key-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rl-cal-title { margin: 0; font-size: var(--fs-title); font-weight: 700; color: var(--rk-ink); letter-spacing: -.01em; }
+.rl-cal-legend { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.rl-cal-key {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border: 1px solid var(--rk-line);
+  border-radius: 0; background: none; font: inherit; font-size: 11.5px; color: var(--rk-text); cursor: pointer;
+}
+.rl-cal-key i { width: 9px; height: 9px; border-radius: 0; }
+.rl-cal-key.off { opacity: .4; text-decoration: line-through; }
+.rl-cal-found, .rl-cal-nav { display: inline-flex; align-items: center; gap: 4px; }
+/* A thin margin left of the days: where the lines from a handed-in day run down. */
+.rl-cal-days { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--rk-edge); padding-left: 12px; }
+.rl-cal-days span { text-align: right; padding: 0 8px 4px; font-size: var(--fs-small); color: var(--rk-dim); }
+/* The weeks: one stack, scrolled a week at a time. */
+/* overflow-anchor off: weeks added above are compensated by the calendar
+   itself (the same in every browser), not a second time by Chrome. */
+.rl-cal-body { position: relative; flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; padding: 0 0 16px 12px; }
+/* The lines from a handed-in day to the talk: over everything — they run in
+   the gaps and the margin, so what they cover is only their own boxes' left
+   sides, which they are drawn along. */
+.rl-cal-links { position: absolute; left: 0; top: 0; z-index: 3; width: 100%; pointer-events: none; overflow: visible; }
+.rl-cal-links path { fill: none; stroke-width: 1.5; }
+/* The day it was handed in, on its own: Phosphor's file-arrow-up (regular,
+   @phosphor-icons/core 2.1.1) before the name, in the name's own colour. */
+.rl-cal-label[data-submit]::before {
+  content: ''; display: inline-block; width: 13px; height: 13px; margin-right: 3px; vertical-align: -2px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%20256%20256%22%20fill=%22currentColor%22%3E%3Cpath%20d=%22M213.66,82.34l-56-56A8,8,0,0,0,152,24H56A16,16,0,0,0,40,40V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V88A8,8,0,0,0,213.66,82.34ZM160,51.31,188.69,80H160ZM200,216H56V40h88V88a8,8,0,0,0,8,8h48V216Zm-42.34-77.66a8,8,0,0,1-11.32,11.32L136,139.31V184a8,8,0,0,1-16,0V139.31l-10.34,10.35a8,8,0,0,1-11.32-11.32l24-24a8,8,0,0,1,11.32,0Z%22/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%20256%20256%22%20fill=%22currentColor%22%3E%3Cpath%20d=%22M213.66,82.34l-56-56A8,8,0,0,0,152,24H56A16,16,0,0,0,40,40V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V88A8,8,0,0,0,213.66,82.34ZM160,51.31,188.69,80H160ZM200,216H56V40h88V88a8,8,0,0,0,8,8h48V216Zm-42.34-77.66a8,8,0,0,1-11.32,11.32L136,139.31V184a8,8,0,0,1-16,0V139.31l-10.34,10.35a8,8,0,0,1-11.32-11.32l24-24a8,8,0,0,1,11.32,0Z%22/%3E%3C/svg%3E") center / contain no-repeat;
+}
+/* The links' switch, beside the groups' keys: a short line for a dot. */
+.rl-cal-key i.rl-cal-key-line { width: 12px; height: 2px; border-radius: 0; background: var(--rk-dim); }
+.rl-cal-week { position: relative; border-bottom: 1px solid var(--rk-edge); }
+.rl-cal-cells { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(7, 1fr); }
+.rl-cal-cell { border-right: 1px solid var(--rk-edge); padding: 4px 8px; text-align: right; }
+.rl-cal-cell:last-child { border-right: 0; }
+.rl-cal-cell:first-child, .rl-cal-cell:last-child { background: color-mix(in srgb, var(--rk-gut, #f4f5f7) 60%, transparent); }
+.rl-cal-cell.out .rl-cal-num { color: var(--rk-mute); }
+.rl-cal-cell { cursor: default; }
+/* Days picked by a click or a drag: a light wash, and each day's number
+   painted blue the way today's is red — the number is never under a bar, so it
+   shows however full the day is. Today and an asked-for day keep their own. */
+.rl-cal-cell.sweep { background: color-mix(in srgb, var(--rk-cite-t, #2563eb) 10%, #fff); }
+.rl-cal-cell.sweep .rl-cal-num:not(.today):not(.shown) { background: var(--rk-cite-t, #2563eb); color: #fff; }
+.rl-cal-num { display: inline-block; min-width: 22px; padding: 1px 5px; border-radius: 11px; font-size: var(--fs-body); color: var(--rk-ink); }
+/* A month starts: its 1st in bold, and the line above its first days dark —
+   drawn over the week line above, so it is no thicker than the others. */
+.rl-cal-num.first { font-weight: 700; }
+.rl-cal-cell.m-top { box-shadow: 0 -1px 0 var(--rk-ink); }
+.rl-cal-num.today { background: #ef4444; color: #fff; font-weight: 600; }
+.rl-cal-num.shown { background: var(--rk-ink); color: #fff; font-weight: 600; }   /* the day a date's label asked for */
+/* A day whose top two lanes are free: its number large, in the middle of them,
+   and the small one in the corner gone (on the 1st, the month large and the 1 kept). */
+.rl-cal-cell.big .rl-cal-num { visibility: hidden; }
+.rl-cal-num.big { place-self: center; translate: 0 -14px;   /* half the events' 28px top: the middle of the number's row and the two lanes */
+  font-size: var(--fs-display); line-height: 1.15; padding: 1px 12px; border-radius: 999px; white-space: nowrap; }
+/* Large, so lighter: the slate of secondary text, and never bold (the 1st's month either). */
+.rl-cal-num.big { font-weight: 400; }
+.rl-cal-num.big:not(.today):not(.shown) { color: var(--rk-dim); }
+.rl-cal-num.big.out:not(.today):not(.shown) { color: var(--rk-mute); }
+.rl-cal-num.big.sweep:not(.today):not(.shown) { background: var(--rk-cite-t, #2563eb); color: #fff; }
+.rl-cal-events {
+  position: relative; z-index: 2; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); row-gap: 2px;   /* minmax: a name running on never widens a day */
+  padding: 28px 0 6px; pointer-events: none;
+}
+.rl-cal-events > * { pointer-events: auto; }
+/* One bar: the trip around in light gray, the record's own days light in its
+   colour, the marked day with a band of it below. */
+.rl-cal-bar {
+  position: relative; margin: 0 2px; min-height: 20px; overflow: hidden; cursor: default;
+  color: var(--rk-ink);
+}
+.rl-cal-bar.cont-l { margin-left: 0; }
+.rl-cal-bar.cont-r { margin-right: 0; }
+/* A bar whose name runs on over the empty days to its right. */
+.rl-cal-bar.spill { overflow: visible; }
+/* One occurrence of a repeating record. */
+.rl-cal-bar.occ .rl-cal-label::before { content: '↻ '; }
+/* Which occurrences a change is for: the menu at the pointer. */
+.rl-cal-ask {
+  position: fixed; z-index: 60; display: flex; flex-direction: column; min-width: 180px; padding: 4px 0;
+  background: var(--rk-panel); border: 1px solid var(--rk-edge); box-shadow: 0 6px 18px rgb(0 0 0 / 0.16);
+}
+.rl-cal-ask > .rl-hint { padding: 4px 12px 6px; border-bottom: 1px solid var(--rk-line); white-space: nowrap; }
+.rl-cal-ask button { border: 0; background: none; font: inherit; font-size: var(--rk-fs); text-align: left; padding: 6px 12px; cursor: pointer; color: var(--rk-ink); }
+.rl-cal-ask button:hover { background: var(--rk-gut); }
+.rl-cal-ask .rl-danger-t { color: #b91c1c; }
+/* The repeat field: the day buttons of a week. */
+.rl-repeat { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.rl-btn.rl-day { min-width: 28px; padding: 0 6px; }
+/* Another calendar's event, shown read only: a light wash in its colour, a
+   dashed frame, the name in gray. */
+.rl-cal-bar.ext { cursor: help; color: var(--rk-dim); }
+.rl-cal-bar.ext .rl-cal-fill i { background: color-mix(in srgb, var(--c) 10%, #fff); }
+.rl-cal-bar.ext::after { content: ''; position: absolute; inset: 0; border: 1px dashed var(--c); pointer-events: none; }
+/* A feed's item with a box (a note's todo): the box ticks; the right button opens it. */
+.rl-cal-box { pointer-events: auto; cursor: pointer; font-style: normal; margin-right: 3px; }
+.rl-cal-bar.ext.done .rl-cal-label { text-decoration: line-through; opacity: .55; }
+.rl-cal-key.rl-cal-feed i { background: none; border: 1.5px dashed; }
+/* A name is not something to point at: running on over the days beside its
+   bar, it must not answer for them (the bar's own box still does). */
+.rl-cal-label { pointer-events: none; }
+/* Another service's page, opened as an editor tab (a note). */
+.rl-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--rk-panel); }
+.rl-cal-bar.on { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--c) 80%, #000); }
+.rl-cal-fill { position: absolute; inset: 0; display: flex; }
+.rl-cal-fill i { flex: 1; }
+.lv1 { background: #e8eaee; }
+.lv2 { background: color-mix(in srgb, var(--c) 24%, #fff); }
+.lv3 { background: color-mix(in srgb, var(--c) 24%, #fff); box-shadow: inset 0 -4px 0 var(--c); }   /* the talk: a band under the name, not over it */
+/* A record drawn struck through (calendar.hatch — one not gone to), and the
+   days of one its trip does not cover: white stripes cut through the fill, so
+   the name stays as readable as ever. */
+/* Taken part in online (calendar.online): a Wi-Fi mark in white, one in the
+   middle of each day. */
+.rl-cal-bar.online .rl-cal-fill i {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'30'%20height%3D'22'%20viewBox%3D'0%200%2030%2022'%3E%3Cg%20fill%3D'none'%20stroke%3D'white'%20stroke-width%3D'1.6'%20stroke-linecap%3D'round'%3E%3Cpath%20d%3D'M9%209%20a8.5%208.5%200%200%201%2012%200'%2F%3E%3Cpath%20d%3D'M11.5%2012%20a5%205%200%200%201%207%200'%2F%3E%3C%2Fg%3E%3Ccircle%20cx%3D'15'%20cy%3D'15'%20r%3D'1.3'%20fill%3D'white'%2F%3E%3C%2Fsvg%3E");
+  background-position: center; background-size: 30px 22px; background-repeat: no-repeat;
+}
+.rl-cal-bar.hatch .rl-cal-fill i, .rl-cal-fill i.miss {
+  background-image: repeating-linear-gradient(135deg, #fff 0 2px, transparent 2px 6px);
+}
+/* A group drawn on paper (calendar.groups[].paper): its days a gray lighter
+   than a trip's (.lv1), in a frame of its colour drawn inside the box, so the
+   box is no bigger; the trip and the talk's band as for any other. */
+.rl-cal-bar.paper::after { content: ''; position: absolute; inset: 0; border: 1px solid var(--c); pointer-events: none; }
+.rl-cal-bar.paper .lv2, .rl-cal-bar.paper .lv3 { background-color: #f4f5f7; }
+.rl-cal-label {
+  position: relative; display: block; padding: 0 7px; font-size: var(--fs-small); line-height: 20px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* A bar that grew into the lanes below: its name wraps, as many lines as fit. */
+.rl-cal-bar.tall .rl-cal-label {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--lines);
+  padding-top: 2px; line-height: 15px; white-space: normal; overflow-wrap: anywhere;
+}
+/* The ends a bar is stretched by: where the record's own days begin and end. */
+.rl-cal-grip { position: absolute; top: 0; bottom: 0; width: 6px; cursor: ew-resize; z-index: 1; }
+.rl-cal-bar:hover .rl-cal-grip { background: color-mix(in srgb, var(--c) 45%, transparent); }
+/* A copy being carried to another day (⌘-drag), by the pointer. */
+.rl-cal-ghost {
+  position: fixed; left: 0; top: 0; z-index: 50; pointer-events: none; white-space: pre;
+  padding: 3px 8px; border: 1px solid var(--rk-ink); background: var(--rk-panel); color: var(--rk-ink);
+  font-size: var(--fs-small); box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
+}
+body.rl-copying, body.rl-copying * { cursor: copy !important; }
+/* …the copy itself, drawn where it would land, and the days it would take lit. */
+.rl-cal-bar.copy { opacity: 0.8; outline: 1.5px dashed var(--c); outline-offset: -1.5px; pointer-events: none; }
+.rl-cal-cell.drop { background: color-mix(in srgb, var(--rk-cite-t, #2563eb) 12%, transparent); }
+/* What the editor says, by the pointer. */
+.rl-cal-peek {
+  position: fixed; z-index: 60; width: 320px; max-height: 70vh; overflow: hidden; padding: 8px 10px;
+  background: var(--rk-panel, #fff); border: 1px solid var(--rk-edge); border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(15, 23, 42, .18); font-size: var(--fs-small); pointer-events: none;
+}
+.rl-cal-peek b { display: block; margin-bottom: 4px; color: var(--rk-ink); font-size: 12.5px; }
+.rl-cal-peek div { display: grid; grid-template-columns: 74px 1fr; gap: 6px; line-height: 19px; }
+.rl-cal-peek span { color: var(--rk-dim); }
+.rl-cal-peek em { font-style: normal; color: var(--rk-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The favourite star, first in a row: faint until it is one. */
+.rl-fav { display: flex; align-items: center; justify-content: center; border: 0; background: none; padding: 0; width: 100%; height: 100%; cursor: pointer; color: var(--rk-edge); }
+.rl-c:has(> .rl-fav) { padding: 0; }
+.rl-fav svg { flex: none; width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linejoin: round; }
+.rl-fav.on svg { fill: currentColor; }
+.rl-row:hover .rl-fav { color: var(--rk-mute); }
+.rl-fav.on, .rl-row:hover .rl-fav.on { color: #e6a700; }
+
+/* ?solo: one item's editor alone, filling the pane another service frames it
+   in — no .rl padding, so it sits exactly as it does in its own list's pane. */
+.rl-solo { height: 100vh; padding: 0; background: var(--rk-panel); }
+.rl-solo-note { padding: 4px 11px; border-top: 1px solid var(--rk-line); }
