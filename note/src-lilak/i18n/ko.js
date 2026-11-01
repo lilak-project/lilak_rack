@@ -19,6 +19,7 @@ export default {
   nt_tags_merged: (a0, a1, a2) => `태그 ${a0}개를 '${a1}' 하나로 합쳤습니다 · 노트 ${a2}편`,
   nt_note_changed: "노트가 바뀌었습니다.",
   nt_pick_note: "볼 노트를 고르세요.",
+  nt_noun: "노트",
   nt_notes: "노트",
   nt_n: (a0) => `${a0}개`,
   nt_new_note: "+ 새 노트",

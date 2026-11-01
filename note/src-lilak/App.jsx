@@ -1,32 +1,21 @@
 /**
- * note — one markdown file per note, listed the way the other RACK services list.
- *
- *   노트 ──────────────────────────────── nameplate (the service's own colour)
- *   + 새 노트 ▾  인쇄  선택 해제   [검색]  command line
- *   notes │ todos │ tags │ KoBRA ×        tabs
- *   ☐ # date title tags 할일 words …     the head: sticky, draggable edges
- *   …rows…                               26px each
+ * note — one markdown file per note, listed as every rack service lists: the
+ * screen is the kit's RackService (racklist/service.jsx) — the ⋯ and the search
+ * in the title bar, the tabs (notes · tags · todos), the table, the panes.
  *
  * A note is a FILE: YAML front matter (title, date, tags, and whatever else you
  * put there) and a markdown body. The folder opens in Obsidian unchanged, so
  * nothing here is a format of our own — the todos are GFM checkboxes, and a
- * template is just a note in templates/.
- *
- * The table, tabs, selection and portal plumbing are the kit's `racklist`,
- * shared with author_manager and reference_manager.
+ * template is just a note in templates/. What RackService cannot know is said
+ * below (NOTE_DEF, the slots): where the notes are (note's own API, not
+ * rackstore), the editor, a PDF, the to-dos tab, daily · templates · print.
  */
 import './strings.js'
 import { Children, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  RackTable, RackRow, RackTabs, RackActions,
-  useRackList, useRackKeys,
-  RackPaneStrip, paneLayout, paneStyles, FULL, useMergeMode, RackMergeButtons, RackMerge,
-  RackEditClass,
-  bySome, asSorts, bumpSort, byKeys, FilterBar, FacetRows,
-  PORTAL_BASE, PORTAL_PROJECT, brandStyle, projectKey, load, authHeaders, RackBar, takeOpenRequest,
-  RackMenu, MenuRow, useRackMenu,
-  tagKey, mergeTags as tagCounts, useTagSources, sharedTagRows, uniqueTags, PORTAL_SERVICE,
-  useFavTags, RackStar, useProjects, useReferences, openInService,
+  RackService, RackTable, RackRow, RackActions, useRackKeys, bumpSort, byKeys, PORTAL_BASE, brandStyle,
+  projectKey, load, authHeaders, tagKey, mergeTags as tagCounts, useTagSources, uniqueTags, useProjects,
+  useReferences, openInService, save,
 } from 'racklist'
 // The same renderer elog writes its logs with: GFM (so `- [ ]` is a checkbox)
 // and one newline means one line break, because a note is typed, not typeset.
@@ -89,14 +78,13 @@ export function bodyTags(body) {
 }
 // A tag is the same tag whatever its case (`#spirit` is `#SpiRIT`), here and
 // in every service that shares tags.
-const inTag = (n, t) => tagsOf(n).some((x) => tagKey(x) === tagKey(t))
 /** A tag lives in the body and nowhere else, so renaming one is an edit to the
  *  text: `#old` becomes `#new` wherever the tag rule says a tag starts. The
  *  character in front is kept — it is what made it a tag rather than part of a
  *  word, and `#oldish` is a different tag entirely. */
 export function renameBodyTag(body, from, to) {
   return String(body || '').replace(TAG_RE, (m, lead, name) =>
-    (tagKey(name) === tagKey(from) ? `${lead}#${to}` : m))
+    (tagKey(name) !== tagKey(from) ? m : to ? `${lead}#${to}` : lead))
 }
 
 /** The todo without its tags: they have a column of their own, and a list of a
@@ -118,26 +106,6 @@ const untagged = (text) => String(text || '')
   .replace(/\s{2,}/g, ' ')
   .trim()
 
-const COLS = [
-  { k: 'chk', w: 26, min: 26, fix: true },
-  { k: 'num', w: 40, min: 30, fix: true, label: '#' },
-  // A whole 2026-08-04 at 15px is 90px wide, and the cell keeps 6 either side.
-  { k: 'date', w: 106, min: 84, label: 'date' },
-  // When the FILE last changed, beside the date the note gives itself.
-  { k: 'updated', w: 106, min: 84, label: 'updated' },
-  { k: 'title', w: 260, min: 100, label: 'title' },
-  { k: 'tags', w: 170, min: 60, label: 'tags' },
-  { k: 'todo', w: 52, min: 40, label: tr("nt_todo"), num: true },
-  { k: 'words', w: 58, min: 40, label: 'words', num: true, drop: 1040 },
-  { k: 'excerpt', w: 360, min: 120, label: tr("nt_first_line"), drop: 1180 },
-]
-const CLS_COLS = [
-  { k: 'num', w: 40, min: 30, fix: true, label: '#' },
-  { k: 'fav', w: 26, min: 26, fix: true },      // the account's starred tags, on top
-  { k: 'name', w: 220, min: 80, label: 'tag' },
-  { k: 'count', w: 70, min: 46, label: 'notes', num: true },
-  // …then a column per other service that shares tags (added in App).
-]
 const TODO_COLS = [
   { k: 'chk', w: 26, min: 26, fix: true },
   { k: 'num', w: 40, min: 30, fix: true, label: '#' },
@@ -150,15 +118,6 @@ const TODO_COLS = [
 ]
 const TONE = { title: 'ink', text: 'ink', date: 'dim', updated: 'dim', tags: 'dim', excerpt: 'dim' }
 
-const SORTERS = {
-  date: (n) => n.date || '',
-  updated: (n) => Number(n.version) || 0,
-  title: (n) => n.title || '',
-  tags: (n) => tagsOf(n).join(' '),
-  todo: (n) => n.todo || null,
-  words: (n) => n.words || null,
-  excerpt: (n) => n.excerpt || '',
-}
 const TODO_SORTERS = {
   text: (t) => t.text || '', title: (t) => t.title || '', date: (t) => t.date || '',
   tags: (t) => (t.tags || []).join(' '), done: (t) => t.doneAt || '',
@@ -176,13 +135,7 @@ const TODO_SCOPES = [
   { k: 'all', label: tr("nt_all"), is: () => true },
   { k: 'done', label: tr("nt_finished"), is: (t) => t.done },
 ]
-const CLS_SORTERS = { name: (r) => r.name, count: (r) => r.count }
 
-const FIXED = [
-  { id: 'notes', kind: 'notes', label: 'notes' },
-  { id: 'todos', kind: 'todos', label: 'todos' },
-  { id: 'tags', kind: 'classes', label: 'tags' },
-]
 
 /** project_manager's projects, handed to what `+` offers and draws — while
  *  rendering, not after: the page drawn in this same pass asks it. */
@@ -214,158 +167,98 @@ function useTagChoices(own) {
   return tagSources
 }
 
+/** A note is a file, behind note's own API — so the document the rack screen
+ *  holds is the LIST of notes (/notes: title, date, tags, a first line…), and
+ *  a save is turned back into what it means for the files. The rack screen only
+ *  ever changes a note's tags (a merge, a rename, the star, the bulk editor) or
+ *  drops notes (the bulk editor's delete); everything else is the note editor's.
+ *  A tag lives in the body, so a tag change is an edit to the text: the ones
+ *  gone are renamed into the one that came (a merge, a rename) or taken out,
+ *  and one that is new and not in the text yet is added at the end. */
+async function loadNotes() {
+  const { body } = await ask('/notes')
+  return { notes: body.notes || [], templates: body.templates || [], version: String(Date.now()) }
+}
+async function saveNotes(next, doc) {
+  const was = new Map((doc.notes || []).map((n) => [n.id, n]))
+  const now = new Map((next.notes || []).map((n) => [n.id, n]))
+  for (const id of was.keys()) {
+    if (now.has(id)) continue
+    const r = await api(`/notes/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    if (!r.ok) throw new Error(`DELETE /notes/${id} → ${r.status}`)
+  }
+  const same = (a, b) => tagKey(a) === tagKey(b)
+  for (const [id, n] of now) {
+    const old = was.get(id)
+    if (!old) continue
+    const gone = tagsOf(old).filter((t) => !tagsOf(n).some((x) => same(x, t)))
+    const came = tagsOf(n).filter((t) => !tagsOf(old).some((x) => same(x, t)))
+    if (!gone.length && !came.length) continue
+    const { body: cur } = await ask(`/notes/${encodeURIComponent(id)}`)
+    let text = cur.body
+    for (const g of gone) text = renameBodyTag(text, g, came.length === 1 ? came[0] : '')
+    // A line that held only the tags taken out goes with them.
+    const lines = String(cur.body || '').split('\n')
+    text = text.split('\n').filter((l, i) => l.trim() || !lines[i]?.trim()).join('\n')
+    for (const t of came) if (!bodyTags(text).some((x) => same(x, t))) text = `${String(text || '').replace(/\n+$/, '')}\n\n#${t}`
+    // The server ends the file with one newline of its own.
+    text = text.replace(/\s+$/, '')
+    if (text === String(cur.body || '').replace(/\s+$/, '')) continue
+    const { conflict } = await putNote(id, cur.version, { title: cur.title, body: text })
+    if (conflict) return { conflict: true, doc: await loadNotes() }
+  }
+  return { doc: await loadNotes() }
+}
+
+const NOTE_DEF = {
+  name: 'note', key: 'note', title: tr("nt_notes"), unit: tr("nt_unit"),
+  // No rackstore behind it: no trash of the kit's (a note deleted is a file gone).
+  trash: false,
+  source: { load: loadNotes, save: saveNotes },
+  item: {
+    key: 'notes', noun: tr("nt_noun"), label: 'title', tabId: 'notes', allLabel: 'notes',
+    order: { k: 'date', dir: -1 },
+    // Made at once by the API (a file needs a name), then opened at its title.
+    create: async () => {
+      const { body } = await ask('/notes', { method: 'POST', body: JSON.stringify({ title: tr("nt_untitled"), template: null }) })
+      FRESH.add(body.id)
+      return { id: body.id, label: body.title }
+    },
+    // The list carries a first line, not the body — so the server looks inside.
+    find: async (q) => {
+      const { body } = await ask(`/search?q=${encodeURIComponent(q)}`)
+      return new Map(body.hits.map((h) => [h.id, h.text]))
+    },
+    search: (n, q, ctx) => [n.title, n.date, n.excerpt, ...tagsOf(n)]
+      .filter(Boolean).some((v) => String(v).toLowerCase().includes(q)) || !!ctx.hits?.has(n.id),
+    fields: [
+      // A whole 2026-08-04 at 15px is 90px wide, and the cell keeps 6 either side.
+      { k: 'date', label: 'date', get: (n) => n.date || '', col: { w: 106, min: 84 }, tone: 'dim' },
+      // When the FILE last changed, beside the date the note gives itself.
+      { k: 'updated', label: 'updated', get: updatedOn, col: { w: 106, min: 84 }, tone: 'dim' },
+      { k: 'title', label: 'title', get: (n) => n.title || '', col: { w: 260, min: 100 }, tone: 'ink' },
+      { k: 'tags', label: 'tags', type: 'tags', bulk: true, col: { w: 170, min: 60 }, tone: 'dim' },
+      { k: 'todo', label: tr("nt_todo"), get: (n) => (n.todo ? `${n.todo}` : n.done ? '✓' : ''), col: { w: 52, min: 40 } },
+      { k: 'words', label: 'words', get: (n) => (n.words ? `${n.words}` : ''), col: { w: 58, min: 40, drop: 1040 } },
+      // While searching, the line the BODY matched on is more use than the first line.
+      { k: 'excerpt', label: tr("nt_first_line"), get: (n, ctx) => ctx?.hits?.get(n.id) || n.excerpt || '',
+        col: { w: 360, min: 120, drop: 1180 }, tone: 'dim' },
+    ],
+  },
+  classes: [{ k: 'tags', label: 'tags', field: 'tags' }],
+}
+/** Notes just made: their editor takes the caret at the title, once. */
+const FRESH = new Set()
+
+/** The notes, listed by the kit's RackService as every rack service is — the
+ *  table, the tags tab, the ⋯, the panes. What is a note's own is said here:
+ *  the editor, a PDF, the to-dos, daily · templates · print. */
 export default function App() {
-  const [index, setIndex] = useState(null)       // { notes, templates }
-  const [todos, setTodos] = useState([])
-  // The note a right-click (or 새 노트) just opened: its title takes the caret,
-  // so the first thing you can do with a note is name it.
-  const [fresh, setFresh] = useState(null)
-  const [bodyHits, setBodyHits] = useState(null)   // ids whose BODY matched
-
-  const notes = index?.notes || []
-  // What `#` offers in the editor: every service's tags, then this list's own
-  // (one written since the page opened is here before the others know it).
-  const { isFavTag, toggleFavTag } = useFavTags()
-  const ownTags = useMemo(() => notes.flatMap(tagsOf), [notes])
-  const tagSources = useTagChoices(ownTags)
-  // And what `+` offers: project_manager's projects, which is where a project
-  // is a record rather than a word someone typed.
+  // What `#` and `+` offer in the editor.
+  useTagChoices()
   useProjectChoices()
-  // The list carries a first line, not the body, so a local miss asks the
-  // server to look inside; either way it is one search.
-  const search = useCallback((n, q) => [n.title, n.date, n.excerpt, ...tagsOf(n)]
-    .filter(Boolean).some((v) => String(v).toLowerCase().includes(q))
-    || bodyHits?.has(n.id), [bodyHits])
-  const scopeOf = useCallback((t, sort) => {
-    if (t?.kind !== 'notes') return []
-    const list = t.tag ? notes.filter((n) => inTag(n, t.tag)) : notes
-    return [...list].sort(byKeys(asSorts(sort).length ? sort : { k: 'date', dir: -1 }, SORTERS))
-  }, [notes])
-
-  // The todo tab's own scope is this service's alone, so it reads its stored
-  // value itself; the hook keeps it with the rest of the view.
   const [tscope, setTscope] = useState(() => load(VIEW_KEY, {}).tscope || 'open')
-  const L = useRackList({
-    key: 'nt', fixed: FIXED, firstTab: 'notes', sorters: SORTERS, scopeOf, search,
-    cols: { '': COLS, 'c:': CLS_COLS, 't:': TODO_COLS },
-    sort: null, clsSort: { k: 'count', dir: -1 },
-    remember: { tscope },
-  })
-
-  // The same names the render has always used.
-  const { tab, tabs, openTab, closeTab, scope, rows, filter, panes, split, vw, findRef } = L
-  const { sort, setSort, clsSort, setClsSort, query, setQuery, note, setNote, err, setErr } = L
-  const { picked, setPicked, hit, all: allPicked, some: somePicked, toggleAll, clear: clearPicked } = L
-  const { drag } = L
-  const cols = L.colsOf('')
-  // The tags tab: after the notes' count, how many wear each tag in every other service.
-  const own = PORTAL_SERVICE.name || 'note'
-  const perCols = useMemo(() => tagSources.filter((s) => s.svc !== own)
-    .map((s) => ({ k: `svc:${s.svc}`, w: 96, min: 46, label: s.label, num: true })), [tagSources, own])
-  const clsCols = L.colsOf('c:', [...CLS_COLS, ...perCols])
-  const todoCols = L.colsOf('t:')
-
-  const reload = useCallback(async () => {
-    try {
-      const { body } = await ask('/notes')
-      setIndex(body)
-      const t = await ask('/todos')
-      setTodos(t.body.todos)
-    } catch (e) { setErr(String(e.message || e)) }
-  }, [])
-  useEffect(() => {
-    if (!PORTAL_PROJECT) { setErr(tr("nt_open_via_portal")); return }
-    reload()
-  }, [reload])
-
-  // The editors are kept across a visit to another service: a note deleted in
-  // the meantime must not come back as an editor with nothing behind it.
-  useEffect(() => {
-    if (index) {
-      panes.keep((t) => (t.kind === 'edittag'
-        ? notes.some((n) => inTag(n, t.who))        // the tag is still worn
-        : t.kind                                    // mergetags: not a note
-          ? true
-          : notes.some((n) => n.id === t.id)))
-    }
-  }, [index])   // eslint-disable-line react-hooks/exhaustive-deps
-
-  // The list carries a first line, not the body — so a search that finds
-  // nothing locally asks the server to look INSIDE the notes.
-  useEffect(() => {
-    const q = query.trim()
-    if (q.length < 2) { setBodyHits(null); return }
-    const t = setTimeout(async () => {
-      try {
-        const { body } = await ask(`/search?q=${encodeURIComponent(q)}`)
-        setBodyHits(new Map(body.hits.map((h) => [h.id, h.text])))
-      } catch { setBodyHits(null) }
-    }, 250)
-    return () => clearTimeout(t)
-  }, [query])
-
-  // The todo table shares the view's sort stack, which may hold note columns
-  // this table has never heard of; it reads the ones it knows.
-  const todoSort = useMemo(() => {
-    const keys = asSorts(sort).filter((x) => TODO_SORTERS[x.k])
-    return keys.length ? keys : [{ k: 'date', dir: -1 }]
-  }, [sort])
-
-  const todoRows = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    const keep = (TODO_SCOPES.find((x) => x.k === tscope) || TODO_SCOPES[0]).is
-    const list = tab?.kind === 'todos'
-      ? todos.filter(keep).filter((t) => !q || [t.text, t.title, ...(t.tags || [])]
-        .filter(Boolean).some((v) => String(v).toLowerCase().includes(q)))
-      : []
-    return [...list].sort(byKeys(todoSort, TODO_SORTERS))
-  }, [todos, tab, query, todoSort, tscope])
-
-
-  const classes = useMemo(() => {
-    if (tab?.kind !== 'classes') return []
-    // One row per tag the notes wear, whatever its case — named by the
-    // spelling used most across the services, with where else it is worn —
-    // and the ones this account starred on top.
-    const spelt = {}
-    for (const t of notes.flatMap(tagsOf)) spelt[t] = (spelt[t] || 0) + 1
-    const rows = sharedTagRows(tagSources, { svc: own, tags: spelt })
-      .map((t) => ({ name: t.name, count: notes.filter((n) => inTag(n, t.name)).length,
-        per: Object.fromEntries(t.by.filter((b) => b.svc !== own).map((b) => [`svc:${b.svc}`, b.n])) }))
-      .filter((r) => r.count)
-      // The search box, on this tab, finds tags by name (any case).
-      .filter((r) => !query.trim() || tagKey(r.name).includes(tagKey(query)))
-      .sort(bySome(CLS_SORTERS[clsSort.k] || (clsSort.k.includes(':') ? (r) => r.per[clsSort.k] ?? null : CLS_SORTERS.name), clsSort.dir))
-    return [...rows.filter((r) => isFavTag(r.name)), ...rows.filter((r) => !isFavTag(r.name))]
-  }, [notes, tab, clsSort, tagSources, isFavTag, query])
-
-  // Tags drift here too — the same merge as the other racks, except the fold
-  // is one PUT per note, because a tag is text inside the file.
-  const onTags = tab?.kind === 'classes'
-  const merge = useMergeMode(onTags)
-  const mergeCols = useMemo(() => [{ k: 'chk', w: 26, min: 26, fix: true }, ...clsCols], [clsCols])
-
-  // The editor only shows once there is something to edit in it.
-  const showEdit = L.showEdit && !!index
-  const showList = !showEdit || L.showList
-  const openEdit = (id, label) => { panes.open({ id, label }); setFresh(id) }
-  // Sent here from another service (#open=<id>, an activity's note): that
-  // note opens once the list is in.
-  const asked = useRef(takeOpenRequest())
-  useEffect(() => {
-    if (!index || !asked.current) return
-    const n = notes.find((x) => x.id === asked.current)
-    asked.current = ''
-    if (n) panes.open({ id: n.id, label: n.title || n.id })
-  }, [index])   // eslint-disable-line react-hooks/exhaustive-deps
-  /** Which notes wear any of these tags — what the tag editor lists. */
-  const tagUsers = useCallback((names) => notes
-    .filter((n) => names.some((t) => inTag(n, t)))
-    .map((n) => ({ id: n.id, label: n.title || n.id })), [notes])
-  useRackKeys({
-    onClose: () => { const cur = panes.current(panes.cols[0]); if (cur) panes.close(cur.id) },
-    onNew: () => create(null),
-  })
+  useEffect(() => { save(VIEW_KEY, { ...load(VIEW_KEY, {}), tscope }) }, [tscope])
 
   // A file dropped anywhere but the editor: the browser's own answer is to
   // leave the app and show the picture, which inside the portal's frame reads
@@ -381,337 +274,167 @@ export default function App() {
     }
   }, [])
 
-  async function create(template) {
-    try {
-      const { body } = await ask('/notes', { method: 'POST', body: JSON.stringify({ title: tr("nt_untitled"), template }) })
-      await reload()
-      openEdit(body.id, body.title)
-      setNote(template ? tr("nt_made_from_template", template) : tr("nt_made_new"))
-    } catch (e) { setNote(String(e.message || e)) }
-  }
+  const slots = useMemo(() => ({
+    commands: (a) => <NoteCommands a={a} tscope={tscope} setTscope={setTscope} />,
+    tabs: [{ id: 'todos', label: 'todos', render: (a) => <Todos a={a} tscope={tscope} /> }],
+    editors: {
+      item: (t, a) => (
+        <Editor key={t.who} id={t.who} say={a.setNote} onSaved={a.reload}
+          onOpenNote={(name) => {
+            // `[[…]]` names a note by its file name or by its title.
+            const k = name.toLowerCase()
+            const n = (a.doc?.notes || []).find((x) => x.id.toLowerCase() === k)
+              || (a.doc?.notes || []).find((x) => (x.title || '').toLowerCase() === k)
+            if (n) a.openItem(n.id)
+            else a.setNote(tr("nt_no_note", name))
+          }}
+          takeCaret={FRESH.has(t.who)} onCaret={() => FRESH.delete(t.who)}
+          onPdf={(nid, title, v) => {
+            // A tab already open keeps what it was opened with, and the PDF
+            // behind it has just changed — so the old one goes for the new one.
+            a.closeEdit(`pdf:${nid}`)
+            a.openEdit({ id: `pdf:${nid}`, kind: 'pdf', who: nid, label: `${title || nid}.pdf`,
+              src: `${PORTAL_BASE}/api/pdf/${encodeURIComponent(nid)}?v=${v}` })
+          }}
+          onPrint={() => preview([t.who], a.setNote)}
+          onClosed={() => { a.closeEdit(t.id); a.reload() }} />
+      ),
+      // The browser's own PDF viewer with its bar turned off — the pane is too
+      // small to give half of it to a toolbar. Save it, or open it in a browser
+      // tab where the whole viewer is.
+      pdf: (t) => (
+        <div className="nt-pdfpane">
+          <div className="nt-pdfbar">
+            <span className="rl-hint">{t.label}</span>
+            <span className="rl-sp" />
+            <a className="rl-btn" href={t.src} target="_blank" rel="noreferrer">{tr("nt_tex_btab")}</a>
+            <a className="rl-btn" href={t.src} download={`${t.who}.pdf`}>{tr("nt_tex_save")}</a>
+          </div>
+          <iframe className="nt-pdf" src={`${t.src}#toolbar=0&navpanes=0`} title={t.label} />
+        </div>
+      ),
+    },
+  }), [tscope])
+
+  return <RackService def={NOTE_DEF} slots={slots} />
+}
+
+/** The note as it reads, in a tab of its own — and that page is also what
+ *  prints, because a PDF with Korean in it needs the system's fonts, which is
+ *  the one thing a JS pdf library makes hard and a print dialog makes free. */
+function preview(ids, say) {
+  if (!ids.length) { say(tr("nt_pick_note")); return }
+  window.open(`${PORTAL_BASE}/?print=${ids.join(',')}`, '_blank', 'noopener')
+}
+
+/** A note made (from a template, or today's) and opened. */
+async function made(a, body, said) {
+  await a.reload()
+  FRESH.add(body.id)
+  a.openEdit({ id: `item:${body.id}`, kind: 'item', who: body.id, label: body.title || body.id })
+  a.setNote(said)
+}
+
+/** note's own line in the ⋯: today's note, a template, print what is picked —
+ *  and, on the to-dos tab, which of them it shows. */
+function NoteCommands({ a, tscope, setTscope }) {
+  const notes = a.doc?.notes || []
+  const templates = a.doc?.templates || []
   /** Today's note, under the name it always has. One a day: if today's is
    *  already there this opens it instead of making a second one, and a
    *  template called `daily` is used when there is one. */
   async function openDaily() {
     const title = `Daily ${day(new Date())}`
     const had = notes.find((n) => n.title === title)
-    if (had) { openEdit(had.id, had.title); setNote(tr("nt_opened", title)); return }
+    if (had) { a.openItem(had.id); a.setNote(tr("nt_opened", title)); return }
     try {
-      const template = (index?.templates || []).includes('daily') ? 'daily' : null
+      const template = templates.includes('daily') ? 'daily' : null
       const { body } = await ask('/notes', { method: 'POST', body: JSON.stringify({ title, template }) })
       // The tag lives in the body, like every other tag here.
       if (!bodyTags(body.body).includes('daily')) {
         await putNote(body.id, body.version,
           { title, body: body.body ? `${body.body.replace(/\n+$/, '')}\n\n#daily` : '#daily' })
       }
-      await reload()
-      openEdit(body.id, title)
-      setNote(tr("nt_made_named", title))
-    } catch (e) { setNote(String(e.message || e)) }
+      await made(a, { ...body, title }, tr("nt_made_named", title))
+    } catch (e) { a.setNote(String(e.message || e)) }
   }
-  /** Folding tags here is not one document save: a tag is text inside a file,
-   *  so it is one save per note. A save can fail or lose a race, so it stops
-   *  at the first one that does and says how far it got — half a merge the
-   *  user knows about beats a whole one they do not. */
-  async function mergeTags(gone, to, users, said) {
-    let done = 0
-    let stopped = ''
-    for (const u of users) {
-      try {
-        const { body: cur } = await ask(`/notes/${encodeURIComponent(u.id)}`)
-        let text = cur.body
-        for (const g of gone) text = renameBodyTag(text, g, to)
-        if (text === cur.body) continue
-        const { conflict, body } = await putNote(u.id, cur.version, { title: cur.title, body: text })
-        if (conflict) { stopped = tr("nt_changed_meanwhile", cur.title); break }
-        if (body) done += 1
-      } catch (e) { stopped = String(e.message || e); break }
-    }
-    await reload()
-    panes.close('mergetags')
-    merge.off()
-    setNote(stopped
-      ? tr("nt_changed_up_to", stopped, done)
-      : said ? tr("nt_x_notes", said, done)
-        : tr("nt_tags_merged", gone.length + 1, to, done))
+  async function fromTemplate(template) {
+    try {
+      const { body } = await ask('/notes', { method: 'POST', body: JSON.stringify({ title: tr("nt_untitled"), template }) })
+      await made(a, body, tr("nt_made_from_template", template))
+    } catch (e) { a.setNote(String(e.message || e)) }
   }
-  async function toggleTodo(t) {
+  return (
+    <>
+      <button type="button" className="rl-btn rl-go" title={tr("nt_today_hint")} onClick={openDaily}>daily</button>
+      {!!templates.length && (
+        /* A template is a note in templates/ — so this list is a folder
+           listing, not a feature with a store behind it. */
+        <select className="rl-btn rl-go rl-pick" value=""
+          onChange={(e) => { if (e.target.value) fromTemplate(e.target.value) }}>
+          <option value="">{tr("nt_from_template")}</option>
+          {templates.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+      )}
+      <button type="button" className="rl-btn" disabled={!a.picked.size}
+        onClick={() => preview([...a.picked], a.setNote)}>{tr("nt_preview_n", a.picked.size)}</button>
+      {a.tab?.id === 'todos' && TODO_SCOPES.map((x) => (
+        <button key={x.k} type="button" data-keep className={`rl-btn${tscope === x.k ? ' on' : ''}`}
+          onClick={() => setTscope(x.k)}>{x.label}</button>
+      ))}
+    </>
+  )
+}
+
+/** The to-dos: every GFM checkbox in every note, read by the server. A press
+ *  ticks one (an edit to its note's text); a right-click opens the note. */
+function Todos({ a, tscope }) {
+  const [todos, setTodos] = useState(null)
+  const [sort, setSort] = useState([{ k: 'date', dir: -1 }])
+  const reload = useCallback(() => ask('/todos').then(({ body }) => setTodos(body.todos)).catch((e) => a.setNote(String(e.message || e))), [])   // eslint-disable-line react-hooks/exhaustive-deps
+  // Read again whenever the notes are — a note saved may have ticked one.
+  useEffect(() => { reload() }, [reload, a.doc])
+  const rows = useMemo(() => {
+    const q = (a.query || '').trim().toLowerCase()
+    const keep = (TODO_SCOPES.find((x) => x.k === tscope) || TODO_SCOPES[0]).is
+    return (todos || []).filter(keep)
+      .filter((t) => !q || [t.text, t.title, ...(t.tags || [])].filter(Boolean).some((v) => String(v).toLowerCase().includes(q)))
+      .sort(byKeys(sort, TODO_SORTERS))
+  }, [todos, a.query, tscope, sort])
+  async function toggle(t) {
     try {
       const { conflict, body } = await ask('/todos', { method: 'PUT',
         body: JSON.stringify({ id: t.id, line: t.line, done: !t.done, text: t.text }) })
-      if (conflict) { setNote(body.detail || tr("nt_note_changed")); await reload(); return }
-      await reload()
-    } catch (e) { setNote(String(e.message || e)) }
+      if (conflict) a.setNote(body.detail || tr("nt_note_changed"))
+      await a.reload()
+    } catch (e) { a.setNote(String(e.message || e)) }
   }
-  /** The note as it reads, in a tab of its own — and that page is also what
-   *  prints, because a PDF with Korean in it needs the system's fonts, which is
-   *  the one thing a JS pdf library makes hard and a print dialog makes free. */
-  function preview(ids) {
-    if (!ids.length) { setNote(tr("nt_pick_note")); return }
-    window.open(`${PORTAL_BASE}/?print=${ids.join(',')}`, '_blank', 'noopener')
-  }
-
-  const { chosen } = L
-
-  // The editors: docked left of the list, right of it, or FULL (the kit's panes.jsx).
-  const lay = paneLayout(panes, showList && showEdit)
-  const ps = paneStyles(lay, split, L.sides)
-  const notePane = (c, style) => {
-    const cur = panes.current(c)
-    return (
-      <div key={c} className="rl-pane rl-epane" onMouseDown={() => { if (c !== FULL) panes.setCol(c) }} style={style}>
-        <RackPaneStrip panes={panes} col={c} />
-        {cur.kind === 'pdf' ? (
-          /* The browser's own PDF viewer with its bar turned off — the pane is
-             too small to give half of it to a toolbar. The two things it was
-             worth keeping are links, not a viewer: save it, or open it in a
-             browser tab where the whole viewer is. */
-          <div className="nt-pdfpane">
-            <div className="nt-pdfbar">
-              <span className="rl-hint">{cur.label}</span>
-              <span className="rl-sp" />
-              <a className="rl-btn" href={cur.src} target="_blank" rel="noreferrer">{tr("nt_tex_btab")}</a>
-              <a className="rl-btn" href={cur.src} download={`${cur.who}.pdf`}>{tr("nt_tex_save")}</a>
-            </div>
-            <iframe className="nt-pdf" src={`${cur.src}#toolbar=0&navpanes=0`} title={cur.label} />
-          </div>
-        ) : cur.kind === 'mergetags' ? (() => {
-          const all = [...new Set(notes.flatMap(tagsOf))]
-          const live = (cur.names || []).filter((t) => all.includes(t))
-          const users = notes.filter((n) => live.some((t) => inTag(n, t)))
-          return (
-            <RackMerge names={cur.names || []} noun={tr("nt_tag")} exists={all}
-              count={(t) => notes.filter((n) => inTag(n, t)).length}
-              users={users.map((n) => n.title || n.id)}
-              onMerge={(gone, to) => mergeTags(gone, to, users)}
-              onCancel={() => panes.close(cur.id)} />
-          )
-        })() : cur.kind === 'edittag' ? (
-          /* The same editor every rack-list service gives a class.
-             What is ours is the save: a tag is text in the notes, so
-             renaming one rewrites every note that wears it. */
-          <RackEditClass name={cur.who} noun={tr("nt_tag")} wears={tr("nt_notes_using")} unit={tr("nt_unit")}
-            exists={[...new Set(notes.flatMap(tagsOf))].sort()}
-            wearing={tagUsers}
-            onOpen={(id) => openEdit(id, (notes.find((n) => n.id === id) || {}).title)}
-            onSave={async (gone, to, said) => {
-              const users = notes.filter((n) => gone.some((t) => inTag(n, t)))
-              await mergeTags(gone.filter((t) => t !== to), to, users, said)
-              panes.close(cur.id)
-            }}
-            onCancel={() => panes.close(cur.id)} />
-        ) : (
-        <Editor id={cur.id} say={setNote} onSaved={reload}
-          onOpenNote={(name) => {
-            // `[[…]]` names a note by its file name or by its title.
-            const k = name.toLowerCase()
-            const n = notes.find((x) => x.id.toLowerCase() === k)
-              || notes.find((x) => (x.title || '').toLowerCase() === k)
-            if (n) openEdit(n.id, n.title)
-            else setNote(tr("nt_no_note", name))
-          }}
-          takeCaret={cur.id === fresh} onCaret={() => setFresh(null)}
-          onPdf={(nid, title, v) => {
-            // A tab that is already open keeps what it was opened with
-            // (panes.open), and the PDF behind it has just changed — so the
-            // old one goes and the new one takes its place.
-            panes.close(`pdf:${nid}`)
-            panes.open({
-              id: `pdf:${nid}`, kind: 'pdf', who: nid, label: `${title || nid}.pdf`,
-              src: `${PORTAL_BASE}/api/pdf/${encodeURIComponent(nid)}?v=${v}`,
-            })
-          }}
-          onPrint={() => preview([cur.id])}
-          onClosed={(cid) => { panes.close(cid); reload() }} />
-        )}
-      </div>
-    )
-  }
-
-  // What the tab can do, behind the ⋯ at the left of the title bar (racklist menu.jsx).
-  const menu = useRackMenu()
-
+  if (!todos) return <p className="rl-msg">{tr("nt_loading")}</p>
   return (
-    <div className="rl" style={brandStyle()}>
-      <section className="rl-mod">
-        <RackBar title={tr("nt_notes")} count={index ? tr("nt_n", notes.length) : ''}
-          menu={(
-            <RackMenu m={menu} count={picked.size} lit={!!filter.mode || filter.on}>
-              <MenuRow>
-                <button type="button" className="rl-btn rl-go" onClick={() => create(null)}>{tr("nt_new_note")}</button>
-                <button type="button" className="rl-btn rl-go" title={tr("nt_today_hint")}
-                  onClick={openDaily}>daily</button>
-                {!!index?.templates?.length && (
-                  /* A template is a note in templates/ — so this list is a folder
-                     listing, not a feature with a store behind it. */
-                  <select className="rl-btn rl-go rl-pick" value=""
-                    onChange={(e) => { if (e.target.value) create(e.target.value) }}>
-                    <option value="">{tr("nt_from_template")}</option>
-                    {index.templates.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                )}
-              </MenuRow>
-              <MenuRow>
-                <button type="button" className="rl-btn" disabled={!picked.size}
-                  onClick={() => preview([...picked])}>{tr("nt_preview_n", picked.size)}</button>
-                <button type="button" className="rl-btn" disabled={!picked.size}
-                  onClick={clearPicked}>clear</button>
-              </MenuRow>
-              <MenuRow>
-                {onTags && (
-                  <RackMergeButtons merge={merge} noun={tr("nt_tag")}
-                    onOpen={(names) => panes.open({ id: 'mergetags', kind: 'mergetags', names,
-                      label: tr("nt_merge_n_tags", names.length) })} />
-                )}
-              </MenuRow>
-              <MenuRow>
-                {tab?.kind === 'notes' && <span data-keep className="rl-menu-keep"><FilterBar f={filter} /></span>}
-                {tab?.kind === 'todos' && TODO_SCOPES.map((x) => (
-                  <button key={x.k} type="button" data-keep className={`rl-btn${tscope === x.k ? ' on' : ''}`}
-                    onClick={() => setTscope(x.k)}>
-                    {x.label} ({todos.filter(x.is).length})
-                  </button>
-                ))}
-              </MenuRow>
-              <MenuRow>
-                {tabs.length > FIXED.length && (
-                  <button type="button" className="rl-btn" title={tr("nt_close_tabs_hint")}
-                    onClick={L.closeOpened}>{tr("nt_close_tabs_n", tabs.length - FIXED.length)}</button>
-                )}
-                {panes.count > 0 && (
-                  <button type="button" className="rl-btn" title={tr("nt_close_editors_hint")}
-                    onClick={panes.closeAll}>{tr("nt_close_editors_n", panes.count)}</button>
-                )}
-              </MenuRow>
-            </RackMenu>
-          )}
-          find={(
-            <>
-              {/* One box: the list, or — while the filter is choosing — the values
-                  on offer. */}
-              <input ref={findRef} type="search" className="rl-find"
-                value={filter.mode ? filter.find : query}
-                placeholder={filter.mode ? tr("nt_find_value") : tr("nt_find_hint")}
-                onChange={(e) => (filter.mode ? filter.setFind : setQuery)(e.target.value)} />
-            </>
-          )} />
-
-        <div className="rl-body">
-          {showEdit && lay.left.map((c) => notePane(c, ps.left))}
-          {ps.before && <div {...ps.before} />}
-          {showList && (<div className="rl-pane" style={ps.list}>
-            <RackTabs tabs={tabs} active={L.active} fixed={FIXED}
-              onPick={L.setActive} onClose={closeTab} />
-
-            {err && <p className="rl-msg">{err}</p>}
-            {!err && !index && <p className="rl-msg">{tr("nt_loading")}</p>}
-
-            {index && tab?.kind === 'notes' && (
-              <RackTable cols={cols} onDrag={drag('')}
-                facet={filter.tableFacet}
-                sort={asSorts(sort).length ? sort : [{ k: 'date', dir: -1 }]}
-                onSort={(k) => setSort((s) => bumpSort(asSorts(s).length ? s : { k: 'date', dir: -1 }, k))}
-                head={filter.mode ? null : { all: allPicked, some: somePicked, onAll: toggleAll }}>
-                <FacetRows f={filter} />
-                {!filter.mode && rows.map((n, i) => {
-                  const on = picked.has(n.id)
-                  const open = panes.tabs.some((t) => t.id === n.id)
-                  return (
-                    <RackRow key={n.id} cols={cols} tone={TONE}
-                      className={`rl-hit${on ? ' on' : ''}${open ? ' rl-edited' : ''}`}
-                      onClick={(e) => hit(i, e.shiftKey)}
-                      onContextMenu={(e) => { e.preventDefault(); openEdit(n.id, n.title) }}
-                      cell={{
-                        chk: <input type="checkbox" checked={on} tabIndex={-1} readOnly
-                          aria-label={tr("nt_select_x", n.title)} />,
-                        num: i + 1,
-                        date: n.date || D,
-                        updated: updatedOn(n) || D,
-                        title: n.title,
-                        tags: tagsOf(n).join(' ') || D,
-                        todo: n.todo ? `${n.todo}` : (n.done ? '✓' : D),
-                        words: n.words || D,
-                        // While searching, the line the BODY matched on is more
-                        // use than the note's first line.
-                        excerpt: (bodyHits?.get(n.id) || n.excerpt) || D,
-                      }} />
-                  )
-                })}
-                {!filter.mode && rows.length === 0 && <p className="rl-msg">{tr("nt_no_match")}</p>}
-              </RackTable>
-            )}
-
-            {index && tab?.kind === 'todos' && (
-              <RackTable cols={todoCols} onDrag={drag('t:')}
-                sort={todoSort}
-                onSort={(k) => setSort((s) => bumpSort(todoSort, k))}>
-                {todoRows.map((t, i) => (
-                  <RackRow key={`${t.id}:${t.line}`} cols={todoCols} tone={TONE}
-                    className={`rl-hit${t.done ? ' rl-done' : ''}${late(t) ? ' nt-late' : ''}`}
-                    title={tr("nt_todo_hint")}
-                    onClick={() => toggleTodo(t)}
-                    onContextMenu={(e) => { e.preventDefault(); openEdit(t.id, t.title) }}
-                    cell={{
-                      chk: <input type="checkbox" checked={t.done} aria-label={t.text}
-                        onChange={() => toggleTodo(t)} onClick={(e) => e.stopPropagation()} />,
-                      num: i + 1,
-                      text: untagged(t.text) || D,
-                      title: (
-                        <button type="button" className="rl-lnk"
-                          onClick={(e) => { e.stopPropagation(); openEdit(t.id, t.title) }}>{t.title}</button>
-                      ),
-                      date: t.date || D,
-                      tags: (t.tags || []).join(' ') || D,
-                      due: t.due || D,
-                      done: t.doneAt || D,
-                    }} />
-                ))}
-                {todoRows.length === 0 && <p className="rl-msg">{tr("nt_no_todos")}</p>}
-              </RackTable>
-            )}
-
-            {index && tab?.kind === 'classes' && (
-              <RackTable cols={merge.mode ? mergeCols : clsCols} onDrag={drag('c:')} sort={clsSort}
-                onSort={(k) => setClsSort((s) => (s.k === k ? { k, dir: -s.dir } : { k, dir: 1 }))}
-                head={merge.mode ? merge.head(classes.map((r) => r.name)) : null}>
-                {classes.map((r, i) => {
-                  const chosen = merge.mode && merge.has(r.name)
-                  return (
-                  <RackRow key={r.name} cols={merge.mode ? mergeCols : clsCols} tone={TONE}
-                    className={`rl-hit${chosen ? ' on' : ''}`}
-                    onClick={() => (merge.mode ? merge.toggle(r.name)
-                      : openTab({ id: `tag:${r.name}`, kind: 'notes', tag: r.name, label: r.name }))}
-                    onContextMenu={(e) => {
-                      e.preventDefault()
-                      panes.open({ id: `edittag:${r.name}`, kind: 'edittag', who: r.name, label: r.name })
-                    }}
-                    cell={{
-                      ...(merge.mode ? { chk: <input type="checkbox" checked={chosen} tabIndex={-1}
-                        readOnly aria-label={tr("nt_select_x", r.name)} /> } : {}),
-                      num: i + 1, name: r.name, count: r.count || '·',
-                      ...Object.fromEntries(perCols.map((p) => [p.k, r.per[p.k] || '·'])),
-                      fav: <RackStar on={isFavTag(r.name)} onToggle={() => toggleFavTag(r.name)} /> }} />
-                  )
-                })}
-                {classes.length === 0 && <p className="rl-msg">{tr("nt_no_tags")}</p>}
-              </RackTable>
-            )}
-          </div>)}
-
-          {ps.after && <div {...ps.after} />}
-          {showEdit && lay.right.map((c) => notePane(c, ps.right))}
-        </div>
-
-        <footer className="rl-foot">
-          <span>{note || tr("nt_status_hint")}</span>
-          <span className="rl-sp" />
-          <span className="rl-mono">
-            {tab?.kind === 'todos' ? (todoRows.length ? tr("nt_n_rows", todoRows.length) : '')
-              : rows.length ? tr("nt_n_rows", rows.length) : ''}
-          </span>
-        </footer>
-      </section>
-    </div>
+    <RackTable cols={TODO_COLS} sort={sort} onSort={(k) => setSort((s) => bumpSort(s, k))}>
+      {rows.map((t, i) => (
+        <RackRow key={`${t.id}:${t.line}`} cols={TODO_COLS} tone={TONE}
+          className={`rl-hit${t.done ? ' rl-done' : ''}${late(t) ? ' nt-late' : ''}`}
+          title={tr("nt_todo_hint")}
+          onClick={() => toggle(t)}
+          onContextMenu={(e) => { e.preventDefault(); a.openItem(t.id) }}
+          cell={{
+            chk: <input type="checkbox" checked={t.done} aria-label={t.text}
+              onChange={() => toggle(t)} onClick={(e) => e.stopPropagation()} />,
+            num: i + 1,
+            text: untagged(t.text) || D,
+            title: (
+              <button type="button" className="rl-lnk"
+                onClick={(e) => { e.stopPropagation(); a.openItem(t.id) }}>{t.title}</button>
+            ),
+            date: t.date || D,
+            tags: (t.tags || []).join(' ') || D,
+            due: t.due || D,
+            done: t.doneAt || D,
+          }} />
+      ))}
+      {rows.length === 0 && <p className="rl-msg">{tr("nt_no_todos")}</p>}
+    </RackTable>
   )
 }
 

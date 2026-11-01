@@ -19,6 +19,7 @@ export default {
   nt_tags_merged: (a0, a1, a2) => `Merged ${a0} tags into '${a1}' · ${a2} notes`,
   nt_note_changed: "The note changed.",
   nt_pick_note: "Pick a note to view.",
+  nt_noun: "note",
   nt_notes: "Notes",
   nt_n: (a0) => `${a0}`,
   nt_new_note: "+ new note",
