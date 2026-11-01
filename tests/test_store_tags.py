@@ -78,5 +78,27 @@ class Records(Tags):
         self.assertEqual(self.c.post("/api/records/update", json={"key": "items", "id": "zz", "fields": {}}, headers=H).status_code, 404)
 
 
+class Trash(unittest.TestCase):
+    """The bin (Bin, shared with note): a record deleted is listed, and comes back."""
+    def test_delete_list_restore(self):
+        (TMP / "data" / "_portal").mkdir(parents=True, exist_ok=True)
+        (TMP / "data" / "_portal" / "secret.key").write_text("test-secret")
+        doc = Document(TMP / f"t{time.time_ns()}.json", keys=("items", "settings"))
+        d = doc.read()
+        d["items"] = [{"id": "a", "name": "A"}, {"id": "b", "name": "B"}]
+        doc.write(d)
+        app = FastAPI()
+        doc.mount(app)
+        c = TestClient(app)
+        d = doc.read()
+        doc.write({**d, "items": [r for r in d["items"] if r["id"] != "a"]}, "kim@x")
+        got = c.get("/api/trash", headers=H).json()
+        self.assertEqual([(t["key"], t["record"]["id"], t["by"]) for t in got], [("items", "a", "kim@x")])
+        back = c.post("/api/trash/restore", json={"key": "items", "id": "a"}, headers=H).json()
+        self.assertEqual([r["id"] for r in back["items"]], ["a", "b"])
+        self.assertEqual(c.get("/api/trash", headers=H).json(), [])
+        self.assertEqual(c.post("/api/trash/restore", json={"key": "items", "id": "a"}, headers=H).status_code, 404)
+
+
 if __name__ == "__main__":
     unittest.main()

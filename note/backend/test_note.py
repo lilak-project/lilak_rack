@@ -73,4 +73,20 @@ src = "title = {The {ELARK} array,\n  and its {DAQ}}, year = {2026},"
 assert _braced(src, src.index("{")) == "The {ELARK} array, and its {DAQ}", _braced(src, src.index("{"))
 assert _braced("{a}", 0) == "a"
 
+# A note deleted waits in the bin (the rack services' one, rackstore's Bin) and
+# comes back byte for byte.
+from backend.main import BIN, NOTES, _restore, delete_note   # noqa: E402
+NOTES.mkdir(parents=True, exist_ok=True)
+f = NOTES / "bin-check.md"
+f.write_text("---\ntitle: Bin check\n---\n\nbody #x\n", encoding="utf-8")
+raw = f.read_text(encoding="utf-8")
+delete_note("bin-check", {"email": "kim@x"})
+assert not f.exists()
+entry = next(t for t in BIN.list() if t["record"]["id"] == "bin-check")
+assert entry["record"]["title"] == "Bin check" and entry["by"] == "kim@x", entry
+_restore("notes", "bin-check", entry, {})
+assert f.read_text(encoding="utf-8") == raw
+BIN.drop("notes", "bin-check")
+f.unlink()
+
 print("note: ok")

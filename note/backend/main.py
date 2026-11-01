@@ -35,6 +35,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from lilak_portal_auth import identity, manager, signed_in
+from rackstore.store import Bin
 
 DATA = Path(os.environ.get("NOTE_DATA_DIR", "./data"))
 PROJECT = os.environ.get("PORTAL_PROJECT", "")
@@ -304,12 +305,36 @@ def put_note(note_id: str, body: SaveBody, _: dict = Depends(signed_in)):
     return _read(p)
 
 
+# A note deleted waits in the rack services' one bin (rackstore's Bin), 30
+# days, to be brought back from the trash tab — the file as it was.
+BIN = Bin(DATA, days=30)
+
+
 @app.delete("/api/notes/{note_id}")
-def delete_note(note_id: str, _: dict = Depends(signed_in)) -> dict:
+def delete_note(note_id: str, me: dict = Depends(signed_in)) -> dict:
     p = _path(note_id)
     if p.is_file():
+        n = _read(p)
+        BIN.put("notes", note_id, {"record": {"id": note_id, "title": n["title"], "date": n["date"]},
+                                   "text": p.read_text(encoding="utf-8")},
+                me.get("email") or me.get("username") or "")
         p.unlink()
     return {"ok": True, "id": note_id}
+
+
+def _restore(key: str, rid: str, entry: dict, me: dict) -> dict:
+    """A note back from the bin, under its own name — unless a note of that name
+    has been made since, which this would overwrite."""
+    if key != "notes":
+        raise HTTPException(400, "되살릴 수 없는 종류입니다.")
+    p = _path(rid)
+    if p.exists():
+        raise HTTPException(409, "같은 이름의 노트가 이미 있습니다.")
+    p.write_text(entry.get("text") or "", encoding="utf-8")
+    return {"ok": True, "id": rid}
+
+
+BIN.mount(app, _restore)
 
 
 @app.get("/api/tags")

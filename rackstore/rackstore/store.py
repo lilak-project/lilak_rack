@@ -99,6 +99,7 @@ class Document:
         # A deleted record waits in .trash/ this many days, to be brought back
         # (GET /api/trash, POST /api/trash/restore) — whatever keep_days says.
         self.trash_days = trash_days
+        self.bin = Bin(self.dir, trash_days)
         self.lock = threading.Lock()
         self._cache = None
         self._stamp = None
@@ -399,31 +400,6 @@ class Document:
         except Exception:
             pass    # a full disk must not cost the user the save they just made
 
-    # ── the bin ───────────────────────────────────────────────────────────
-    def _trash_file(self, k: str, rid: str) -> Path:
-        return self.dir / ".trash" / k / f"{self._fname(rid)}.json"
-
-    def _trash(self, k: str, rec: dict, version: int, who: str) -> None:
-        """A deleted record, as it was, with when and by whom."""
-        if not self.trash_days:
-            return
-        try:
-            atomic_write(self._trash_file(k, str(rec["id"])), self._dump(
-                {"record": rec, "deletedAt": _now(), "by": who, "version": version}))
-        except Exception:
-            pass    # a full disk must not cost the user the save they just made
-        self.prune_trash()
-
-    def prune_trash(self) -> None:
-        """Out of the bin for good, trash_days after going in."""
-        cut = datetime.now(timezone.utc).timestamp() - self.trash_days * 86400
-        for f in (self.dir / ".trash").glob("*/*.json"):
-            try:
-                if f.stat().st_mtime < cut:
-                    f.unlink(missing_ok=True)
-            except OSError:
-                pass
-
     def _daily(self, doc: dict) -> None:
         if not self.keep_days:
             return
@@ -488,11 +464,11 @@ class Document:
                     trail(k, rid, r)
                     (gone.get(k) or {}).pop(rid, None)
                     if rid not in old:
-                        self._trash_file(k, rid).unlink(missing_ok=True)   # back: out of the bin
+                        self.bin.drop(k, rid)   # back: out of the bin
             for rid in old:
                 if rid not in ids:
                     self._keep_record(k, rid, version)
-                    self._trash(k, old[rid], version, who)
+                    self.bin.put(k, rid, {"record": old[rid], "version": version}, who)
                     self._rec(k, rid).unlink(missing_ok=True)
                     rv.setdefault(k, {}).pop(rid, None)
                     # A tombstone: when it went, and what it was — so a client
@@ -603,36 +579,18 @@ class Document:
                     })
                 return doc_.write(new, me.get("email") or me.get("username") or "", replaces=cur)
 
-        @app.get("/api/trash")
-        def get_trash(_: dict = Depends(signed_in)) -> list:
-            """What was deleted in the last trash_days, newest first."""
-            doc_.prune_trash()
-            out = []
-            for f in (doc_.dir / ".trash").glob("*/*.json"):
-                try:
-                    out.append({"key": f.parent.name, **json.loads(f.read_text(encoding="utf-8"))})
-                except Exception:
-                    continue
-            return sorted(out, key=lambda t: t.get("deletedAt") or "", reverse=True)
-
-        @app.post("/api/trash/restore")
-        def restore(body: dict = Body(...), me: dict = Depends(signed_in)):
-            """A record back from the bin, at the top of its list; the
-            document after."""
-            k, rid = str(body.get("key") or ""), str(body.get("id") or "")
+        def restore(k: str, rid: str, entry: dict, me: dict):
+            """A record back from the bin, at the top of its list; the document after."""
             if k not in doc_.keys or k == "settings":
                 raise HTTPException(400, "되살릴 수 없는 종류입니다.")
-            f = doc_._trash_file(k, rid)
-            if not f.exists():
-                raise HTTPException(404, "휴지통에 없습니다.")
-            rec = json.loads(f.read_text(encoding="utf-8"))["record"]
+            rec = entry["record"]
             with doc_.lock:
                 cur = doc_.read()
                 if any(str(r.get("id")) == rid for r in cur.get(k) or []):
-                    f.unlink(missing_ok=True)        # already back (restored, or synced)
-                    return cur
+                    return cur                    # already back (restored, or synced)
                 return doc_.write({**cur, k: [rec] + list(cur.get(k) or [])},
                                   me.get("email") or me.get("username") or "", replaces=cur)
+        doc_.bin.mount(app, restore)
 
         @app.get("/api/tags")
         def get_tags(_: dict = Depends(signed_in)) -> dict:
@@ -1057,6 +1015,80 @@ def mount_files(app: FastAPI, doc: Document, setting: str = "fileRoots", exts: t
                         rel = os.path.relpath(os.path.join(dirpath, n), root)
                         out.setdefault(unicodedata.normalize("NFC", os.path.splitext(n)[0]), []).append(rel)
         return {"roots": [str(r) for r in roots()], "files": out}
+
+
+class Bin:
+    """What was deleted, kept `days` days to be brought back: one file per
+    record under <root>/.trash/<key>/ — {record, deletedAt, by, …}. The one bin
+    every rack service has: rackstore's Document keeps its records' here, note
+    its notes' (the record is the note's id and title, `text` its file).
+
+        bin = Bin(DATA, days=30)
+        bin.put("notes", nid, {"record": {"id": nid, "title": t}, "text": raw}, who)
+        bin.mount(app, restore)     # GET /api/trash, POST /api/trash/restore
+
+    `restore(key, rid, entry, me)` puts the record back and answers the POST;
+    the entry leaves the bin when it returns without raising.
+    """
+    def __init__(self, root: Path, days: int = 30):
+        self.dir = Path(root) / ".trash"
+        self.days = days
+
+    def file(self, key: str, rid: str) -> Path:
+        return self.dir / key / f"{Document._fname(rid)}.json"
+
+    def put(self, key: str, rid: str, entry: dict, who: str) -> None:
+        """A deleted record, as it was, with when and by whom."""
+        if not self.days:
+            return
+        try:
+            atomic_write(self.file(key, rid), Document._dump({**entry, "deletedAt": _now(), "by": who}))
+        except Exception:
+            pass    # a full disk must not cost the user the delete they just made
+        self.prune()
+
+    def drop(self, key: str, rid: str) -> None:
+        self.file(key, rid).unlink(missing_ok=True)
+
+    def prune(self) -> None:
+        """Out of the bin for good, `days` after going in."""
+        cut = datetime.now(timezone.utc).timestamp() - self.days * 86400
+        for f in self.dir.glob("*/*.json"):
+            try:
+                if f.stat().st_mtime < cut:
+                    f.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def list(self) -> list:
+        """What is in it, newest first."""
+        self.prune()
+        out = []
+        for f in self.dir.glob("*/*.json"):
+            try:
+                out.append({"key": f.parent.name, **json.loads(f.read_text(encoding="utf-8"))})
+            except Exception:
+                continue
+        return sorted(out, key=lambda t: t.get("deletedAt") or "", reverse=True)
+
+    def mount(self, app: FastAPI, restore) -> None:
+        bin_ = self
+
+        @app.get("/api/trash")
+        def get_trash(_: dict = Depends(signed_in)) -> list:
+            """What was deleted in the last `days`, newest first."""
+            return bin_.list()
+
+        @app.post("/api/trash/restore")
+        def restore_one(body: dict = Body(...), me: dict = Depends(signed_in)):
+            """A record back from the bin."""
+            k, rid = str(body.get("key") or ""), str(body.get("id") or "")
+            f = bin_.file(k, rid)
+            if not k or not f.exists():
+                raise HTTPException(404, "휴지통에 없습니다.")
+            out = restore(k, rid, json.loads(f.read_text(encoding="utf-8")), me)
+            f.unlink(missing_ok=True)
+            return out
 
 
 def mount_spa(app: FastAPI, dist: Path, name: str = "service") -> None:
