@@ -1,8 +1,9 @@
 import './strings.js'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RackTable, RackRow, RackTabs } from './table.jsx'
 import { RackPaneStrip, paneLayout, paneStyles, FULL } from './panes.jsx'
 import { RackBar } from './bar.jsx'
+import { RackMenu, MenuRow, useRackMenu } from './menu.jsx'
 import { RackCalendar } from './calendar.jsx'
 import { RackTrash, TRASH_COLS } from './trash.jsx'
 import { occurrences, parseRule, withUntil, withCount } from './rrule.js'
@@ -47,8 +48,15 @@ import { RackTagged, RackTaggedTab, TAGGED_COLS, TAGGED_SORTERS, useTaggedRows }
  *   registerType(name, type)     a field type of its own (types.jsx)
  *   field.cell / field.edit      one field drawn differently
  *
- * `api` is what those get: doc, commit(patch, said), openTab, openEdit,
- * setNote, the selection (picked, chosen) and the current tab. A field's
+ * A service whose records are not rackstore's says where they are:
+ *   def.source = { load() => doc, save(body, doc) => { doc } | { conflict, doc } }
+ *   def.item.create() => { id, label }   a new record made at once, then opened
+ *   def.item.find(q) => Map(id → text)   what the server finds inside the records;
+ *                                        fields and item.search see it as ctx.hits
+ *   def.trash: false                     no trash (it is not rackstore's either)
+ *
+ * `api` is what those get: doc, commit(patch, said), reload(), openTab, openEdit,
+ * setNote, the selection (picked, chosen), the current tab and the search (query). A field's
  * widget and cell get much the same through `ctx`.
  */
 // The favourite star: soft at the points (round joins), filled when it is one (CSS).
@@ -154,7 +162,10 @@ function RackList({ def: declared, slots = {} }) {
     ]
   }, [def, slots.tabs, slots.settings, IS_ADMIN])
 
-  const extra = useMemo(() => ({ remote, folders }), [remote, folders])
+  // What the server found INSIDE the records for the search (def.item.find:
+  // note's bodies), id → the line it matched; fields and item.search see it.
+  const [hits, setHits] = useState(null)
+  const extra = useMemo(() => ({ remote, folders, hits }), [remote, folders, hits])
   const itemSort = useMemo(() => itemSorters(def, doc, extra), [def, doc, extra])
   // A sorter may depend on the tab (a group's own core on that group's tab).
   const sortersFor = useCallback((t) => (t?.kind !== 'items' ? {}
@@ -187,6 +198,13 @@ function RackList({ def: declared, slots = {} }) {
   const { tab, tabs, openTab, closeTab, rows, scope, filter, panes, split, findRef, drag } = L
   const { sort, setSort, clsSort, setClsSort, query, setQuery, note, setNote, err, setErr } = L
   const { picked, setPicked, hit, all: allPicked, some: somePicked, toggleAll, clear: clearPicked, chosen } = L
+  useEffect(() => {
+    if (!def.item.find) return undefined
+    const q = query.trim()
+    if (q.length < 2) { setHits(null); return undefined }
+    const t = setTimeout(() => def.item.find(q).then(setHits).catch(() => setHits(null)), 250)
+    return () => clearTimeout(t)
+  }, [query, def])
   // ⌘Enter: whatever the search has left on screen, take it all — or put it
   // all back — and say which.
   useToggleKey(() => {
@@ -203,14 +221,18 @@ function RackList({ def: declared, slots = {} }) {
     || (cls.stored && !!cls.merge))
   const merge = useMergeMode(mergeable)
 
+  // The document comes from rackstore's /api/data — or from the service's own
+  // `def.source` (note: a file per note, behind its own API).
+  const loadDoc = def.source?.load || fetchDoc
+  const reload = useCallback(() => loadDoc().then(setDoc).catch((e) => setErr(String(e.message || e))), [loadDoc])   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!PORTAL_PROJECT) { setErr(tr("rk_open_via_portal")); return }
-    fetchDoc().then(setDoc).catch((e) => setErr(String(e.message || e)))
+    reload()
   }, [])   // eslint-disable-line react-hooks/exhaustive-deps
   const said = useMemo(() => savedHere(def.key), [def.key])
   useEffect(() => {
     if (!said) return undefined
-    said.onmessage = () => fetchDoc().then(setDoc).catch(() => {})
+    said.onmessage = () => loadDoc().then(setDoc).catch(() => {})
     return () => said.close()
   }, [said])
   // Sent here from another service (#open=<id>): open that record once the
@@ -250,7 +272,7 @@ function RackList({ def: declared, slots = {} }) {
     if (!doc) return false
     try {
       const body = Object.fromEntries(def.docKeys.map((k) => [k, patch[k] ?? doc[k]]))
-      const r = await putDoc(doc.version, body)
+      const r = def.source?.save ? await def.source.save(body, doc) : await putDoc(doc.version, body)
       if (r.conflict) {
         if (r.doc) setDoc(r.doc)
         setNote(tr("rk_changed_meanwhile"))
@@ -287,6 +309,16 @@ function RackList({ def: declared, slots = {} }) {
     if (BARE && id && window.parent !== window) {
       window.parent.postMessage({ rackOpen: { svc: PORTAL_SERVICE.name, proj: PORTAL_PROJECT, id,
         label: r ? labelOf(def, r) : id } }, window.location.origin)
+      return
+    }
+    // A record the service makes itself (note: a file, made by its API) opens
+    // made, its name first — not as a blank form.
+    if (!id && !seed && def.item.create) {
+      def.item.create().then(async (made) => {
+        if (!made) return
+        setDoc(await loadDoc())
+        openEdit({ id: `item:${made.id}`, kind: 'item', who: made.id, label: made.label || made.id, fresh: true })
+      }).catch((e) => setNote(String(e.message || e)))
       return
     }
     if (!id && seed) panes.close('item:new')
@@ -370,16 +402,16 @@ function RackList({ def: declared, slots = {} }) {
     setCalAt({ d: String(d).slice(0, 10), n: Date.now(), ...(tags ? { tags } : {}) })
   }, [openTab, panes, L.vw])
   const ctx = useMemo(() => ({
-    remote, folders, reloadFolders, openFolder, openFile, say: setNote, openItem,
+    remote, folders, hits, reloadFolders, openFolder, openFile, say: setNote, openItem,
     openClass: openClassByName, openTab, openEdit, commit, isAdmin: IS_ADMIN, tab,
     showDate: def.calendar ? showDate : undefined,
     // Another service's page as an editor tab: { id, label, src }.
     openFrame: (t) => openEdit({ ...t, kind: 'frame' }),
     openRecord,
-  }), [remote, folders, reloadFolders, openFolder, openFile, setNote, openItem, openClassByName,
+  }), [remote, folders, hits, reloadFolders, openFolder, openFile, setNote, openItem, openClassByName,
     openTab, openEdit, openRecord, commit, IS_ADMIN, tab, def.calendar, showDate])
-  const api = { def, doc, commit, openTab, openEdit, closeEdit: (id) => panes.close(id), openItem, setNote,
-    picked, setPicked, clearPicked, chosen, tab, rows, scope }
+  const api = { def, doc, commit, reload, openTab, openEdit, closeEdit: (id) => panes.close(id), openItem, setNote,
+    picked, setPicked, clearPicked, chosen, tab, rows, scope, query }
 
   // A column may belong to some tabs only (a group's core on that group's tab).
   const cols = useMemo(() => L.colsOf('').filter((c) => !c.when || c.when(tab)), [L.colsOf, tab])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -716,6 +748,129 @@ function RackList({ def: declared, slots = {} }) {
     }
   }
 
+  const menuState = useRackMenu()
+  const setMenu = menuState.setOpen
+  const frameRef = useRef(null)
+  // A frame tab (another service's list) has that page's own ⋯ and find: this
+  // bar's open its menu and search its list, by message.
+  const toFrame = (msg) => frameRef.current?.contentWindow?.postMessage(msg, window.location.origin)
+  const [frameFind, setFrameFind] = useState('')
+  useEffect(() => { setMenu(false); setFrameFind('') }, [L.active])
+  // …and closes it as this page's own would: Esc, or a press anywhere but the ⋯.
+  useEffect(() => {
+    if (tab?.kind !== 'frame') return undefined
+    const off = (e) => { if (e.type === 'keydown' ? e.key === 'Escape' : !e.target.closest?.('.rl-more')) toFrame({ rackMenu: 'close' }) }
+    document.addEventListener('mousedown', off)
+    document.addEventListener('keydown', off)
+    return () => { document.removeEventListener('mousedown', off); document.removeEventListener('keydown', off) }
+  }, [tab?.kind])
+  useEffect(() => {
+    if (!BARE) return undefined
+    const take = (e) => {
+      if (e.origin !== window.location.origin) return
+      if (e.data?.rackMenu) setMenu((m) => (e.data.rackMenu === 'close' ? false : !m))
+      if (typeof e.data?.rackFind === 'string') setQuery(e.data.rackFind)
+    }
+    window.addEventListener('message', take)
+    return () => window.removeEventListener('message', take)
+  }, [])
+
+  // What this tab can do, behind the ⋯ at the left of the title bar. It pops
+  // out over the list, one line per kind of thing — making, the selection,
+  // merging, what is shown, the tabs — so the list never moves for it.
+  const menuRows = (
+    <>
+      <MenuRow>
+        {cls?.stored ? (
+          /* Mustard: it is only here while a class tab is, and the colour is
+             what says so. */
+          <button type="button" className="rl-btn rl-tabonly" onClick={() => openClass(cls, null)}>{tr("rk_add_new_x", cls.noun)}</button>
+        ) : (
+          <button type="button" className="rl-btn rl-go" onClick={() => openItem(null)}>{tr("rk_add_new_x", def.item.noun)}</button>
+        )}
+      </MenuRow>
+      <MenuRow>
+        {slots.commands?.(api)}
+      </MenuRow>
+      <MenuRow>
+        <button type="button" className="rl-btn" disabled={!picked.size} onClick={clearPicked}>clear</button>
+        {tab?.kind === 'items' && picked.size > 1 && (
+          <button type="button" className="rl-btn" title={tr("rk_bulk_edit_hint")}
+            onClick={openMany}>{tr("rk_bulk_edit_n", picked.size)}</button>
+        )}
+        {tab?.kind === 'items' && picked.size > 0 && listClasses.map((c) => (
+          <select key={c.k} className="rl-btn rl-pick" value=""
+            onChange={(e) => e.target.value && putInList(c, e.target.value)}>
+            <option value="">{tr("rk_put_in_x", c.noun)}</option>
+            <option value="+new">{tr("rk_add_new_x", c.noun)}</option>
+            {listsFor(c).map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name || l.id.slice(0, 8)} ({(l[c.list.ids] || []).length}){c.list.owner && l[c.list.owner] && l[c.list.owner] !== ME ? ` · ${l[c.list.owner]}` : ''}
+              </option>
+            ))}
+          </select>
+        ))}
+        {inList && (
+          <button type="button" className="rl-btn rl-tabonly"
+            onClick={() => { const l = findStored(inList, tab.key); if (l) openClass(inList, l) }}>{tr("rk_edit_x", inList.noun)}</button>
+        )}
+        {inList && picked.size > 0 && (
+          <button type="button" className="rl-btn" title={tr("rk_remove_from_this_hint", inList.label)}
+            onClick={() => takeOutOfList(inList, tab.key)}>{tr("rk_remove_from_x_n", inList.label, picked.size)}</button>
+        )}
+      </MenuRow>
+      <MenuRow>
+        {mergeable && (
+          <RackMergeButtons merge={merge} noun={cls.stored ? cls.noun : (clsField.label || cls.noun)}
+            onOpen={(names) => openEdit({ id: `merge:${cls.k}`, kind: 'merge', of: cls.k, names,
+              label: tr("rk_merge_n_x", cls.stored ? cls.noun : (clsField.label || cls.noun), names.length) })} />
+        )}
+        {/* `bundle`: the names picked, as a new item wearing them (a project of
+            tags) — matching any of them, or (`bundle.match`, the item's field
+            for it) all of them. */}
+        {mergeable && merge.mode && cls.bundle && ['or', 'and'].map((m) => (
+          <button key={m} type="button" className={`rl-btn${m === 'or' ? ' rl-go' : ''}`} disabled={!merge.size}
+            onClick={() => {
+              openItem(null, null, { [clsField.k]: merge.names,
+                ...(cls.bundle.match ? { [cls.bundle.match]: m } : {}),
+                ...(def.item.label === 'name' || !def.item.label ? { name: merge.names.join('_') } : {}) })
+              merge.off()
+            }}>
+            {tr(m === 'or' ? 'rk_bundle_any_n' : 'rk_bundle_all_n', def.item.noun, merge.size)}</button>
+        ))}
+      </MenuRow>
+      <MenuRow>
+        {fNow && <span data-keep className="rl-menu-keep"><FilterBar f={fNow} /></span>}
+        {tab?.kind === 'items' && (def.item.quick || []).map((q) => (
+          <button key={q.id} type="button" data-keep className={`rl-btn${quick.includes(q.id) ? ' on' : ''}`} title={q.title}
+            onClick={() => setQuick((xs) => (xs.includes(q.id) ? xs.filter((x) => x !== q.id) : [...xs, q.id]))}>{q.label}</button>
+        ))}
+      </MenuRow>
+      <MenuRow>
+        {!BARE && L.opened > 0 && (
+          <button type="button" className="rl-btn" title={tr("rk_close_tabs_hint")} onClick={L.closeOpened}>{tr("rk_close_tabs_n", L.opened)}</button>
+        )}
+        {panes.tabs.length > 0 && (
+          <button type="button" className="rl-btn" title={tr("rk_close_editors_hint")} onClick={panes.closeAll}>{tr("rk_close_editors_n", panes.tabs.length)}</button>
+        )}
+      </MenuRow>
+    </>
+  )
+  const menuButton = (
+    <RackMenu m={menuState} count={tab?.kind === 'frame' ? 0 : picked.size} lit={!!(fNow?.mode || fNow?.on || quick.length)}
+      onToggle={tab?.kind === 'frame' ? () => toFrame({ rackMenu: 'toggle' }) : undefined}>{menuRows}</RackMenu>
+  )
+  const findField = tab?.kind === 'frame' ? (
+    <input type="search" className="rl-find" value={frameFind} placeholder={tr("rk_find_in_list")}
+      onChange={(e) => { setFrameFind(e.target.value); toFrame({ rackFind: e.target.value }) }} />
+  ) : (
+    <input ref={findRef} type="search" className="rl-find"
+      value={fNow?.mode ? fNow.find : query}
+      placeholder={fNow?.mode ? tr("rk_find_value")
+        : cls ? tr("rk_find_in_list") : (def.item.findHint || tr("rk_find_x", def.item.noun))}
+      onChange={(e) => (fNow?.mode ? fNow.setFind : setQuery)(e.target.value)} />
+  )
+
   // The editors: docked left of the list, right of it, or FULL (panes.jsx).
   const lay = paneLayout(panes, showList && showEdit)
   const ps = paneStyles(lay, split, L.sides)
@@ -732,82 +887,8 @@ function RackList({ def: declared, slots = {} }) {
   return (
     <div className="rl" style={brandStyle()}>
       <section className="rl-mod">
-        {!BARE && <RackBar title={def.title} count={doc ? `${items.length}${def.unit}` : ''} />}
-
-        {/* Another service's list in a tab (frame) brings its own buttons: this
-            page's step aside while it is in front. */}
-        <div className="rl-cmd" style={tab?.kind === 'frame' ? { display: 'none' } : undefined}>
-          {cls?.stored ? (
-            /* Mustard: it is only here while a class tab is, and the colour is
-               what says so. */
-            <button type="button" className="rl-btn rl-tabonly" onClick={() => openClass(cls, null)}>{tr("rk_add_new_x", cls.noun)}</button>
-          ) : (
-            <button type="button" className="rl-btn rl-go" onClick={() => openItem(null)}>{tr("rk_add_new_x", def.item.noun)}</button>
-          )}
-          {mergeable && (
-            <RackMergeButtons merge={merge} noun={cls.stored ? cls.noun : (clsField.label || cls.noun)}
-              onOpen={(names) => openEdit({ id: `merge:${cls.k}`, kind: 'merge', of: cls.k, names,
-                label: tr("rk_merge_n_x", cls.stored ? cls.noun : (clsField.label || cls.noun), names.length) })} />
-          )}
-          {/* `bundle`: the names picked, as a new item wearing them (a project of
-              tags) — matching any of them, or (`bundle.match`, the item's field
-              for it) all of them. */}
-          {mergeable && merge.mode && cls.bundle && ['or', 'and'].map((m) => (
-            <button key={m} type="button" className={`rl-btn${m === 'or' ? ' rl-go' : ''}`} disabled={!merge.size}
-              onClick={() => {
-                openItem(null, null, { [clsField.k]: merge.names,
-                  ...(cls.bundle.match ? { [cls.bundle.match]: m } : {}),
-                  ...(def.item.label === 'name' || !def.item.label ? { name: merge.names.join('_') } : {}) })
-                merge.off()
-              }}>
-              {tr(m === 'or' ? 'rk_bundle_any_n' : 'rk_bundle_all_n', def.item.noun, merge.size)}</button>
-          ))}
-          {slots.commands?.(api)}
-          <button type="button" className="rl-btn" disabled={!picked.size} onClick={clearPicked}>clear</button>
-          {picked.size > 0 && <span className="rl-n">{tr("rk_select_x", picked.size)}</span>}
-          {tab?.kind === 'items' && picked.size > 1 && (
-            <button type="button" className="rl-btn" title={tr("rk_bulk_edit_hint")}
-              onClick={openMany}>{tr("rk_bulk_edit_n", picked.size)}</button>
-          )}
-          {tab?.kind === 'items' && picked.size > 0 && listClasses.map((c) => (
-            <select key={c.k} className="rl-btn rl-pick" value=""
-              onChange={(e) => e.target.value && putInList(c, e.target.value)}>
-              <option value="">{tr("rk_put_in_x", c.noun)}</option>
-              <option value="+new">{tr("rk_add_new_x", c.noun)}</option>
-              {listsFor(c).map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name || l.id.slice(0, 8)} ({(l[c.list.ids] || []).length}){c.list.owner && l[c.list.owner] && l[c.list.owner] !== ME ? ` · ${l[c.list.owner]}` : ''}
-                </option>
-              ))}
-            </select>
-          ))}
-          {inList && (
-            <button type="button" className="rl-btn rl-tabonly"
-              onClick={() => { const l = findStored(inList, tab.key); if (l) openClass(inList, l) }}>{tr("rk_edit_x", inList.noun)}</button>
-          )}
-          {inList && picked.size > 0 && (
-            <button type="button" className="rl-btn" title={tr("rk_remove_from_this_hint", inList.label)}
-              onClick={() => takeOutOfList(inList, tab.key)}>{tr("rk_remove_from_x_n", inList.label, picked.size)}</button>
-          )}
-          <span className="rl-gap" />
-          {!BARE && L.opened > 0 && (
-            <button type="button" className="rl-btn" title={tr("rk_close_tabs_hint")} onClick={L.closeOpened}>{tr("rk_close_tabs_n", L.opened)}</button>
-          )}
-          {panes.tabs.length > 0 && (
-            <button type="button" className="rl-btn" title={tr("rk_close_editors_hint")} onClick={panes.closeAll}>{tr("rk_close_editors_n", panes.tabs.length)}</button>
-          )}
-          {fNow && <FilterBar f={fNow} />}
-          {tab?.kind === 'items' && (def.item.quick || []).map((q) => (
-            <button key={q.id} type="button" className={`rl-btn${quick.includes(q.id) ? ' on' : ''}`} title={q.title}
-              onClick={() => setQuick((xs) => (xs.includes(q.id) ? xs.filter((x) => x !== q.id) : [...xs, q.id]))}>{q.label}</button>
-          ))}
-          <span className="rl-sp" />
-          <input ref={findRef} type="search" className="rl-find"
-            value={fNow?.mode ? fNow.find : query}
-            placeholder={fNow?.mode ? tr("rk_find_value")
-              : cls ? tr("rk_find_in_list") : (def.item.findHint || tr("rk_find_x", def.item.noun))}
-            onChange={(e) => (fNow?.mode ? fNow.setFind : setQuery)(e.target.value)} />
-        </div>
+        {!BARE && <RackBar title={def.title} count={doc ? `${items.length}${def.unit}` : ''} menu={menuButton} find={findField} />}
+        {BARE && <RackMenu m={menuState} bare>{menuRows}</RackMenu>}
 
         <div className="rl-body">
           {showEdit && lay.left.map((c) => editorPane(c, ps.left))}
@@ -974,7 +1055,7 @@ function RackList({ def: declared, slots = {} }) {
                 }} />
             )}
 
-            {tab?.kind === 'frame' && <iframe key={tab.src} className="rl-frame" src={tab.src} title={tab.label} />}
+            {tab?.kind === 'frame' && <iframe ref={frameRef} key={tab.src} className="rl-frame" src={tab.src} title={tab.label} />}
             {doc && tab?.kind === 'trash' && <RackTrash def={def} setDoc={setDoc} say={setNote} cols={L.colsOf('x:', TRASH_COLS)} onDrag={drag('x:')} />}
             {doc && tab?.kind === 'tagged' && (
               <RackTaggedTab rows={tgShown} cols={L.colsOf('t:', TAGGED_COLS)} onDrag={drag('t:')} onOpen={openRecord}
@@ -1009,7 +1090,7 @@ function RackList({ def: declared, slots = {} }) {
           </span>
           {/* What was deleted, and the way back — a manager's, as deleting is.
               A tab of its own when opened, not one always in the strip. */}
-          {IS_ADMIN && (
+          {IS_ADMIN && def.trash !== false && (
             <button type="button" className={`rl-btn rl-foot-btn${tab?.kind === 'trash' ? ' on' : ''}`} title={tr("rk_trash_hint")}
               onClick={() => openTab({ id: 'trash', kind: 'trash', label: tr("rk_trash") })}>{tr("rk_trash")}</button>
           )}

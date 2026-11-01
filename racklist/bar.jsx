@@ -10,18 +10,23 @@ import { tr } from 'lilak-ui/i18n.jsx'
  *
  *   <RackBar title="노트" count="12개" />
  *
+ * A list puts its ⋯ (what the tab can do) at the far left and its search at
+ * the right: `menu`, `find`.
+ *
  * ↻ and ⌘R / Ctrl+R reload this service only — inside the portal, the panel,
  * not the portal around it (after a sync, a new build). ⇧⌘R is left to the
  * browser: everything, the hard way.
  */
-export function RackBar({ title, count, project = PORTAL_PROJECT, children }) {
+export function RackBar({ title, count, project = PORTAL_PROJECT, menu = null, find = null, children }) {
   useReloadKey()
   return (
     <header className="rl-bar">
+      {menu}
       <b>{title}</b>
       {count ? <span className="rl-n">{count}</span> : null}
       {children}
       <span className="rl-sp" />
+      {find}
       <span className="rl-n">{project}</span>
       <button type="button" className="rl-reload" title={tr("rk_reload_service")}
         onClick={() => window.location.reload()}>↻</button>

@@ -257,6 +257,46 @@ body.rl-page {
   border-bottom: 1px solid var(--rk-edge);
 }
 .rl-tabs::-webkit-scrollbar { width: 0; height: 0; }
+/* ⋯ at the left of the title bar: what the tab can do. Its menu pops out
+   OVER the tabs and the list, one line per kind of thing — however many
+   buttons, nothing moves. (In a bare page it hangs from the top-left.) */
+.rl-menuwrap { position: relative; display: inline-flex; flex: 0 0 auto; }
+.rl-menuwrap.rl-bare { position: absolute; top: 0; left: 6px; z-index: 20; height: 0; }
+.rl-mod { position: relative; }
+.rl-btn.rl-more { padding: 0 7px; gap: 4px; font-weight: 600; letter-spacing: 1px; }
+.rl-btn.rl-more.on { background: var(--rk-ink); border-color: var(--rk-ink); color: #fff; }
+/* A filter is on while its controls are tucked away: the ⋯ says so. */
+.rl-btn.rl-more.rl-lit:not(.on) { border-color: var(--rk-cite-t); color: var(--rk-cite-t); }
+.rl-more-n {
+  min-width: 14px; height: 14px; padding: 0 3px;
+  border-radius: 7px; background: var(--rk-cite-t); color: #fff;
+  font-size: var(--fs-micro); line-height: 14px; letter-spacing: 0; text-align: center;
+}
+.rl-menu {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: -5px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  max-width: min(520px, 90vw);
+  background: var(--rk-panel);
+  border: 1px solid var(--rk-ink);
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--rk-ink) 18%, transparent);
+  color: var(--rk-dim);
+}
+.rl-menuwrap.rl-bare .rl-menu { top: 4px; left: 0; }
+.rl-menu-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 6px;
+  padding: 6px 8px;
+}
+.rl-menu-row + .rl-menu-row { border-top: 1px solid var(--rk-line); }
+.rl-menu-keep { display: contents; }
+.rl-bar .rl-find { flex: 0 1 220px; min-width: 110px; }
 .rl-tab {
   display: flex;
   align-items: center;
