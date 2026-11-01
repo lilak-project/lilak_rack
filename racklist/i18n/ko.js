@@ -242,6 +242,7 @@ export default {
   rk_close_tabs_hint: "열어둔 탭을 모두 닫습니다",
   rk_close_tabs_n: (a0) => `탭 닫기 (${a0})`,
   rk_close_editors_hint: "편집 패널의 탭을 모두 닫습니다",
+  rk_find_in_editor: "이 편집창에서 찾기   (⌘F)",
   rk_more_hint: "이 탭에서 할 수 있는 것 (새로 만들기, 선택, 필터)",
   rk_close_editors_n: (a0) => `편집 닫기 (${a0})`,
   rk_find_value: "고를 값 찾기   (⌘F)",

@@ -90,10 +90,12 @@ body.rl-page {
 .rl-bar {
   flex: 0 0 auto;
   display: flex;
-  align-items: center;
+  /* The tabs stand on the bar's floor, so the chosen one runs into the table
+     below; the menu and ↻ sit in the middle of the first row. */
+  align-items: flex-end;
   gap: 9px;
-  height: 36px;
-  padding: 0 11px;
+  min-height: 36px;
+  padding: 0 11px 0 6px;
   background: var(--rk-brand, var(--rk-head));
   color: var(--rk-brand-t, var(--rk-dim));
   border-bottom: 1px solid var(--rk-edge);
@@ -263,7 +265,7 @@ body.rl-page {
 .rl-menuwrap { position: relative; display: inline-flex; flex: 0 0 auto; }
 .rl-menuwrap.rl-bare { position: absolute; top: 0; left: 6px; z-index: 20; height: 0; }
 .rl-mod { position: relative; }
-.rl-btn.rl-more { padding: 0 7px; gap: 4px; font-weight: 600; letter-spacing: 1px; }
+.rl-btn.rl-more { padding: 0 7px; gap: 4px; }
 .rl-btn.rl-more.on { background: var(--rk-ink); border-color: var(--rk-ink); color: #fff; }
 /* A filter is on while its controls are tucked away: the ⋯ says so. */
 .rl-btn.rl-more.rl-lit:not(.on) { border-color: var(--rk-cite-t); color: var(--rk-cite-t); }
@@ -296,7 +298,23 @@ body.rl-page {
 }
 .rl-menu-row + .rl-menu-row { border-top: 1px solid var(--rk-line); }
 .rl-menu-keep { display: contents; }
-.rl-bar .rl-find { flex: 0 1 220px; min-width: 110px; }
+/* The search, at the foot beside the bin. */
+.rl-foot .rl-find { flex: 0 1 220px; min-width: 110px; height: calc(var(--rk-row) - 8px); }
+/* The menu: the service's name, on a button as wide in every service. */
+.rl-bar > .rl-menuwrap, .rl-bar > .rl-reload { align-self: center; }
+.rl-btn.rl-more { width: 160px; justify-content: flex-start; letter-spacing: 0; font-weight: 400; }
+.rl-more-l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.rl-more-c { flex: none; font-size: var(--fs-micro); opacity: .7; }
+/* The tabs on the bar: the chosen one is the table's own white, the rest a
+   lighter sheet of the bar's colour — the front sheet of a folder. */
+.rl-bar > .rl-tabs { flex: 0 1 auto; min-width: 0; align-self: flex-end; background: transparent; border-bottom: 0; }
+.rl-bar .rl-tab:not(.rl-opened) {
+  background: color-mix(in srgb, #fff 16%, transparent);
+  color: var(--rk-brand-t, #fff);
+  border-right: 1px solid color-mix(in srgb, #000 18%, transparent);
+}
+.rl-bar .rl-tab:not(.rl-opened) .rl-tabname { color: inherit; }
+.rl-bar .rl-tab.on:not(.rl-opened) { background: var(--rk-panel); color: var(--rk-ink); }
 .rl-tab {
   display: flex;
   align-items: center;
@@ -1030,3 +1048,21 @@ body.rl-copying, body.rl-copying * { cursor: copy !important; }
    in — no .rl padding, so it sits exactly as it does in its own list's pane. */
 .rl-solo { height: 100vh; padding: 0; background: var(--rk-panel); }
 .rl-solo-note { padding: 4px 11px; border-top: 1px solid var(--rk-line); }
+
+/* Find in an editor pane (panefind.jsx): a line under the pane's tabs. */
+.rl-pfind {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--rk-row);
+  padding: 0 8px;
+  background: var(--rk-gut);
+  border-bottom: 1px solid var(--rk-line);
+}
+.rl-pfind .rl-find { flex: 0 1 260px; height: calc(var(--rk-row) - 6px); }
+.rl-pfind .rl-btn { height: calc(var(--rk-row) - 6px); padding: 0 7px; }
+::highlight(rl-find) { background: color-mix(in srgb, #ffd43b 55%, transparent); color: inherit; }
+::highlight(rl-find-now) { background: #ff922b; color: #000; }
+.rl-find-field { outline: 2px solid color-mix(in srgb, #ffd43b 80%, transparent); outline-offset: -1px; }
+.rl-find-field.now { outline-color: #ff922b; }

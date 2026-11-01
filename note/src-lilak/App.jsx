@@ -212,11 +212,10 @@ async function saveNotes(next, doc) {
 
 const NOTE_DEF = {
   name: 'note', key: 'note', title: tr("nt_notes"), unit: tr("nt_unit"),
-  // No rackstore behind it: no trash of the kit's (a note deleted is a file gone).
-  trash: false,
   source: { load: loadNotes, save: saveNotes },
   item: {
     key: 'notes', noun: tr("nt_noun"), label: 'title', tabId: 'notes', allLabel: 'notes',
+    findHint: tr("nt_find_hint"),
     order: { k: 'date', dir: -1 },
     // Made at once by the API (a file needs a name), then opened at its title.
     create: async () => {

@@ -99,6 +99,34 @@ export default function RawArea({ value, onChange, live = false, tex = false, fi
       }),
     })
     view.current = v
+    // The pane's ⌘F (racklist panefind.jsx) finds in the whole document — the
+    // DOM holds only the lines on screen. Offsets in the text, so a wrapped
+    // line is still the file's line.
+    let found = []
+    v.dom.rackFind = {
+      find: (q) => {
+        const text = v.state.doc.toString().toLowerCase()
+        found = []
+        for (let i = q ? text.indexOf(q) : -1; i >= 0; i = text.indexOf(q, i + q.length)) found.push([i, i + q.length])
+        return found.length
+      },
+      // Scrolled to, the match is on screen: its text, as a range the bar can light.
+      show: (i) => new Promise((done) => {
+        const [from, to] = found[i] || []
+        if (from == null) { done(null); return }
+        v.dispatch({ selection: { anchor: from, head: to }, effects: EditorView.scrollIntoView(from, { y: 'center' }) })
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          try {
+            const a = v.domAtPos(from), b = v.domAtPos(to)
+            const r = document.createRange()
+            r.setStart(a.node, a.offset)
+            r.setEnd(b.node, b.offset)
+            done(r)
+          } catch { done(null) }
+        }))
+      }),
+      clear: () => {},
+    }
     return () => { v.destroy(); view.current = null }
   }, [])   // eslint-disable-line react-hooks/exhaustive-deps
 

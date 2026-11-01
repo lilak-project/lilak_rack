@@ -4,6 +4,7 @@ import { RackTable, RackRow, RackTabs } from './table.jsx'
 import { RackPaneStrip, paneLayout, paneStyles, FULL } from './panes.jsx'
 import { RackBar } from './bar.jsx'
 import { RackMenu, MenuRow, useRackMenu } from './menu.jsx'
+import { PaneFind } from './panefind.jsx'
 import { RackCalendar } from './calendar.jsx'
 import { RackTrash, TRASH_COLS } from './trash.jsx'
 import { occurrences, parseRule, withUntil, withCount } from './rrule.js'
@@ -31,11 +32,11 @@ import { RackTagged, RackTaggedTab, TAGGED_COLS, TAGGED_SORTERS, useTaggedRows }
 /**
  * <RackService def={…} /> — a whole rack-list service from its declaration.
  *
- *   타이틀 바     the service's name, how many, the project — in its own colour
- *   버튼 스페이스  + 새 항목, clear, the selection, 탭 닫기 · 편집 닫기, the filter, search
- *   탭 스페이스    every item · one tab per class · the tabs you opened · settings
+ *   타이틀 바     [서비스 이름 ▾] (what the tab can do) · the tabs · ↻ — in its own colour
+ *                 the tabs: every item · one tab per class · the tabs you opened · settings
  *   [표]          the items (or a class's records), with [나열] under it
  *   [편집창]      beside it: an item, a class record, a tag, a file, a folder
+ *   발 줄         what was just done · how many · the search · 휴지통
  *
  * Nothing here knows what the records are about; `def` (see defineRack) does.
  *
@@ -857,7 +858,7 @@ function RackList({ def: declared, slots = {} }) {
     </>
   )
   const menuButton = (
-    <RackMenu m={menuState} count={tab?.kind === 'frame' ? 0 : picked.size} lit={!!(fNow?.mode || fNow?.on || quick.length)}
+    <RackMenu m={menuState} label={def.title} count={tab?.kind === 'frame' ? 0 : picked.size} lit={!!(fNow?.mode || fNow?.on || quick.length)}
       onToggle={tab?.kind === 'frame' ? () => toFrame({ rackMenu: 'toggle' }) : undefined}>{menuRows}</RackMenu>
   )
   const findField = tab?.kind === 'frame' ? (
@@ -871,14 +872,38 @@ function RackList({ def: declared, slots = {} }) {
       onChange={(e) => (fNow?.mode ? fNow.setFind : setQuery)(e.target.value)} />
   )
 
+  // ⌘F while looking at an editor (the last press or focus was in it) finds in
+  // THAT pane (panefind.jsx); anywhere else it is the list's search, at the foot.
+  const [pfind, setPfind] = useState(null)        // { col, n }
+  useEffect(() => {
+    let at = null
+    const mark = (e) => { at = e.target?.closest?.('.rl-epane') || null }
+    const key = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'f' || !at?.isConnected) return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      const col = at.dataset.col
+      setPfind((f) => ({ col, n: (f?.n || 0) + 1 }))
+    }
+    window.addEventListener('mousedown', mark, true)
+    window.addEventListener('focusin', mark, true)
+    window.addEventListener('keydown', key, true)
+    return () => {
+      window.removeEventListener('mousedown', mark, true)
+      window.removeEventListener('focusin', mark, true)
+      window.removeEventListener('keydown', key, true)
+    }
+  }, [])
+
   // The editors: docked left of the list, right of it, or FULL (panes.jsx).
   const lay = paneLayout(panes, showList && showEdit)
   const ps = paneStyles(lay, split, L.sides)
   const editorPane = (c, style) => {
     const etab = panes.current(c)
     return (
-      <div key={c} className="rl-pane rl-epane" onMouseDown={() => { if (c !== FULL) panes.setCol(c) }} style={style}>
+      <div key={c} className="rl-pane rl-epane" data-col={c} onMouseDown={() => { if (c !== FULL) panes.setCol(c) }} style={style}>
         <RackPaneStrip panes={panes} col={c} />
+        {pfind?.col === String(c) && <PaneFind again={pfind.n} onClose={() => setPfind(null)} />}
         {etab && editorFor(etab)}
       </div>
     )
@@ -887,14 +912,14 @@ function RackList({ def: declared, slots = {} }) {
   return (
     <div className="rl" style={brandStyle()}>
       <section className="rl-mod">
-        {!BARE && <RackBar title={def.title} count={doc ? `${items.length}${def.unit}` : ''} menu={menuButton} find={findField} />}
+        {!BARE && <RackBar menu={menuButton}
+          tabs={<RackTabs tabs={tabs} active={L.active} fixed={FIXED} onPick={L.setActive} onClose={closeTab} />} />}
         {BARE && <RackMenu m={menuState} bare>{menuRows}</RackMenu>}
 
         <div className="rl-body">
           {showEdit && lay.left.map((c) => editorPane(c, ps.left))}
           {ps.before && <div {...ps.before} />}
           {showList && (<div className="rl-pane" style={ps.list}>
-            {!BARE && <RackTabs tabs={tabs} active={L.active} fixed={FIXED} onPick={L.setActive} onClose={closeTab} />}
 
             {err && <p className="rl-msg">{err}</p>}
             {!err && !doc && <p className="rl-msg">{tr("rk_loading")}</p>}
@@ -1056,7 +1081,7 @@ function RackList({ def: declared, slots = {} }) {
             )}
 
             {tab?.kind === 'frame' && <iframe ref={frameRef} key={tab.src} className="rl-frame" src={tab.src} title={tab.label} />}
-            {doc && tab?.kind === 'trash' && <RackTrash def={def} setDoc={setDoc} say={setNote} cols={L.colsOf('x:', TRASH_COLS)} onDrag={drag('x:')} />}
+            {doc && tab?.kind === 'trash' && <RackTrash def={def} reload={reload} say={setNote} cols={L.colsOf('x:', TRASH_COLS)} onDrag={drag('x:')} />}
             {doc && tab?.kind === 'tagged' && (
               <RackTaggedTab rows={tgShown} cols={L.colsOf('t:', TAGGED_COLS)} onDrag={drag('t:')} onOpen={openRecord}
                 // A group's authors: that service's own list of it, as a tab here.
@@ -1090,6 +1115,8 @@ function RackList({ def: declared, slots = {} }) {
           </span>
           {/* What was deleted, and the way back — a manager's, as deleting is.
               A tab of its own when opened, not one always in the strip. */}
+          {/* The search, at the foot beside the bin: ⌘F finds it here. */}
+          {!BARE && findField}
           {IS_ADMIN && def.trash !== false && (
             <button type="button" className={`rl-btn rl-foot-btn${tab?.kind === 'trash' ? ' on' : ''}`} title={tr("rk_trash_hint")}
               onClick={() => openTab({ id: 'trash', kind: 'trash', label: tr("rk_trash") })}>{tr("rk_trash")}</button>

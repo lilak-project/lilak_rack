@@ -21,7 +21,7 @@ export const TRASH_COLS = [
   { k: 'act', w: 96, min: 80, fix: true },
 ]
 
-export function RackTrash({ def, setDoc, say, cols = TRASH_COLS, onDrag }) {
+export function RackTrash({ def, reload, say, cols = TRASH_COLS, onDrag }) {
   const [rows, setRows] = useState(null)
   const load = useCallback(() => {
     fetch(`${PORTAL_BASE}/api/trash`, { headers: authHeaders() })
@@ -48,7 +48,7 @@ export function RackTrash({ def, setDoc, say, cols = TRASH_COLS, onDrag }) {
       body: JSON.stringify({ key: t.key, id: t.record.id }),
     })
     if (!r.ok) { say(tr("rk_restore_failed", r.status)); return }
-    setDoc(await r.json())
+    await reload()
     say(tr("rk_restored", what(t), name(t)))
     load()
   }

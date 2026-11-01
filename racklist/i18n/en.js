@@ -242,6 +242,7 @@ export default {
   rk_close_tabs_hint: "Closes every open tab",
   rk_close_tabs_n: (a0) => `Close tabs (${a0})`,
   rk_close_editors_hint: "Closes every tab in the editor panel",
+  rk_find_in_editor: "Find in this editor   (⌘F)",
   rk_more_hint: "What this tab can do (new, selection, filters)",
   rk_close_editors_n: (a0) => `Close editors (${a0})`,
   rk_find_value: "Find a value   (⌘F)",
