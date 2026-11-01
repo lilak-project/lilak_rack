@@ -24,6 +24,7 @@ import {
   RackEditClass,
   bySome, asSorts, bumpSort, byKeys, FilterBar, FacetRows,
   PORTAL_BASE, PORTAL_PROJECT, brandStyle, projectKey, load, authHeaders, RackBar, takeOpenRequest,
+  RackMenu, MenuRow, useRackMenu,
   tagKey, mergeTags as tagCounts, useTagSources, sharedTagRows, uniqueTags, PORTAL_SERVICE,
   useFavTags, RackStar, useProjects, useReferences, openInService,
 } from 'racklist'
@@ -34,7 +35,7 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { remarkSoftBreaks } from 'lilak-ui/log/Markdown.jsx'
-import { TAG_RE, PROJ_RE, EMBED_RE, embedSpec, isImage, setTagChoices, setProjChoices, isProject } from './marks.js'
+import { TAG_RE, PROJ_RE, EMBED_RE, embedSpec, isImage, setTagChoices, setProjChoices, setCiteChoices, isProject } from './marks.js'
 import SourceArea from './SourceArea.jsx'
 import 'katex/dist/katex.min.css'
 import 'racklist/rack.css'
@@ -45,6 +46,8 @@ const VIEW_KEY = projectKey('nt', 'view')
 /** Where a file a note embeds is served from. `note` is the tex note whose
  *  own folder to look in first (see the backend's `_files`); a markdown note
  *  passes nothing and reads the project's shared files folder. */
+/** `\cite{a,b}`, `\citep[see][]{c}` — the keys a tex note's body calls for. */
+const CITE_IN_TEXT = /\\[a-zA-Z]*cite[a-zA-Z]*(?:\[[^\]]*\])*\{([^}]*)\}/g
 const noteQ = (note) => (note ? `?note=${encodeURIComponent(note)}` : '')
 const fileSrc = (name, note) => `${PORTAL_BASE}/api/file/${encodeURIComponent(name)}${noteQ(note)}`
 /** A file dropped into a note: stored beside the notes, named back. Not `api`
@@ -525,57 +528,73 @@ export default function App() {
     )
   }
 
+  // What the tab can do, behind the ⋯ at the left of the title bar (racklist menu.jsx).
+  const menu = useRackMenu()
+
   return (
     <div className="rl" style={brandStyle()}>
       <section className="rl-mod">
-        <RackBar title={tr("nt_notes")} count={index ? tr("nt_n", notes.length) : ''} />
-
-        <div className="rl-cmd">
-          <button type="button" className="rl-btn rl-go" onClick={() => create(null)}>{tr("nt_new_note")}</button>
-          <button type="button" className="rl-btn rl-go" title={tr("nt_today_hint")}
-            onClick={openDaily}>daily</button>
-          {!!index?.templates?.length && (
-            /* A template is a note in templates/ — so this list is a folder
-               listing, not a feature with a store behind it. */
-            <select className="rl-btn rl-go rl-pick" value=""
-              onChange={(e) => { if (e.target.value) create(e.target.value) }}>
-              <option value="">{tr("nt_from_template")}</option>
-              {index.templates.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
+        <RackBar title={tr("nt_notes")} count={index ? tr("nt_n", notes.length) : ''}
+          menu={(
+            <RackMenu m={menu} count={picked.size} lit={!!filter.mode || filter.on}>
+              <MenuRow>
+                <button type="button" className="rl-btn rl-go" onClick={() => create(null)}>{tr("nt_new_note")}</button>
+                <button type="button" className="rl-btn rl-go" title={tr("nt_today_hint")}
+                  onClick={openDaily}>daily</button>
+                {!!index?.templates?.length && (
+                  /* A template is a note in templates/ — so this list is a folder
+                     listing, not a feature with a store behind it. */
+                  <select className="rl-btn rl-go rl-pick" value=""
+                    onChange={(e) => { if (e.target.value) create(e.target.value) }}>
+                    <option value="">{tr("nt_from_template")}</option>
+                    {index.templates.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                )}
+              </MenuRow>
+              <MenuRow>
+                <button type="button" className="rl-btn" disabled={!picked.size}
+                  onClick={() => preview([...picked])}>{tr("nt_preview_n", picked.size)}</button>
+                <button type="button" className="rl-btn" disabled={!picked.size}
+                  onClick={clearPicked}>clear</button>
+              </MenuRow>
+              <MenuRow>
+                {onTags && (
+                  <RackMergeButtons merge={merge} noun={tr("nt_tag")}
+                    onOpen={(names) => panes.open({ id: 'mergetags', kind: 'mergetags', names,
+                      label: tr("nt_merge_n_tags", names.length) })} />
+                )}
+              </MenuRow>
+              <MenuRow>
+                {tab?.kind === 'notes' && <span data-keep className="rl-menu-keep"><FilterBar f={filter} /></span>}
+                {tab?.kind === 'todos' && TODO_SCOPES.map((x) => (
+                  <button key={x.k} type="button" data-keep className={`rl-btn${tscope === x.k ? ' on' : ''}`}
+                    onClick={() => setTscope(x.k)}>
+                    {x.label} ({todos.filter(x.is).length})
+                  </button>
+                ))}
+              </MenuRow>
+              <MenuRow>
+                {tabs.length > FIXED.length && (
+                  <button type="button" className="rl-btn" title={tr("nt_close_tabs_hint")}
+                    onClick={L.closeOpened}>{tr("nt_close_tabs_n", tabs.length - FIXED.length)}</button>
+                )}
+                {panes.count > 0 && (
+                  <button type="button" className="rl-btn" title={tr("nt_close_editors_hint")}
+                    onClick={panes.closeAll}>{tr("nt_close_editors_n", panes.count)}</button>
+                )}
+              </MenuRow>
+            </RackMenu>
           )}
-          <button type="button" className="rl-btn" disabled={!picked.size}
-            onClick={() => preview([...picked])}>{tr("nt_preview_n", picked.size)}</button>
-          {onTags && (
-            <RackMergeButtons merge={merge} noun={tr("nt_tag")}
-              onOpen={(names) => panes.open({ id: 'mergetags', kind: 'mergetags', names,
-                label: tr("nt_merge_n_tags", names.length) })} />
-          )}
-          <button type="button" className="rl-btn" disabled={!picked.size}
-            onClick={clearPicked}>clear</button>
-          {tabs.length > FIXED.length && (
-            <button type="button" className="rl-btn" title={tr("nt_close_tabs_hint")}
-              onClick={L.closeOpened}>{tr("nt_close_tabs_n", tabs.length - FIXED.length)}</button>
-          )}
-          {panes.count > 0 && (
-            <button type="button" className="rl-btn" title={tr("nt_close_editors_hint")}
-              onClick={panes.closeAll}>{tr("nt_close_editors_n", panes.count)}</button>
-          )}
-          <span className="rl-gap" />
-          {tab?.kind === 'notes' && <FilterBar f={filter} />}
-          {tab?.kind === 'todos' && TODO_SCOPES.map((x) => (
-            <button key={x.k} type="button" className={`rl-btn${tscope === x.k ? ' on' : ''}`}
-              onClick={() => setTscope(x.k)}>
-              {x.label} ({todos.filter(x.is).length})
-            </button>
-          ))}
-          <span className="rl-sp" />
-          {/* One box: the list, or — while the filter is choosing — the values
-              on offer. */}
-          <input ref={findRef} type="search" className="rl-find"
-            value={filter.mode ? filter.find : query}
-            placeholder={filter.mode ? tr("nt_find_value") : tr("nt_find_hint")}
-            onChange={(e) => (filter.mode ? filter.setFind : setQuery)(e.target.value)} />
-        </div>
+          find={(
+            <>
+              {/* One box: the list, or — while the filter is choosing — the values
+                  on offer. */}
+              <input ref={findRef} type="search" className="rl-find"
+                value={filter.mode ? filter.find : query}
+                placeholder={filter.mode ? tr("nt_find_value") : tr("nt_find_hint")}
+                onChange={(e) => (filter.mode ? filter.setFind : setQuery)(e.target.value)} />
+            </>
+          )} />
 
         <div className="rl-body">
           {showEdit && lay.left.map((c) => notePane(c, ps.left))}
@@ -759,11 +778,32 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   // this tab remembers, because opening the PDF beside the text replaces this
   // editor in its pane: coming back builds a new one, which remembers nothing.
   const [pdfAt, setPdfAt] = useState('')
+  // What the last zip import brought in, shown once and dismissed. Not stored
+  // on the note: it describes an act, not the document.
+  const [imp, setImp] = useState(null)
+  // The cite keys this note's own .bib defines — what a `\cite{}` will
+  // actually resolve when it compiles. reference_manager's library is the
+  // other half of the menu, and the two are not the same thing: a key only
+  // the library has will still come out of the PDF as a `?`.
+  const [bib, setBib] = useState([])
   // Which paper this document IS — reference_manager's record, named by the
   // cite key, which is both what `\cite{…}` writes and what reads as a word
   // in the file. The key is stored; the record behind it is looked up, so a
   // key that names nothing simply has nothing to open.
   const references = useReferences()
+  // Asked again after an import, which is what brings a .bib in.
+  useEffect(() => {
+    if (!tex) { setBib([]); return }
+    ask(`/bib/${encodeURIComponent(id)}`).then(({ body }) => setBib(body.keys || [])).catch(() => setBib([]))
+  }, [id, tex, imp])   // eslint-disable-line react-hooks/exhaustive-deps
+  // The menu is the editor module's, not a prop: the same shape the tag and
+  // project menus use. The bib's keys are marked, so they can be offered first
+  // and checked against the body.
+  useEffect(() => setCiteChoices(!tex ? [] : [
+    ...bib.map((c) => ({ ...c, bib: true })),
+    ...references.filter((r) => !bib.some((c) => c.key === r.citeKey))
+      .map((r) => ({ key: r.citeKey, title: r.title, bib: false })),
+  ]), [tex, bib, references])
   const pdfUrl = (frame) => `${PORTAL_BASE}/api/pdf/${encodeURIComponent(id)}?v=${pdfAt}`
     // No toolbar inside our own tab — the pane is small and the browser's bar
     // is half of it. A browser tab gets the whole viewer, which is the point
@@ -834,6 +874,19 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   const tags = bodyTags(f.body)
   const refKey = String(f.fields?.reference || '').trim()
   const ref = refKey ? references.find((r) => r.citeKey === refKey) : null
+  // Keys the body cites that this note's bib does not define: each one is a
+  // `?` in the PDF. Checked only when there IS a bib — a note without one
+  // has nothing to be measured against, not a hundred mistakes.
+  const missing = !tex || !bib.length ? [] : (() => {
+    const known = new Set(bib.map((c) => c.key))
+    const out = []
+    for (const m of f.body.matchAll(CITE_IN_TEXT)) {
+      for (const k of m[1].split(',').map((x) => x.trim())) {
+        if (k && k !== '*' && !known.has(k) && !out.includes(k)) out.push(k)
+      }
+    }
+    return out
+  })()
   async function saveNote() {
     const { conflict, body } = await putNote(id, n.version, f)
     if (conflict) {
@@ -857,6 +910,32 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
       if (!body.ok) return
       setPdfAt(body.pdf_at || '')
       onPdf?.(id, f.title, body.pdf_at || '')
+    } catch (e) {
+      say(String(e.message || e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  /** A LaTeX manuscript zip becomes THIS note: main.tex as the body, the rest
+   *  in the note's own files folder, the paths in the body rewritten to match.
+   *  The server does all of it and hands back the note it wrote — so what is
+   *  on screen is what is on disk, and revert still holds the note as this tab
+   *  found it. */
+  async function importZip(file) {
+    setBusy(true)
+    try {
+      const form = new FormData()
+      form.append('f', file)
+      const r = await fetch(`${PORTAL_BASE}/api/import/${encodeURIComponent(id)}`,
+        { method: 'POST', headers: authHeaders(), body: form })
+      const body = await r.json()
+      if (!r.ok) throw new Error(body.detail || tr("nt_upload_failed", r.status))
+      setN(body); setF(body)
+      setErrs(null); setPdfAt(body.pdf_at || '')
+      setImp(body)
+      // Which paper this manuscript IS cannot be read out of the zip — its own
+      // .bib holds what it cites, not itself. So the fold opens on the cite box.
+      if (!String(body.fields?.reference || '').trim()) setOpen(true)
     } catch (e) {
       say(String(e.message || e))
     } finally {
@@ -889,6 +968,13 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
               <option value="read">{tr("nt_preview")}</option>
             </select>
           )}
+          {/* A file input wearing the bar's button: picking a file is the whole
+              act, and it is the one explicit way in — a zip REPLACES the body,
+              so it must not happen because something was dragged. */}
+          {tex ? <label className="rl-btn nt-zipbtn" title={tr("nt_zip_hint")}>{tr("nt_zip")}
+            <input type="file" accept=".zip,application/zip" hidden disabled={busy}
+              onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) importZip(file) }} />
+          </label> : null}
           {tex ? <button type="button" className="rl-btn" onClick={compile}
             disabled={busy || asPdf} title={asPdf ? tr("nt_tex_fresh") : undefined}>
             {busy ? tr("nt_tex_running") : tr("nt_tex_compile")}</button> : null}
@@ -992,6 +1078,16 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
             fileSrc={(name) => fileSrc(name, tex ? id : '')} onOpenNote={onOpenNote}
             onFiles={(file) => putFile(file, tex ? id : '').catch((e) => { say(String(e.message || e)); return null })}
             value={f.body} onChange={(v) => setF((s) => ({ ...s, body: v }))} />
+          {tex && imp ? (
+            <div className="nt-zipin">
+              <span>{tr("nt_zip_in", imp.main, imp.files?.length || 0, imp.bib_keys?.length || 0)}</span>
+              {refKey ? null : <span className="rl-hint">{tr("nt_zip_cite")}</span>}
+              <button type="button" className="rl-btn" onClick={() => setImp(null)}>×</button>
+            </div>
+          ) : null}
+          {missing.length ? (
+            <div className="nt-texerr">{tr("nt_cite_missing", missing.length)} <b>{missing.join(', ')}</b></div>
+          ) : null}
           {tex && errs?.length ? (
             <div className="nt-texerr">
               {errs.map((e, i) => (

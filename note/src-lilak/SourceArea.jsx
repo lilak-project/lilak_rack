@@ -6,7 +6,7 @@ import { syntaxHighlighting, defaultHighlightStyle, StreamLanguage } from '@code
 import { markdown, markdownLanguage, markdownKeymap } from '@codemirror/lang-markdown'
 import { stex } from '@codemirror/legacy-modes/mode/stex'
 import { livePreview, liveLook } from './livemd.js'
-import { tagComplete, dueKeys, takeFiles, tableKeys, tableInput } from './liveedit.js'
+import { tagComplete, citeComplete, dueKeys, takeFiles, tableKeys, tableInput } from './liveedit.js'
 
 /** The note as the file has it, in a real text editor — plain (`원문`) or with
  *  the markdown drawn over it (`라이브`).
@@ -74,6 +74,8 @@ export default function RawArea({ value, onChange, live = false, tex = false, fi
           ...(tex ? [
             keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
             StreamLanguage.define(stex),
+            // The one menu a LaTeX document wants: the keys it can cite.
+            citeComplete,
           ] : [
             // A table's own Tab and Enter go first: the general keymap's Tab
             // indents the line, which is not what a cell wants.

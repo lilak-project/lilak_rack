@@ -73,4 +73,22 @@ const offer = (names, q) => {
   return [...starts, ...inside].filter((t) => t !== q).slice(0, 8)
 }
 export const choicesFor = (q) => offer(CHOICES, q)
+
+/** The cite keys `\cite{` offers. Two lists in one: the note's own `.bib`
+ *  (what will actually resolve when it compiles) and reference_manager's
+ *  library (what can be cited once it is added to the bib). Each carries its
+ *  title, so a key that is six letters of someone's name is still readable in
+ *  the menu. */
+let CITES = []
+export const setCiteChoices = (list) => { CITES = list || [] }
+/** Only the keys the note's own bib defines — a `\cite{}` of anything else
+ *  comes out of the PDF as a `?`. Empty when the note has no bib at all,
+ *  which is also how "nothing to check" is said. */
+export const bibKeys = () => new Set(CITES.filter((c) => c.bib).map((c) => c.key))
+export const citesFor = (q) => {
+  const k = lower(q)
+  const hit = (c) => lower(c.key).startsWith(k) || lower(c.title || '').includes(k)
+  // The bib's own keys first: those are the ones that compile.
+  return CITES.filter(hit).sort((a, b) => (b.bib ? 1 : 0) - (a.bib ? 1 : 0)).slice(0, 12)
+}
 export const projectsFor = (q) => offer(PROJECTS, q)

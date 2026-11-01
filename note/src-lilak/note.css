@@ -291,6 +291,18 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 }
 .nt-texerr b { font-weight: 600; margin-right: 6px; }
 
+/* What a zip import brought in — one line, said once, then dismissed. Sits
+   where the compile errors sit, because both report on the last act. */
+.nt-zipin {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+  padding: 4px 10px; border-top: 1px solid var(--rk-line);
+  background: var(--rk-gut); font-size: var(--fs-small);
+}
+.nt-zipin > span:first-child { font-family: var(--rk-mono); }
+/* A file input wearing a button: the input itself is hidden, and the label is
+   what the bar draws — so it has to centre its text like a button does. */
+.nt-zipbtn { display: inline-flex; align-items: center; cursor: pointer; }
+
 /* ── 라이브: the markdown drawn over the text that is still the file ──────
    Only paint — every rule here is a decoration over characters that stay
    exactly as the note has them (livemd.js). The line the caret is in shows

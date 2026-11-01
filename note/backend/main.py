@@ -15,6 +15,7 @@ Concurrency: a note carries the file's mtime as its version. A PUT sends the
 `baseVersion` it read; if the file moved on, it is rejected with 409 and the
 current note, rather than overwriting someone's paragraph.
 """
+import io
 import os
 import re
 import shutil
@@ -22,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 import unicodedata
+import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -609,6 +611,167 @@ def _pdfify(p: Path) -> str:
                         "-sDEVICE=pdfwrite", f"-sOutputFile={out}", str(p)],
                        capture_output=True, timeout=120)
     return out.name if r.returncode == 0 and out.is_file() else ""
+
+
+# What a LaTeX project carries that is not part of it: what a previous run
+# left behind, and what a Mac puts in a zip.
+TEX_JUNK = (".aux", ".log", ".out", ".bbl", ".blg", ".toc", ".lof", ".lot",
+            ".fls", ".fdb_latexmk", ".synctex.gz", ".spl", ".nav", ".snm")
+# A manuscript, not an archive of a disk. Both caps are on what comes OUT of
+# the zip: a few hundred kilobytes can declare terabytes.
+ZIP_MEMBERS, ZIP_BYTES = 500, 128 << 20
+# `@article{ELARK2026,` — a cite key, as a .bib writes one.
+BIB_KEY = re.compile(r"^\s*@\w+\s*\{\s*([^\s,{}]+)\s*,", re.M)
+
+
+def _flat(rel: str, taken: dict) -> str:
+    """One name, for a file that arrived at a path.
+
+    A tex note's files are flat (`_files`), because a compile copies them next
+    to `main.tex` and LaTeX asks for a plain name. Two pictures that were
+    `fig/1.png` and `tab/1.png` cannot both be `1.png`, so the second one wears
+    the folder it came from — and only the second one, so the common case keeps
+    the name the document already writes."""
+    name = _slug(Path(rel).name) or "file"
+    if taken.get(name) in (None, rel):
+        return name
+    up = Path(rel).parent.name
+    folder = _slug(up) if up not in ("", ".", "..") else ""
+    stem, ext = os.path.splitext(name)
+    cand = f"{folder}-{name}" if folder else name
+    n = 1
+    while taken.get(cand) not in (None, rel):
+        cand = f"{stem}-{n}{ext}"
+        n += 1
+    return cand
+
+
+def _rewrite(body: str, moved: dict) -> tuple[str, int]:
+    r"""The document, pointing at where its pictures actually are now.
+
+    A path is rewritten with its extension (`Pictures/fig1.pdf`) and without
+    it, because `\includegraphics{Pictures/fig1}` is how most manuscripts
+    write one. Longest first: `fig/a.pdf` must not be half-replaced by `a.pdf`.
+    """
+    n = 0
+    for rel in sorted(moved, key=len, reverse=True):
+        flat = moved[rel]
+        for a, b in ((rel, flat), (os.path.splitext(rel)[0], os.path.splitext(flat)[0])):
+            if not a or a == b:
+                continue
+            for pre in ("./", ""):
+                if pre + a in body:
+                    body = body.replace(pre + a, b)
+                    n += 1
+    return body, n
+
+
+@app.post("/api/import/{note_id}")
+async def import_zip(note_id: str, f: UploadFile = File(...),
+                     _: dict = Depends(signed_in)) -> dict:
+    r"""A LaTeX manuscript, as it comes off a journal or a co-author: one zip
+    with `main.tex`, a folder of pictures and a `.bib`.
+
+    It becomes THIS note — the tex is the body, everything else lands in the
+    note's own files folder, flat, and the paths in the body are rewritten to
+    match. Nothing is read back out of the zip's own paths: a name is made
+    from its last component only, so a member called `../../x` is a file
+    called `x`."""
+    p = _path(note_id)
+    if not p.is_file():
+        raise HTTPException(404, "그 노트가 없습니다.")
+    raw = await f.read(MAX_FILE + 1)
+    if len(raw) > MAX_FILE:
+        raise HTTPException(413, f"파일이 너무 큽니다 ({MAX_FILE // (1 << 20)}MB까지).")
+    try:
+        z = zipfile.ZipFile(io.BytesIO(raw))
+        members = [i for i in z.infolist() if not i.is_dir()]
+    except zipfile.BadZipFile:
+        raise HTTPException(400, "zip 파일이 아닙니다.")
+    if len(members) > ZIP_MEMBERS or sum(i.file_size for i in members) > ZIP_BYTES:
+        raise HTTPException(413, "zip 안이 너무 큽니다.")
+
+    def keep(i) -> bool:
+        name = Path(i.filename).name
+        return not (name.startswith(".") or "__MACOSX" in i.filename
+                    or i.filename.lower().endswith(TEX_JUNK))
+
+    members = [i for i in members if keep(i)]
+    texs = [i for i in members if i.filename.lower().endswith(".tex")]
+    if not texs:
+        raise HTTPException(400, "zip 안에 .tex 파일이 없습니다.")
+    # The document, not something it includes: the one that declares a class.
+    # Failing that `main.tex`, failing that the shallowest .tex there is.
+    main = next((i for i in texs if rb"\documentclass" in z.read(i)), None) \
+        or next((i for i in texs if Path(i.filename).name.lower() == "main.tex"), None) \
+        or min(texs, key=lambda i: (i.filename.count("/"), i.filename))
+
+    folder = _files(note_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    moved, taken = {}, {}
+    for i in members:
+        if i is main:
+            continue
+        name = _flat(i.filename, taken)
+        taken[name] = i.filename
+        (folder / name).write_bytes(z.read(i))
+        # An EPS cannot be placed at all (see `_pdfify`), so the document is
+        # pointed at the PDF made from it instead.
+        moved[i.filename] = _pdfify(folder / name) or name
+
+    body, rewrote = _rewrite(z.read(main).decode("utf-8", "replace"), moved)
+    keys = sorted({k for i in members if i.filename.lower().endswith(".bib")
+                   for k in BIB_KEY.findall(z.read(i).decode("utf-8", "replace"))})
+    cur = _read(p)
+    # The note keeps its name, its date and whatever else it carried; the
+    # import only decides what it IS (a tex document) and what it says.
+    meta = {"title": cur["title"], "date": cur["date"], **cur["fields"], "format": "tex"}
+    _atomic_write(p, _join(meta, body))
+    # `pdf_at` the way a note read carries it: the PDF on disk is now older
+    # than the note, which is exactly what the editor needs to know.
+    return {**_read(p), "pdf_at": _pdf_at(note_id), "main": main.filename,
+            "files": sorted(set(moved.values())), "rewrote": rewrote, "bib_keys": keys}
+
+
+def _braced(text: str, at: int) -> str:
+    """The `{…}` that begins at `at`, nested braces and all.
+
+    A bibtex title is full of them — `title = {The {ELARK} array}` — and a
+    non-greedy regex stops at the first `}`, which is half a title."""
+    depth, out = 0, []
+    for ch in text[at:]:
+        if ch == "{":
+            depth += 1
+            if depth == 1:
+                continue
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                break
+        out.append(ch)
+    return re.sub(r"\s+", " ", "".join(out)).strip()
+
+
+TITLE_AT = re.compile(r"\btitle\s*=\s*\{", re.I)
+
+
+@app.get("/api/bib/{note_id}")
+def bib(note_id: str, _: dict = Depends(signed_in)) -> dict:
+    r"""Every cite key this note's own `.bib` files define.
+
+    These are the keys that will actually resolve when the note compiles —
+    reference_manager may hold a thousand more, but a `\cite{}` the bib has
+    never heard of comes out of the PDF as a `?`."""
+    folder = _files(note_id)
+    out = {}
+    for f in sorted(folder.glob("*.bib")) if folder.is_dir() else []:
+        text = f.read_text(encoding="utf-8", errors="replace")
+        hits = list(BIB_KEY.finditer(text))
+        for i, m in enumerate(hits):
+            end = hits[i + 1].start() if i + 1 < len(hits) else len(text)
+            t = TITLE_AT.search(text, m.end(), end)
+            out.setdefault(m.group(1), _braced(text, t.end() - 1)[:120] if t else "")
+    return {"keys": [{"key": k, "title": v} for k, v in sorted(out.items())]}
 
 
 @app.get("/api/whoami")

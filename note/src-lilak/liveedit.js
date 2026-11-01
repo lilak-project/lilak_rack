@@ -2,7 +2,7 @@ import { EditorView, Decoration, WidgetType } from '@codemirror/view'
 import { StateEffect, StateField } from '@codemirror/state'
 import { autocompletion } from '@codemirror/autocomplete'
 import { keymap } from '@codemirror/view'
-import { choicesFor, projectsFor, projText } from './marks.js'
+import { choicesFor, citesFor, projectsFor, projText } from './marks.js'
 
 /** What typing does in the source editor.
  *
@@ -38,6 +38,32 @@ export const tagComplete = autocompletion({
     // a project is offered by its name and written as one word (projText)
     (ctx) => names(ctx, PROJ_HEAD, '+', projectsFor, false, projText),
   ],
+  icons: false,
+})
+
+// ── `\cite{` in a tex note ────────────────────────────────────────────────
+/** `\cite{`, `\citep[see][]{`, `\textcite{` — and the keys already in there,
+ *  since `\cite{a,b}` is how two papers are cited at once. */
+const CITE_HEAD = /\\[a-zA-Z]*cite[a-zA-Z]*(?:\[[^\]]*\])*\{[^}]*$/
+
+export const citeComplete = autocompletion({
+  override: [(ctx) => {
+    const before = ctx.matchBefore(CITE_HEAD)
+    if (!before) return null
+    // What is being typed is after the last separator: the `{`, or the comma
+    // of the key before this one.
+    const at = Math.max(before.text.lastIndexOf('{'), before.text.lastIndexOf(','))
+    const typed = before.text.slice(at + 1).trimStart()
+    const options = citesFor(typed).map((c) => ({
+      label: c.key,
+      // The bib's keys are the ones that compile; the rest say where they are.
+      detail: c.bib ? c.title : `${c.title || ''} ⟨reference⟩`.trim(),
+      type: c.bib ? 'keyword' : 'variable',
+    }))
+    return options.length
+      ? { from: before.from + before.text.length - typed.length, options, validFor: /^[^,}\s]*$/ }
+      : null
+  }],
   icons: false,
 })
 

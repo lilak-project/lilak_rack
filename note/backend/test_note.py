@@ -12,7 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("NOTE_DATA_DIR", "/tmp/note-test-data")
 
 from fastapi import HTTPException            # noqa: E402
-from backend.main import FILES, PROJ_RE, TEX_AT, _files, _proj_key   # noqa: E402
+from backend.main import (BIB_KEY, FILES, PROJ_RE, TEX_AT,            # noqa: E402
+                          _braced, _files, _flat, _proj_key, _rewrite)
 
 # A markdown note shares the vault's one folder; a tex note gets its own.
 assert _files() == FILES
@@ -38,5 +39,38 @@ assert [m.group(1) for m in PROJ_RE.finditer("+STARK 와 (+ELARK), C++ a+b\n+ �
 # A name with spaces is called with them run into `_`.
 assert _proj_key("STARK + CRIB") == _proj_key("stark_crib") == "stark_crib"
 assert _proj_key("TAMU TeXAT 실험") == "tamu_texat_실험"
+
+# A zip's paths become flat names, and the body is pointed at them. The first
+# `1.png` keeps the name the document already writes; the second wears its
+# folder, because a tex note's files all sit next to main.tex.
+taken = {}
+for rel, want in (("Pictures/fig1.pdf", "fig1.pdf"), ("Pictures/fig1.pdf", "fig1.pdf"),
+                  ("fig/1.png", "1.png"), ("tab/1.png", "tab-1.png"),
+                  ("deep/../1.png", "1-1.png")):
+    got = _flat(rel, taken)
+    assert got == want, (rel, got, want)
+    taken[got] = rel
+
+# A member whose path tries to leave the folder is a file with a plain name.
+assert "/" not in _flat("../../etc/passwd", {}) and _flat("../../x.tex", {}) == "x.tex"
+
+moved = {"Pictures/fig1.eps": "fig1.pdf", "fig/1.png": "1.png", "ref/paper.bib": "paper.bib"}
+body, n = _rewrite(
+    r"\includegraphics{Pictures/fig1}" "\n"
+    r"\includegraphics[width=1cm]{./fig/1.png}" "\n"
+    r"\bibliography{ref/paper}" "\n", moved)
+assert r"\includegraphics{fig1}" in body, body
+assert r"{1.png}" in body and "./fig" not in body, body
+assert r"\bibliography{paper}" in body, body
+assert n >= 3, n
+
+# `@article{KEY,` — what a .bib calls a paper.
+assert BIB_KEY.findall("@article{ELARK2026,\n title={a}}\n@book{ b2 , x}") == ["ELARK2026", "b2"]
+
+# A bibtex title keeps its own braces: `{ELARK}` is how a bib says "do not
+# lowercase this", and stopping at the first `}` is half a title.
+src = "title = {The {ELARK} array,\n  and its {DAQ}}, year = {2026},"
+assert _braced(src, src.index("{")) == "The {ELARK} array, and its {DAQ}", _braced(src, src.index("{"))
+assert _braced("{a}", 0) == "a"
 
 print("note: ok")
