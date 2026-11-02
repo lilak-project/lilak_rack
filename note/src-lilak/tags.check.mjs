@@ -4,7 +4,7 @@
  *  pull in JSX to run. If the two drift, the first case fails.
  */
 import assert from 'node:assert/strict'
-import { projText, isProject, setProjChoices } from './marks.js'
+import { outsideCode, replaceOutsideCode, projText, isProject, setProjChoices } from './marks.js'
 
 export const TAG_RE = /(^|[\s(])#(?![0-9]+(?![^\s#.,;:!?()[\]{}'"]))([^\s#.,;:!?()[\]{}'"]+)/g
 export const renameBodyTag = (body, from, to) =>
@@ -39,8 +39,28 @@ const projs = [
 for (const [body, want] of projs) {
   assert.deepEqual([...body.matchAll(PROJ_RE)].map((m) => m[2]), want, JSON.stringify(body))
 }
+// ── code is not prose: a `#` inside it is not a tag ──────────────────────
+const tagsIn = (body) => [...outsideCode(body).matchAll(TAG_RE)].map((m) => m[2])
+const codes = [
+  ['#real\n\n```c++\n#include <v>\n```\n\n#after', ['real', 'after']],
+  ['`#inline` 은 코드', []],
+  ['``#double`` 도 코드', []],
+  ['~~~\n#tilde\n~~~', []],
+  // A fence nobody closed runs to the end — markdown's own rule.
+  ['#a\n```\n#b\n#c', ['a']],
+  ['  ```\n#in\n  ```\n#out', ['out']],
+]
+for (const [body, want] of codes) {
+  assert.equal(outsideCode(body).length, body.length, 'a blank keeps the shape')
+  assert.deepEqual(tagsIn(body), want, JSON.stringify(body))
+}
+// A rename walks past code and leaves it exactly as it was.
+assert.equal(
+  replaceOutsideCode('#old\n```\n#old\n```\n#old', TAG_RE, (m, lead, name) => (name === 'old' ? `${lead}#new` : m)),
+  '#new\n```\n#old\n```\n#new')
+
 // Only project_manager's projects are projects; a name with spaces is one word in text.
 setProjChoices(['STARK + CRIB'])
 assert.equal(projText('STARK + CRIB'), 'STARK_CRIB')
 assert.ok(isProject('stark_crib') && !isProject('STARK') && !isProject('없는것'))
-console.log(`${cases.length + projs.length}개 통과`)
+console.log(`${cases.length + projs.length + codes.length + 1}개 통과`)

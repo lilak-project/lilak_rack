@@ -8,12 +8,14 @@ import { tr } from 'lilak-ui/i18n.jsx'
  * component rather than a shape each editor redraws from memory.
  *
  *   [등록]                        while the record is a draft
- *   [save] [cancel] [그 editor의 것들] ……… [revert] [delete]   once it exists
+ *   [close] [그 editor의 것들] ……… [delete]                   saves as you type
+ *   [save] [cancel] [그 editor의 것들] ……… [revert] [delete]   saves when told
  *
- * save SAVES. Leaving is ⌘X or the tab's own ×, because a button that closes
- * what you are working on is a button you stop pressing. An editor that saves
- * as you type passes no `onSave` at all and the button is not there — there is
- * nothing left for it to do, and `hint` says where the record stands.
+ * An editor that saves as you type passes `onClose`, not `onSave`: there is
+ * nothing to press, and closing keeps what is there. The one whose saving is a
+ * decision (one form over many records, a rename that travels) passes `onSave`
+ * and `onCancel`: save SAVES and stays, cancel leaves and keeps nothing. So the
+ * word on the button always says what happens to what you typed.
  *
  * Leaving is on the left, undoing and destroying on the right: four buttons in
  * a row read as one kind of thing, and two of them are not.
@@ -26,9 +28,9 @@ import { tr } from 'lilak-ui/i18n.jsx'
 export function RackActions({
   draft, createLabel = tr("rk_create"), onCreate, createDisabled, hint,
   saveLabel = 'save', onSave, saveDisabled,
-  // Changed and about to save on its own: the save button's border runs
+  // Changed and about to save on its own: the close button's border runs
   // round it — a word saying so would push the bar about each time.
-  pending,
+  pending, onClose, closeDisabled,
   onCancel, onRevert, revertTitle, onDelete, deleteWarn = tr("rk_cannot_undo"), onClone,
   // Anything this one editor can do that the others cannot — a preview, a
   // paste, a re-scan. It rides with save and cancel, which are also about
@@ -50,10 +52,12 @@ export function RackActions({
   return (
     <div className="rl-acts">
       {onSave && (
-        <button type="button" className={`rl-btn rl-go${pending ? ' rl-pending' : ''}`} disabled={saveDisabled}
-          title={pending ? tr("rk_saving_soon") : undefined} onClick={onSave}>{saveLabel}</button>
+        <button type="button" className="rl-btn rl-go" disabled={saveDisabled} onClick={onSave}>{saveLabel}</button>
       )}
-      {onCancel && <button type="button" className="rl-btn" onClick={onCancel}>cancel</button>}
+      {onClose ? (
+        <button type="button" className={`rl-btn${pending ? ' rl-pending' : ''}`} disabled={closeDisabled}
+          title={pending ? tr("rk_saving_soon") : tr("rk_close_saves")} onClick={onClose}>close</button>
+      ) : onCancel && <button type="button" className="rl-btn" onClick={onCancel}>cancel</button>}
       {onClone && <button type="button" className="rl-btn" title={tr("rk_clone_hint")} onClick={onClone}>clone</button>}
       {extra}
       {hint && <span className="rl-hint">{hint}</span>}

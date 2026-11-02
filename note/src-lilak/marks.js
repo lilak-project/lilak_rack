@@ -13,6 +13,49 @@ export const TAG_RE = /(^|[\s(])#(?![0-9]+(?![^\s#.,;:!?()[\]{}'"]))([^\s#.,;:!?
 /** `+프로젝트` — a project (project_manager's), by the tag's rule. */
 export const PROJ_RE = /(^|[\s(])\+(?![0-9]+(?![^\s#+.,;:!?()[\]{}'"]))([^\s#+.,;:!?()[\]{}'"]+)/g
 
+// ── code is not prose ─────────────────────────────────────────────────────
+const FENCE = /^[ \t]*(`{3,}|~{3,})/
+// A code span is a RUN of backticks closed by the same run: ``#x`` is one too.
+const INLINE = /(`+)[^\n]*?\1/g
+const blank = (s) => s.replace(/[^\n]/g, ' ')
+
+/** The text with its CODE blanked out — the same length, character for
+ *  character, so a position found in the answer is a position in the text.
+ *
+ *  A ```fence is not a sentence: `#include` is not a tag, `+x` is not a
+ *  project, `» 2026-01-01` in an example is not a due date. Everything that
+ *  reads the body for this app's notations reads it through here. An inline
+ *  `` `#x` `` goes too — it is code for the same reason, said on one line.
+ *  A fence nobody closed runs to the end of the note, which is markdown's
+ *  own rule.
+ */
+export const outsideCode = (text) => {
+  let open = ''
+  return String(text || '').split('\n').map((line) => {
+    const m = FENCE.exec(line)
+    if (open) {
+      if (m && m[1][0] === open[0] && m[1].length >= open.length) open = ''
+      return blank(line)
+    }
+    if (m) { open = m[1]; return blank(line) }
+    return line.replace(INLINE, blank)
+  }).join('\n')
+}
+
+/** `rule` applied where the body is prose, the code left exactly as it is.
+ *  The match comes from the blanked text, which is the same text everywhere a
+ *  match can happen — so what it says and where it sits are the real ones. */
+export const replaceOutsideCode = (text, rule, repl) => {
+  const src = String(text || '')
+  let out = ''
+  let last = 0
+  for (const m of outsideCode(src).matchAll(rule)) {
+    out += src.slice(last, m.index) + repl(...m)
+    last = m.index + m[0].length
+  }
+  return out + src.slice(last)
+}
+
 /** `![[name.png]]` — Obsidian's embed, which is not markdown. */
 export const EMBED_RE = /!\[\[([^\]]+)\]\]/g
 

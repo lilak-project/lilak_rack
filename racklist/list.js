@@ -59,11 +59,6 @@ export function useRackList(cfg) {
 
   const panes = useEditorPanes(projectKey(key, 'panes'))
   const split = usePaneSplit(projectKey(key, 'split'))
-  // Editors on BOTH sides of the list: each its own share, the list the rest.
-  const sides = {
-    left: usePaneSplit(projectKey(key, 'splitL'), 30, { min: 15, max: 42 }),
-    right: usePaneSplit(projectKey(key, 'splitR'), 30, { edge: 'right', min: 15, max: 42 }),
-  }
   const vw = useViewportWidth()
   const every = useMemo(() => Object.values(cols).flat(), [cols])   // eslint-disable-line react-hooks/exhaustive-deps
   const { drag, sized } = useColumnWidths(projectKey(key, 'cols'), every)
@@ -139,10 +134,10 @@ export function useRackList(cfg) {
   }, [firstTab])
   const closeOpened = useCallback(() => { setTabs(fixed); setActive(firstTab) }, [fixed, firstTab])
 
-  // The editor takes the right half when there is room for both; below that it
-  // has the width to itself while it is open.
+  // The editor takes half when there is room for it and the list; below that it
+  // has the width to itself while it is open, and so do editors on both sides.
   const showEdit = panes.showing
-  const showList = !showEdit || (vw >= (panes.cols.length > 1 ? 1500 : 1180) && !panes.full)
+  const showList = !showEdit || (vw >= 1180 && panes.cols.length < 2 && !panes.full)
 
   return {
     // what was stored, for the state a service keeps of its own
@@ -156,7 +151,7 @@ export function useRackList(cfg) {
     // what you picked
     ...sel, chosen,
     // the panes and the frame
-    panes, split, sides, vw, showList, showEdit,
+    panes, split, vw, showList, showEdit,
     // the line at the foot
     note, setNote, err, setErr,
   }

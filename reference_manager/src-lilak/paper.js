@@ -1,6 +1,6 @@
 import './strings.js'
 import { tr } from 'lilak-ui'
-import { FAV, tagKey } from 'racklist'
+import { FAV, tagKey, bibAuthors, bibOrder, jAbbrev, journalRec, nameParts } from 'racklist'
 /**
  * What makes a reference a REFERENCE — the parts of reference_manager that are
  * about papers rather than about lists: how a name is spelled three ways, the
@@ -65,16 +65,10 @@ export const inRole = (r, id, role) => (role === 'all'
 //   bibName   BibTeX's own order — Lynch, W. G.
 // Only `name` is required; the other two are filled when they are known, and
 // either can produce `name` mechanically.
-/** given words and the family word, reading BibTeX's comma the right way. */
-export const nameParts = (name) => {
-  const t = String(name || '').trim()
-  if (t.includes(',')) {
-    const [family, given] = [t.slice(0, t.indexOf(',')).trim(), t.slice(t.indexOf(',') + 1).trim()]
-    return [given.replace(/[.]/g, ' ').split(/\s+/).filter(Boolean), family]
-  }
-  const w = t.replace(/[.]/g, ' ').split(/\s+/).filter(Boolean)
-  return [w.slice(0, -1), w[w.length - 1] || '']
-}
+// The two that a .bib needs are the kit's (racklist/bib.js), so the file a
+// note generates and the list this service prints cannot spell a name two
+// ways. They read as this service's own, because here they are.
+export { nameParts, bibOrder }
 /** The citation form. A hyphenated given name keeps both initials — Ying-Xun →
  *  Y.-X. — which is how it is cited and the only thing that tells it from
  *  Y. Zhang. */
@@ -83,12 +77,6 @@ export const abbrevName = (name) => {
   const ini = given.map((w) => w.split('-').filter((b) => /[A-Za-z]/.test(b))
     .map((b) => `${b.replace(/[^A-Za-z]/g, '')[0].toUpperCase()}.`).join('-'))
   return [...ini, family].filter(Boolean).join(' ')
-}
-/** BibTeX's order, out of a name written the usual way. */
-export const bibOrder = (name) => {
-  const [given, family] = nameParts(name)
-  if (!family) return String(name || '')
-  return given.length ? `${family}, ${given.map((w) => (w.length <= 2 ? `${w}.` : w)).join(' ')}` : family
 }
 /** A handle for an author: initials and the family name, the way the
  *  spreadsheet's a1 column was written (J. Almeid → JAlmeid). */
@@ -104,13 +92,11 @@ export const handleFor = (name) => {
     .replace(/[^\w-]/g, '') || 'author'
 }
 /** A journal is referenced by its record's id (a name typed before it had a
- *  record stays text); the table shows the short one. */
-export const journalRec = (doc, r) => (r.journal && (doc?.journals || []).find((j) => j.id === r.journal || j.name === r.journal)) || null
+ *  record stays text); the table shows the short one. The lookup and the
+ *  citation's abbreviation are the kit's, for the reason above. */
+export { journalRec, jAbbrev }
 /** Where it went: the journal for a paper, the institution for a proposal. */
 export const jShort = (doc, r) => journalRec(doc, r)?.shortName || journalRec(doc, r)?.name || r.journal || r.inst || ''
-// A journal carries three names: what it is called, the short one a table can
-// hold (ApJ) and the one a citation uses (Astrophys. J.).
-export const jAbbrev = (doc, r) => journalRec(doc, r)?.abbrev || journalRec(doc, r)?.name || r.journal || ''
 export const shortRefName = (doc, r) => {
   const rows = authorRows(r)
   const one = autShort(doc, rows[0] || {})
@@ -204,12 +190,9 @@ export const TOKENS = (doc) => ({
   type: (r) => r.type || '',
   title: (r) => r.title || '',
   author: (r) => authorString(doc, r),
-  // What a .bib file wants: Family, Given — the record's own bibName when it
-  // has one, and that order worked out from the name when it does not.
-  'author (bib)': (r) => authorRows(r).map((a) => {
-    const rec = a.ref ? (doc?.authors || []).find((x) => x.id === a.ref) : null
-    return rec?.bibName || bibOrder(autName(doc, a))
-  }).filter(Boolean).join(' and '),
+  // What a .bib file wants: Family, Given — the kit writes it, so this token
+  // and a generated .bib say the same thing.
+  'author (bib)': (r) => bibAuthors(doc, r),
   'first author': (r) => firstAuthor(doc, r),
   'abv author': (r) => autShort(doc, authorRows(r)[0] || {}),
   'et al.': (r) => etAl(doc, r),

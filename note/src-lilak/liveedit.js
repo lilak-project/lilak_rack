@@ -146,36 +146,77 @@ export const dueKeys = [calendar, dueInput]
 // ── a file dropped or pasted lands in the text ──────────────────────────────
 const filesOf = (dt) => (dt ? [...(dt.files || [])] : [])
 
-/** `upload(file)` stores it and answers with the name it was given. */
-export const takeFiles = (upload) => EditorView.domEventHandlers({
+/** What a file that just arrived looks like in the text.
+ *
+ *  A markdown note embeds it the way Obsidian does. A tex note cannot: a
+ *  `![[img/fig1.png]]` means nothing at all to a compiler, so what goes in is
+ *  the LaTeX for the kind of file it is — and `img/`, `section/`, `style/` is
+ *  where the backend just put it (`TEX_DIRS`). A style or a class belongs in
+ *  the preamble, not where the caret is, so that one goes in commented: the
+ *  line to move up, rather than a line that breaks the build. */
+const dropped = (name, tex) => {
+  if (!tex) return `![[${name}]]\n`
+  const ext = (name.match(/\.[^./]+$/) || [''])[0].toLowerCase()
+  const bare = name.replace(/\.[^./]+$/, '')
+  if (ext === '.tex') return `\\input{${bare}}\n`
+  if (ext === '.bib') return `\\bibliography{${bare}}\n`
+  if (['.sty', '.cls', '.bst'].includes(ext)) return `% \\usepackage{${bare}}\n`
+  return `\\includegraphics[width=\\linewidth]{${name}}\n`
+}
+
+/** `upload(file)` stores it and answers with the path it was given. */
+export const takeFiles = (upload, tex = false) => EditorView.domEventHandlers({
   drop(e, view) {
     const files = filesOf(e.dataTransfer)
     if (!upload || !files.length) return false
     e.preventDefault()
     const at = view.posAtCoords({ x: e.clientX, y: e.clientY }) ?? view.state.doc.length
-    stow(view, at, files, upload)
+    stow(view, at, files, upload, tex)
     return true
   },
   paste(e, view) {
     const files = filesOf(e.clipboardData)
     if (!upload || !files.length) return false
     e.preventDefault()
-    stow(view, view.state.selection.main.from, files, upload)
+    stow(view, view.state.selection.main.from, files, upload, tex)
     return true
   },
 })
 
-async function stow(view, at, files, upload) {
+async function stow(view, at, files, upload, tex) {
   for (const file of files) {
     const name = await upload(file)
     if (!name) continue
-    const text = `![[${name}]]\n`
+    const text = dropped(name, tex)
     view.dispatch({ changes: { from: at, insert: text } })
     at += text.length
   }
 }
 
 // ── a table, without counting pipes ────────────────────────────────────────
+// ── pasting into a quote ──────────────────────────────────────────────────
+/** The quote mark the caret's line wears: `> `, `>> `, and its indent. */
+const QUOTE = /^\s*((?:>\s?)+)/
+
+/** Text pasted into a quote is quoted.
+ *
+ *  A BLANK line ends a blockquote, so pasting two paragraphs under a `>` fell
+ *  out of it half way down — which is the thing `>>>` is invented elsewhere to
+ *  work around. Here every pasted line simply gets the mark the caret's line
+ *  already has, and an empty line gets it without its trailing space, so the
+ *  block stays whole and the file stays ordinary markdown.
+ *
+ *  Only when the caret IS in a quote, and only for a paste with more than one
+ *  line in it: a word pasted into a sentence is a word.
+ */
+export const quotePaste = EditorView.clipboardInputFilter.of((text, state) => {
+  const mark = QUOTE.exec(state.doc.lineAt(state.selection.main.from).text)
+  if (!mark || !text.includes('\n')) return text
+  return text.split('\n')
+    .map((line, i) => (i === 0 ? line : line.trim() ? mark[1] + line : mark[1].trimEnd()))
+    .join('\n')
+})
+
 /** `||` and a space makes a table of as many columns as there were pipes: the
  *  header, its ruling and one row, with the caret in the first cell. */
 const TABLE_NEW = /(^[ \t]*)(\|{2,})$/

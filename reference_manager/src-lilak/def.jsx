@@ -110,7 +110,7 @@ export default {
       // Where a paper was presented: the activities (in Activities) that list
       // it. Theirs is the only copy of the link; each opens there.
       { k: 'talks', label: tr("rm_talks"), type: 'backlinks', search: false,
-        from: { svc: 'academic_activities', proj: 'activities', item: 'activities', field: 'papers', label: 'name' } },
+        from: { svc: 'academic_activities', item: 'activities', field: 'papers', label: 'name' } },
     ],
   },
   classSort: { k: 'name', dir: 1 },

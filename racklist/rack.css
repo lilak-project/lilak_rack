@@ -259,15 +259,13 @@ body.rl-page {
   border-bottom: 1px solid var(--rk-edge);
 }
 .rl-tabs::-webkit-scrollbar { width: 0; height: 0; }
-/* ⋯ at the left of the title bar: what the tab can do. Its menu pops out
-   OVER the tabs and the list, one line per kind of thing — however many
-   buttons, nothing moves. (In a bare page it hangs from the top-left.) */
-.rl-menuwrap { position: relative; display: inline-flex; flex: 0 0 auto; }
-.rl-menuwrap.rl-bare { position: absolute; top: 0; left: 6px; z-index: 20; height: 0; }
+/* 메뉴 at the left of the title bar: pressed, what the tab can do stands in
+   the tabs' place, a group per kind of thing — it covers nothing. (In a bare
+   page, a strip at the top.) */
 .rl-mod { position: relative; }
 .rl-btn.rl-more { padding: 0 7px; gap: 4px; }
 .rl-btn.rl-more.on { background: var(--rk-ink); border-color: var(--rk-ink); color: #fff; }
-/* A filter is on while its controls are tucked away: the ⋯ says so. */
+/* A filter is on while its controls are tucked away: the button says so. */
 .rl-btn.rl-more.rl-lit:not(.on) { border-color: var(--rk-cite-t); color: var(--rk-cite-t); }
 .rl-more-n {
   min-width: 14px; height: 14px; padding: 0 3px;
@@ -275,34 +273,30 @@ body.rl-page {
   font-size: var(--fs-micro); line-height: 14px; letter-spacing: 0; text-align: center;
 }
 .rl-menu {
-  position: absolute;
-  top: calc(100% + 7px);
-  left: -5px;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  width: max-content;
-  max-width: min(520px, 90vw);
-  background: var(--rk-panel);
-  border: 1px solid var(--rk-ink);
-  box-shadow: 3px 3px 0 color-mix(in srgb, var(--rk-ink) 18%, transparent);
-  color: var(--rk-dim);
-}
-.rl-menuwrap.rl-bare .rl-menu { top: 4px; left: 0; }
-.rl-menu-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 5px 6px;
-  padding: 6px 8px;
+  gap: 5px 0;
+  color: var(--rk-dim);
 }
-.rl-menu-row + .rl-menu-row { border-top: 1px solid var(--rk-line); }
+.rl-bar > .rl-menu { flex: 1 1 auto; min-width: 0; align-self: center; padding: 6px 0; color: var(--rk-brand-t, #fff); }
+.rl-mod > .rl-menu { flex: 0 0 auto; padding: 5px 8px; background: var(--rk-gut); border-bottom: 1px solid var(--rk-line); }
+.rl-menu-row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 6px; padding: 0 10px; }
+.rl-menu-row:first-child { padding-left: 0; }
+.rl-menu-row + .rl-menu-row { border-left: 1px solid color-mix(in srgb, currentColor 35%, transparent); }
 .rl-menu-keep { display: contents; }
 /* The search, at the foot beside the bin. */
 .rl-foot .rl-find { flex: 0 1 220px; min-width: 110px; height: calc(var(--rk-row) - 8px); }
-/* The menu: the service's name, on a button as wide in every service. */
-.rl-bar > .rl-menuwrap, .rl-bar > .rl-reload { align-self: center; }
-.rl-btn.rl-more { width: 160px; justify-content: flex-start; letter-spacing: 0; font-weight: 400; }
+/* The menu: one button, as wide in every service, in the bar's own colour —
+   a sheet like the tabs not chosen. */
+.rl-bar > .rl-more, .rl-bar > .rl-reload { align-self: center; }
+.rl-btn.rl-more { width: 84px; justify-content: flex-start; letter-spacing: 0; font-weight: 400; }
+.rl-bar .rl-btn.rl-more:not(.on) {
+  background: color-mix(in srgb, #fff 16%, transparent);
+  border-color: color-mix(in srgb, #000 18%, transparent);
+  color: var(--rk-brand-t, #fff);
+}
+.rl-bar .rl-btn.rl-more:not(.on):hover { background: color-mix(in srgb, #fff 28%, transparent); }
 .rl-more-l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 .rl-more-c { flex: none; font-size: var(--fs-micro); opacity: .7; }
 /* The tabs on the bar: the chosen one is the table's own white, the rest a
@@ -795,7 +789,8 @@ button.rl-proj { cursor: pointer; }
    record across, or take the list's width. */
 .rl-strip { flex: 0 0 auto; display: flex; align-items: stretch; background: var(--rk-gut); }
 .rl-strip-tabs { flex: 1; min-width: 0; }
-.rl-strip-tabs .rl-tabs { background: none; }
+.rl-strip-tabs .rl-tabs { background: none; flex-wrap: nowrap; max-height: none; overflow: auto hidden; }
+.rl-strip-all .rl-strip-tabs .rl-tabs { flex-wrap: wrap; overflow: visible; }
 .rl-btn.rl-pane-btn {
   flex: 0 0 auto;
   display: grid;
@@ -850,6 +845,18 @@ button.rl-proj { cursor: pointer; }
   color: inherit; font: inherit; font-size: var(--rk-fs); line-height: 1; opacity: .7;
 }
 .rl-reload:hover { opacity: 1; }
+/* Beside it, the editors' buttons: all out of sight (with how many on the eye), all closed. */
+.rl-bar-ic {
+  flex: none; align-self: center; position: relative; display: grid; place-items: center;
+  width: 22px; height: 22px; padding: 0; border: 0; background: none; cursor: pointer;
+  color: inherit; opacity: .7;
+}
+.rl-bar-ic:hover, .rl-bar-ic.on { opacity: 1; }
+.rl-bar-ic-n {
+  position: absolute; top: -2px; right: -4px; min-width: 13px; height: 13px; padding: 0 3px; box-sizing: border-box;
+  border-radius: 7px; background: var(--rk-brand-t, var(--rk-ink)); color: var(--rk-brand, #fff);
+  font-family: var(--rk-mono); font-size: var(--fs-micro); line-height: 13px; text-align: center;
+}
 
 /* ── the calendar (RackCalendar) — a month the way Apple's Calendar draws one ── */
 /* The head stands down the left, two thirds of a day wide (2 : 7 × 3), so
@@ -1022,6 +1029,7 @@ button.rl-proj { cursor: pointer; }
   font-size: var(--fs-small); box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
 }
 body.rl-copying, body.rl-copying * { cursor: copy !important; }
+body.rl-moving, body.rl-moving * { cursor: grabbing !important; }
 /* …the copy itself, drawn where it would land, and the days it would take lit. */
 .rl-cal-bar.copy { opacity: 0.8; outline: 1.5px dashed var(--c); outline-offset: -1.5px; pointer-events: none; }
 .rl-cal-cell.drop { background: color-mix(in srgb, var(--rk-cite-t, #2563eb) 12%, transparent); }

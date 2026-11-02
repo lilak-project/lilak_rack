@@ -210,18 +210,54 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 .nt-titlerow[hidden] { display: none; }
 .nt-titlerow {
   flex: 0 0 auto;
-  display: flex; align-items: center; gap: 8px;
-  padding: 4px 11px 2px;
+  display: flex; align-items: stretch; gap: 0;
+  /* No padding on the left: the line column starts at the edge and runs down
+     into the editor's gutter without a step. */
+  padding: 4px 11px 2px 0;
 }
 .nt-title {
   flex: 1; min-width: 0;
-  height: 30px; padding: 0;
+  /* The gutter's own text inset (.cm-content's padding-left), so the title
+     begins exactly where the first line of the note does. */
+  height: 30px; padding: 0 0 0 14px;
   border: 0; background: none;
   font: inherit; font-size: 17px; color: var(--rk-ink);
+  align-self: center;
 }
+
+/* ── the top of the line column ──────────────────────────────────────────
+   The gutter reaches the title bar, and what stands at the top of it is the
+   number the caret is in. It is the same column, so it wears the same paint
+   and the same width (--nt-gut, measured from the real gutter), and it is
+   clicked for the same thing: bookmark this line.
+
+   `align-items: stretch` above is what lets it run the full height of the
+   row, which is what makes it read as a column rather than a chip. */
+.nt-linetop {
+  flex: 0 0 auto;
+  width: var(--nt-gut, 34px); min-height: 30px;
+  margin: -4px 0 -2px;                 /* over the row's own padding */
+  /* Centred in the column: the ribbon is not a number and does not line up
+     with them — it is what the column is FOR. */
+  padding: 0; display: flex; align-items: center; justify-content: center;
+  border: 0; border-right: 1px solid var(--rk-line);
+  background: var(--rk-gut);
+  color: var(--rk-mute); cursor: pointer;
+}
+.nt-linetop:hover:not(:disabled) { color: var(--rk-ink); background: var(--rk-line); }
+/* Bookmarked, it says so the way the number in the gutter does. */
+.nt-linetop.on { color: var(--rk-ink); box-shadow: inset 2px 0 0 var(--rk-ink); }
+.nt-linetop:disabled { cursor: default; opacity: 0.45; }
 .nt-title:focus { outline: none; }
 .nt-title::placeholder { color: var(--rk-mute); }
-.nt-fold { height: 26px; gap: 5px; display: inline-flex; align-items: center; }
+/* The fold is the same size as every other button in the row — it stands out
+   by COLOUR instead. The row is `align-items: stretch`, which leaves a button
+   of its own height at the TOP of it, so this one says where it sits. */
+.nt-fold { gap: 5px; display: inline-flex; align-items: center; align-self: center; }
+.nt-fold, .nt-fold:hover:not(:disabled) {
+  border-color: var(--rk-cite-t); background: var(--rk-cite); color: var(--rk-cite-t);
+}
+.nt-fold:hover:not(:disabled) { background: #c7dcfd; }
 .nt-caret { font-style: normal; font-size: 15px; line-height: 1; }
 .nt-date {
   height: 22px; padding: 0 4px;
@@ -229,7 +265,9 @@ body.nt-paper #root { height: auto; min-height: 100%; }
   background: var(--rk-panel); font: inherit; font-size: var(--rk-fs);
   color: var(--rk-text);
 }
-.nt-tagline { flex: 0 1 auto; min-width: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rk-cite-t); }
+/* The `#tags` the body wears — in the fold now, where the rest of what is
+   worked out about the note is, rather than crowding the title. */
+.nt-tagline { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rk-cite-t); }
 .nt-meta-open {
   flex: 0 0 auto;
   /* A field is as wide as what it says — an imported minute carries a line of
@@ -278,6 +316,10 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 .nt-ref-no { color: #b91c1c; }
 .nt-pdfbar .rl-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nt-pdfbar a.rl-btn { text-decoration: none; display: inline-flex; align-items: center; }
+/* The reading between − and +: fixed width so the two buttons do not shift
+   sideways as the number grows. Disabled it is the reading; enabled it is the
+   way back to fitting the width. */
+.nt-pdfzoom { min-width: 46px; text-align: center; font-family: var(--rk-mono); }
 .nt-pdf { flex: 1; min-height: 0; width: 100%; border: 0; border-top: 1px solid var(--rk-line); background: var(--rk-gut); }
 
 /* What stopped it, and nothing else: a LaTeX log is thousands of words long
@@ -303,12 +345,108 @@ body.nt-paper #root { height: auto; min-height: 100%; }
    what the bar draws — so it has to centre its text like a button does. */
 .nt-zipbtn { display: inline-flex; align-items: center; cursor: pointer; }
 
+/* ── bookmarked lines (pins.js) ──────────────────────────────────────────
+   The gutter is where a bookmark is made: the number itself is the mark, so
+   it is the number that changes, not something drawn beside it.
+
+   Paint only — no weight, no border, nothing beside it. The column is as
+   wide as the widest thing in it, so a mark that takes room of its own makes
+   the gutter grow and the text shrink; this one fills the cell the number
+   already has. */
+.nt-pin.cm-gutterElement {
+  color: var(--rk-ink); background: var(--rk-line);
+  box-shadow: inset 2px 0 0 var(--rk-ink);
+}
+/* The one the note keeps for you until you keep your own: the same mark,
+   said quietly. */
+.nt-pin-tmp.cm-gutterElement {
+  color: var(--rk-dim); background: none;
+  box-shadow: inset 2px 0 0 var(--rk-dim);
+}
+.cm-lineNumbers .cm-gutterElement { cursor: pointer; }
+
+/* ── the jump bar: bookmark mode, where the title was ────────────────────
+   One line of places to be in this note. It is as wide as the title it
+   replaced and no wider — too many bookmarks scroll sideways rather than
+   push the fold off the end of the row. */
+.nt-jump {
+  flex: 1; min-width: 0;
+  /* The title's own height, so turning the mode on does not take four pixels
+     off the text below it. */
+  min-height: 30px;
+  display: flex; align-items: center; gap: 4px;
+  /* Where the title began, which is where the first line of the note begins. */
+  padding: 0 0 0 14px;
+  /* `go` is the end of the bar, not the start of the fold beside it. */
+  margin-right: 10px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.nt-jump::-webkit-scrollbar { display: none; }
+.nt-jump .rl-btn { flex: 0 0 auto; }
+.nt-jump .nt-pin-go { font-family: var(--rk-mono); min-width: 2.4em; }
+.nt-jump .nt-pin-go.nt-pin-tmp { color: var(--rk-dim); font-style: italic; }
+/* Last in the row and held to the right end of it: the line nobody
+   bookmarked, typed in. */
+.nt-goto { flex: 0 0 auto; margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.nt-gotoin { width: 4.5em; font-family: var(--rk-mono); }
+
+/* ── the manage panel: a mode's tools, a tab each (MODES in App.jsx) ──────
+   It sits under the note's own line and above the text, and it STAYS: the
+   tools are used while writing, not instead of it. So it must not grow into
+   the text's half of the pane — a tall tab scrolls inside itself. */
+.nt-manage {
+  flex: 0 0 auto; display: flex; flex-direction: column;
+  border-top: 1px solid var(--rk-line); background: var(--rk-gut);
+}
+.nt-mtabs {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 8px 0; border-bottom: 1px solid var(--rk-line);
+}
+/* The tab you are in is the one the body below belongs to, so it is joined to
+   it: the page's background, and no line between the two. */
+.nt-mtabs .rl-btn.on {
+  background: var(--rk-bg); border-bottom-color: var(--rk-bg);
+  margin-bottom: -1px; font-weight: 600;
+}
+.nt-mbody {
+  max-height: 34vh; overflow: auto; padding: 6px 10px 8px;
+  background: var(--rk-bg); font-size: var(--fs-small);
+}
+.nt-mrow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+/* The one thing the tab is for — compile, 맞추기 — reads as the one thing. */
+.nt-mbody .rl-btn.nt-go { font-weight: 600; }
+/* A line the tool says back: what the import brought, what the .bib will be. */
+.nt-mnote {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  margin-top: 6px; padding: 4px 8px;
+  background: var(--rk-gut); border: 1px solid var(--rk-line); border-radius: 3px;
+}
+.nt-mbody .nt-texerr { margin-top: 6px; border-top: 0; border-radius: 3px; max-height: none; }
+.nt-mbody .nt-path { flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* The folder, as it is. A tex note's files are a tree now, and a tree nobody
+   can see is a tree you guess at. */
+.nt-files { margin: 6px 0 0; padding: 0; list-style: none; }
+.nt-files li {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 1px 0; border-bottom: 1px solid var(--rk-line);
+}
+.nt-files li:last-child { border-bottom: 0; }
+.nt-files a { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Something inside wants reading — on the shut button, and on the tab it is
+   in once the panel is open. */
+.nt-dot { margin-left: 4px; font-style: normal; font-size: 0.7em; color: #b91c1c; vertical-align: middle; }
+
 /* ── 라이브: the markdown drawn over the text that is still the file ──────
    Only paint — every rule here is a decoration over characters that stay
    exactly as the note has them (livemd.js). The line the caret is in shows
    its marks again, which is why none of this may change the layout much. */
 .nt-live .cm-content { font-family: var(--rk-sans); }
-.nt-live .cm-line { padding: 0 26px 0 14px; }
+/* The same inset `원문` has (CodeMirror's own 6px): the text should not move
+   sideways when the view changes, and `.cm-content` already carries the
+   editor's own padding. */
+.nt-live .cm-line { padding: 0 6px; }
 .nt-cm-h1, .nt-cm-h2, .nt-cm-h3, .nt-cm-h4, .nt-cm-h5, .nt-cm-h6 {
   font-weight: 600; color: var(--rk-ink);
 }
@@ -322,6 +460,10 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 /* Drawn as a link, so it opens like one — except on the line being edited. */
 .nt-cm-link { cursor: pointer; }
 .nt-cm-quote { border-left: 2px solid var(--rk-edge); color: var(--rk-dim); }
+/* A ``` block: the same box the sheet and the PDF draw, laid on line by line
+   because the lines are the file's own. The fence stays visible — it is the
+   only thing that says where the block ends. */
+.nt-cm-code { background: var(--rk-gut); border-left: 2px solid var(--rk-edge); }
 /* The dashes of a `---` are the rule itself: the line is drawn, they are not
    (the highlighter colours them, so the span has to be told too). */
 .nt-cm-rule, .nt-cm-rule span { color: transparent; }

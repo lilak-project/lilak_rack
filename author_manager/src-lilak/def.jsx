@@ -91,7 +91,7 @@ export default {
       // The activities (in Activities) this person leads. Theirs is the only
       // copy of the link; each opens there.
       { k: 'leads', label: tr("am_leads"), type: 'backlinks', search: false,
-        from: { svc: 'academic_activities', proj: 'activities', item: 'activities', field: 'leads', label: 'name' } },
+        from: { svc: 'academic_activities', item: 'activities', field: 'leads', label: 'name' } },
 
       // The table.
       { k: 'affil', label: 'affiliation', get: (a, ctx) => affilText(a, ctx.doc), col: { w: 96, min: 40 }, tone: 'dim' },

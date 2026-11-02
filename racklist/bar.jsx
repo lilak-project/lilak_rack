@@ -4,16 +4,16 @@ import { tr } from 'lilak-ui/i18n.jsx'
 
 /**
  * The title bar of a rack service, in the service's own colour (brandStyle on
- * the root): the service's menu — what the tab can do, under the service's
- * name — then the tabs, then ↻. One part, so every service has the same bar.
+ * the root): the menu — what the tab can do — then the tabs, then `tools`
+ * (the editors' buttons) and ↻. One part, so every service has the same bar.
  *
- *   <RackBar menu={<RackMenu label="Notes" …/>} tabs={<RackTabs …/>} />
+ *   <RackBar menu={<RackMenu label="메뉴" …/>} tabs={<RackTabs …/>} tools={<RackPaneTools …/>} />
  *
  * ↻ and ⌘R / Ctrl+R reload this service only — inside the portal, the panel,
  * not the portal around it (after a sync, a new build). ⇧⌘R is left to the
  * browser: everything, the hard way.
  */
-export function RackBar({ menu = null, tabs = null, children }) {
+export function RackBar({ menu = null, tabs = null, tools = null, children }) {
   useReloadKey()
   return (
     <header className="rl-bar">
@@ -21,6 +21,7 @@ export function RackBar({ menu = null, tabs = null, children }) {
       {tabs}
       {children}
       <span className="rl-sp" />
+      {tools}
       <button type="button" className="rl-reload" title={tr("rk_reload_service")}
         onClick={() => window.location.reload()}>↻</button>
     </header>

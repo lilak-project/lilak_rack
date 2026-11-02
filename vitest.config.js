@@ -7,7 +7,12 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     dedupe: ['react', 'react-dom'],
-    alias: { 'lilak-ui': resolve(process.env.LILAK_UI_PATH || resolve(__dirname, '../lilak_ui'), 'src') },
+    alias: {
+      'lilak-ui': resolve(process.env.LILAK_UI_PATH || resolve(__dirname, '../lilak_ui'), 'src'),
+      // A service's own module may be under test too, and it reaches the
+      // kit by the name every service's vite config gives it.
+      racklist: resolve(__dirname, 'racklist/index.js'),
+    },
   },
   test: { environment: 'jsdom', include: ['tests/**/*.test.{js,jsx}'] },
 })

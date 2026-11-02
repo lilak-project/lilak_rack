@@ -6,7 +6,7 @@
  */
 import './strings.js'
 import { tr } from 'lilak-ui'
-import { isManager, loadTagSources, showFilteredInCalendar, tagKey } from 'racklist'
+import { isManager, linkProject, showFilteredInCalendar, tagKey } from 'racklist'
 import { InboxActions, MakesField, MatchName } from './inbox.jsx'
 
 // The kinds an activity is stored with (Korean in the data) — as academic_activities/src-lilak/def.js GROUPS has them.
@@ -16,10 +16,7 @@ const isNote = (r) => r.target === 'note'
 const fromMail = () => true                       // the mail's own facts: shown, not edited
 // A project's events: activity's calendar, filtered by it (`+name`, as its filter keeps one).
 const CAL = 'academic_activities'
-const showInCalendar = async (name) => {
-  const proj = (await loadTagSources()).find((s) => s.svc === CAL)?.proj || 'activities'
-  showFilteredInCalendar(CAL, proj, [`+${tagKey(name)}`])
-}
+const showInCalendar = (name) => showFilteredInCalendar(CAL, linkProject(CAL), [`+${tagKey(name)}`])
 
 // A project's folder is `NN__<name>`, the numbering the projects folder
 // already has (05__STARK): found with or without its number, any case; a new

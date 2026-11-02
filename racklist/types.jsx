@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import './strings.js'
 import { tr, currentLang } from 'lilak-ui/i18n.jsx'
 import { RackTextRows } from './fields.jsx'
-import { authHeaders, openInService, serviceColor } from './portal.js'
+import { authHeaders, linkProject, openInService, serviceColor } from './portal.js'
 import { useSharedTags, spellTag, tagKey, uniqueTags } from './tags.js'
 import { parseRule, describe, withUntil, withCount, withoutEnd, DAYS, dow, nth } from './rrule.js'
 
@@ -486,10 +486,12 @@ registerType('files', {
 /**
  * `ref` points at another [항목] — in this service (`to: 'self'`, or another
  * item list of this document: `to: { item: 'people' }`) or in ANOTHER service:
- * `to: { svc: 'reference_manager', proj: 'papers', item: 'references' }`.
+ * `to: { svc: 'reference_manager', item: 'references' }` — that service's link
+ * project (portal.js linkProject), whichever a manager has chosen.
  *
  * What is stored is the address, never a copy: `{ id }` here, `{ svc, proj, id }`
- * across services. The label is looked up when shown, so renaming the target
+ * across services, so a link made before the link project moved still opens
+ * where it was made. The label is looked up when shown, so renaming the target
  * renames every link to it. `many: true` holds a list of them.
  *
  * `names: true` lets an entry be a name with nobody behind it ({ label }) — a
@@ -504,7 +506,8 @@ export function remoteDoc(svc, proj) {
   const k = `${svc}/${proj}`
   if (!REMOTE.has(k)) {
     REMOTE.set(k, fetch(`/pp/${svc}/${proj}/api/data`, { headers: authHeaders() })
-      .then((r) => (r.ok ? r.json() : null)).catch(() => null))
+      // Refused is not empty: the field says so (RefEdit) rather than offer nothing.
+      .then((r) => (r.ok ? r.json() : r.status === 403 ? { denied: true } : null)).catch(() => null))
   }
   return REMOTE.get(k)
 }
@@ -515,7 +518,7 @@ export function refTarget(field, def) {
   const to = field.to || 'self'
   if (to === 'self') return { local: true, item: def?.item?.key, label: def?.item?.label }
   if (typeof to === 'string') return { local: true, item: to }
-  return { local: !to.svc, item: to.item, svc: to.svc, proj: to.proj, label: to.label }
+  return { local: !to.svc, item: to.item, svc: to.svc, proj: linkProject(to.svc), label: to.label }
 }
 const labelWith = (label) => (typeof label === 'function' ? label
   : label ? (r) => str(r?.[label]) : (r) => str(r?.name || r?.title || r?.citeKey || r?.id))
@@ -573,6 +576,7 @@ function RefEdit({ value, onChange, field, ctx }) {
   }
   return (
     <div className="rl-rows rl-chips">
+      {!t.local && ctx.remote?.[`${t.svc}/${t.proj}`]?.denied && <span className="rl-hint rl-warn">{tr("rk_ref_denied", t.svc, t.proj)}</span>}
       <div className="rl-rrow">
         {links.map((l) => (
           <span key={l.id || `name:${l.label}`} className={`rl-tag${l.id ? '' : ' rl-unlinked'}`}
@@ -753,20 +757,21 @@ registerType('image', {
  *  this one. Declared on the side being pointed at, as a computed field:
  *
  *    { k: 'usedBy', label: '활동', type: 'backlinks',
- *      from: { svc: 'academic_activities', proj: 'activities', item: 'activities',
+ *      from: { svc: 'academic_activities', item: 'activities',
  *              field: 'papers', label: 'name' } }
  *
  *  Nothing is stored here: the other service's links are the only copy, so the
  *  two can never disagree. Each one opens that record there. */
 export function backlinksOf(rec, field, ctx) {
   const f = field.from || {}
-  const src = ctx.remote?.[`${f.svc}/${f.proj}`]?.[f.item] || []
+  const proj = linkProject(f.svc)
+  const src = ctx.remote?.[`${f.svc}/${proj}`]?.[f.item] || []
   const me = ctx.def?.name
   const id = rec?.id
   if (!id) return []
   const label = labelWith(f.label)
   return src.filter((x) => list(x[f.field]).some((l) => l?.id === id && (!l.svc || l.svc === me)))
-    .map((x) => ({ svc: f.svc, proj: f.proj, id: x.id, label: label(x) }))
+    .map((x) => ({ svc: f.svc, proj, id: x.id, label: label(x) }))
 }
 registerType('backlinks', {
   text: (v) => list(v).map((l) => l.label).join(', '),
@@ -817,7 +822,7 @@ function notesOf(svc, proj, fresh) {
   return NOTES.get(k)
 }
 function NoteEdit({ value, onChange, field, rec, ctx }) {
-  const svc = field.svc || 'note', proj = field.proj || 'note'
+  const svc = field.svc || 'note', proj = linkProject(svc)
   const title = str(field.title ? field.title(rec || {}) : '').trim()
   const [notes, setNotes] = useState(null)
   const [tone, setTone] = useState('')            // the note service's colour, for its tab
@@ -866,7 +871,7 @@ registerType('note', {
   text: (v) => str(v?.title),
   cell: (v, ctx) => (v?.id ? (
     <button type="button" className="rl-lnk" title={v.title}
-      onClick={(e) => { e.stopPropagation(); openInService(ctx.field.svc || 'note', ctx.field.proj || 'note', v.id) }}>{tr("rk_note")}</button>
+      onClick={(e) => { e.stopPropagation(); openInService(ctx.field.svc || 'note', linkProject(ctx.field.svc || 'note'), v.id) }}>{tr("rk_note")}</button>
   ) : D),
   Edit: (p) => <NoteEdit {...p} />,
   tidy: (v) => (v?.id ? { id: v.id, title: str(v.title) } : null),

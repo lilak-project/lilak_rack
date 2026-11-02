@@ -31,11 +31,10 @@ from typing import Any, Optional
 import yaml
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from lilak_portal_auth import identity, manager, signed_in
-from rackstore.store import Bin
+from rackstore.store import Bin, mount_spa
 
 DATA = Path(os.environ.get("NOTE_DATA_DIR", "./data"))
 PROJECT = os.environ.get("PORTAL_PROJECT", "")
@@ -70,6 +69,52 @@ TAG_RE = re.compile(r"(?:^|[\s(])#(?![0-9]+(?![^\s#.,;:!?()\[\]{}'\"]))([^\s#.,;
 # them, and anything else a name cannot hold, run into one `_`: `+STARK_CRIB`.
 _proj_key = lambda s: re.sub(r"[\s#+.,;:!?()\[\]{}'\"_]+", "_", str(s).strip().lower()).strip("_")  # noqa: E731
 PROJ_RE = re.compile(r"(?:^|[\s(])\+(?![0-9]+(?![^\s#+.,;:!?()\[\]{}'\"]))([^\s#+.,;:!?()\[\]{}'\"]+)")
+# ── code is not prose ──────────────────────────────────────────────────────
+_FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
+# A code span is a RUN of backticks closed by the same run: ``#x`` is one too.
+_INLINE = re.compile(r"(`+)[^\n]*?\1")
+_blank = lambda s: re.sub(r"[^\n]", " ", s)  # noqa: E731
+
+
+def _no_code(text: str) -> str:
+    """The body with its CODE blanked out — the same length, character for
+    character, so a position in the answer is a position in the text.
+
+    A ```fence is not a sentence: `#include` is not a tag and `+x` is not a
+    project. Everything that reads the body for this app's notations reads it
+    through here, inline ```#x``` with it. A fence nobody closed runs to the
+    end of the note, which is markdown's own rule.
+    """
+    out: list = []
+    open_ = ""
+    for line in str(text or "").split("\n"):
+        m = _FENCE.match(line)
+        if open_:
+            if m and m.group(1)[0] == open_[0] and len(m.group(1)) >= len(open_):
+                open_ = ""
+            out.append(_blank(line))
+            continue
+        if m:
+            open_ = m.group(1)
+            out.append(_blank(line))
+            continue
+        out.append(_INLINE.sub(lambda g: _blank(g.group(0)), line))
+    return "\n".join(out)
+
+
+def _sub_outside_code(rule, repl, text: str) -> str:
+    """`rule` applied where the body is prose, the code left exactly as it is."""
+    safe = _no_code(text)
+    out: list = []
+    last = 0
+    for m in rule.finditer(safe):
+        out.append(text[last:m.start()])
+        out.append(repl(m))
+        last = m.end()
+    out.append(text[last:])
+    return "".join(out)
+
+
 # The day a box was ticked: `✓ 2026-08-04`. The vault these notes came from
 # used Obsidian Tasks' `✅`, so that is still read — only what this app WRITES
 # changed, to a mark that is a line rather than a picture.
@@ -181,7 +226,7 @@ def _read(p: Path) -> dict:
     # key someone leaves in the front matter is kept as an ordinary field, not
     # read as tags — two places to write one thing is how they disagree.
     tags = []
-    for m in TAG_RE.finditer(body):
+    for m in TAG_RE.finditer(_no_code(body)):
         if m.group(1) not in tags:
             tags.append(m.group(1))
     return {
@@ -364,7 +409,10 @@ def rename_tags(body: dict, _: dict = Depends(signed_in)) -> dict:
         text = p.read_text(encoding="utf-8")
         m = re.match(r"---\n.*?\n---\n", text, re.S)
         head, rest = (text[:m.end()], text[m.end():]) if m else ("", text)
-        new = lead.sub(lambda x: f"{x.group(1)}{'#' + to if to else x.group(2)}" if x.group(2).lower() in gone else x.group(0), rest)
+        new = _sub_outside_code(
+            lead,
+            lambda x: f"{x.group(1)}{'#' + to if to else x.group(2)}" if x.group(2).lower() in gone else x.group(0),
+            rest)
         if new != rest:
             _atomic_write(p, head + new)
             n += 1
@@ -381,7 +429,7 @@ def tagged(tag: str = "", project: str = "", _: dict = Depends(signed_in)) -> di
     out = []
     for note in _all(NOTES):
         if want and (any(t.lower() == want for t in note["tags"]) if rule is TAG_RE
-                     else any(hit(m) for m in PROJ_RE.finditer(note["body"]))):
+                     else any(hit(m) for m in PROJ_RE.finditer(_no_code(note["body"])))):
             out.append({"key": "notes", "rec": {"id": note["id"], "title": note["title"], "date": note["date"]}})
         for i, ln in enumerate(note["body"].splitlines()):
             m = _todo(ln)
@@ -465,9 +513,10 @@ def _files(note: str = "") -> Path:
     `![[a.png]]` names one file in it, and two notes showing the same picture
     should be showing the same file.
 
-    A tex note gets a folder of its own (`files/<note>/`), because LaTeX names
-    a file by a plain name that the compile copies next to `main.tex` — two
-    papers that each have a `fig1.pdf` must not be one file.
+    A tex note gets a folder of its own (`files/<note>/`), with the shape a
+    manuscript has — `img/`, `section/`, `style/`, the `.bib` at the top — and
+    the compile copies the whole tree around `main.tex`. Its own, because two
+    papers that each have an `img/fig1.pdf` must not be one file.
     """
     if not note:
         return FILES
@@ -476,18 +525,40 @@ def _files(note: str = "") -> Path:
     return FILES / note
 
 
-@app.get("/api/file/{name}")
+@app.get("/api/files")
+def list_files(note: str = "", _: dict = Depends(signed_in)) -> dict:
+    """What this note keeps beside it, as paths — `img/fig1.png`.
+
+    A tex note's folder is a tree now (`_safe_rel`), and a tree nobody can see
+    is a tree you guess at: which pictures arrived with the zip, whether the
+    `.bib` the body asks for is the one that is there. The folder itself is a
+    click away (`/api/reveal`), but that is the host's file manager, and the
+    note may be read from another machine."""
+    root = _files(note)
+    if not root.is_dir():
+        return {"files": []}
+    out = [{"name": f.relative_to(root).as_posix(), "bytes": f.stat().st_size}
+           for f in root.rglob("*") if f.is_file() and not f.name.startswith(".")]
+    out.sort(key=lambda x: x["name"])
+    return {"files": out}
+
+
+@app.get("/api/file/{name:path}")
 def get_file(name: str, note: str = "", _: dict = Depends(signed_in)):
-    """A file a note embeds — `![[name.png]]`, which is Obsidian's spelling and
-    names the file alone. It never leaves the project's files folder.
+    """A file a note embeds — `![[name.png]]` in a markdown note, which is
+    Obsidian's spelling, or `img/fig1.png` in a tex note, which keeps its files
+    in folders (`_safe_rel`). Either way it never leaves the project's files
+    folder: the path is resolved and then checked to be inside it, so a
+    symlink is no way out either.
 
     `note` asks that note's own folder first (a tex note), and the shared
     folder after it, so a picture already in the vault still shows."""
-    if not name or "/" in name or "\\" in name or name.startswith("."):
+    if not name or name.startswith((".", "/")) or ".." in name.replace("\\", "/").split("/"):
         raise HTTPException(400, "잘못된 파일 이름입니다.")
+    root = FILES.resolve()
     for base in ([_files(note), FILES] if note else [FILES]):
         p = (base / name).resolve()
-        if str(p).startswith(str(FILES.resolve())) and p.is_file():
+        if p.is_relative_to(root) and p.is_file():
             return FileResponse(p)
     raise HTTPException(404, "그 파일이 없습니다.")
 
@@ -520,8 +591,9 @@ TEX_AT = re.compile(r"\bmain\.tex:(\d+):\s*(.*)")
 @app.post("/api/compile/{note_id}")
 def compile_note(note_id: str, _: dict = Depends(signed_in)) -> dict:
     r"""The note, typeset. Its body is written out as `main.tex` and its files
-    land beside it — which is why a tex note has a folder of its own, and why
-    `\includegraphics{fig1.pdf}` means the plain name it says.
+    folder is copied around it, folders and all — which is why a tex note has a
+    folder of its own, and why `\includegraphics{img/fig1.pdf}` means the path
+    it says.
 
     `--untrusted` is the point: no shell-escape, nothing read from outside the
     folder we just made. The document is text from a browser."""
@@ -531,12 +603,12 @@ def compile_note(note_id: str, _: dict = Depends(signed_in)) -> dict:
         raise HTTPException(501, "이 서버에는 tectonic이 없습니다.")
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
-        (work / "main.tex").write_text(body, encoding="utf-8")
         src = _files(note_id)
         if src.is_dir():
-            for f in src.iterdir():
-                if f.is_file():
-                    shutil.copy(f, work / f.name)
+            shutil.copytree(src, work, dirs_exist_ok=True)
+        # After the files, so a `main.tex` sitting in the folder cannot win
+        # over the note: the note IS the document.
+        (work / "main.tex").write_text(body, encoding="utf-8")
         try:
             r = subprocess.run([exe, "--untrusted", "main.tex"], cwd=work,
                                capture_output=True, text=True,
@@ -595,26 +667,48 @@ def reveal(note: str = "", _: dict = Depends(manager)) -> dict:
     return {"path": str(folder)}
 
 
+# Where a kind of file belongs in a tex note's folder. A manuscript is a
+# structure, not a heap — a picture goes in `img/`, a class or a style in
+# `style/`, a chapter in `section/`, and the `.bib` stays at the top because
+# `\bibliography{reference}` is where everyone writes it. Decided by what the
+# file IS, so nothing has to be asked at the drop.
+TEX_DIRS = {".png": "img", ".jpg": "img", ".jpeg": "img", ".gif": "img",
+            ".pdf": "img", ".eps": "img", ".ps": "img", ".svg": "img",
+            ".sty": "style", ".cls": "style", ".bst": "style",
+            ".tex": "section"}
+
+
 @app.post("/api/file")
-async def put_file(f: UploadFile = File(...), note: str = "",
+async def put_file(f: UploadFile = File(...), note: str = "", replace: bool = False,
                    _: dict = Depends(signed_in)):
-    """A file dropped into a note. It lands beside the notes under its own
-    name, the way a vault keeps it; a name already taken grows a number rather
-    than overwriting someone else's picture. `note` puts it in that note's own
-    folder instead (a tex note — see `_files`)."""
+    """A file dropped into a note. A markdown note's lands beside the notes
+    under its own name, the way a vault keeps it; a tex note's goes into the
+    folder its kind belongs in (`TEX_DIRS`). Either way a name already taken
+    grows a number rather than overwriting someone else's picture, and the
+    answer is the path the document should point at.
+
+    `replace` writes over the name instead — for a file this app generates and
+    regenerates (a .bib made from reference_manager), where a second copy
+    under a second name is not a kept picture, it is the wrong bibliography."""
     raw = await f.read(MAX_FILE + 1)
     if len(raw) > MAX_FILE:
         raise HTTPException(413, f"파일이 너무 큽니다 ({MAX_FILE // (1 << 20)}MB까지).")
     name = _slug(Path(f.filename or "file").name) or "file"
+    # `\includegraphics{img/drop test.png}` is a fight nobody wins. A vault
+    # keeps the name it was given; a manuscript gets one LaTeX can write.
+    if note:
+        name = re.sub(r"\s+", "-", name)
     stem, ext = os.path.splitext(name)
-    folder = _files(note)
+    sub = TEX_DIRS.get(ext.lower(), "") if note else ""
+    folder = _files(note) / sub
     folder.mkdir(parents=True, exist_ok=True)
     n = 1
-    while (folder / name).exists():
+    while not replace and (folder / name).exists():
         name = f"{stem}-{n}{ext}"
         n += 1
     (folder / name).write_bytes(raw)
-    return {"name": _pdfify(folder / name) or name}
+    out = _pdfify(folder / name) or name
+    return {"name": f"{sub}/{out}" if sub else out}
 
 
 def _pdfify(p: Path) -> str:
@@ -649,35 +743,28 @@ ZIP_MEMBERS, ZIP_BYTES = 500, 128 << 20
 BIB_KEY = re.compile(r"^\s*@\w+\s*\{\s*([^\s,{}]+)\s*,", re.M)
 
 
-def _flat(rel: str, taken: dict) -> str:
-    """One name, for a file that arrived at a path.
+def _safe_rel(rel: str) -> str:
+    """A path inside the note's folder, out of a path we were handed.
 
-    A tex note's files are flat (`_files`), because a compile copies them next
-    to `main.tex` and LaTeX asks for a plain name. Two pictures that were
-    `fig/1.png` and `tab/1.png` cannot both be `1.png`, so the second one wears
-    the folder it came from — and only the second one, so the common case keeps
-    the name the document already writes."""
-    name = _slug(Path(rel).name) or "file"
-    if taken.get(name) in (None, rel):
-        return name
-    up = Path(rel).parent.name
-    folder = _slug(up) if up not in ("", ".", "..") else ""
-    stem, ext = os.path.splitext(name)
-    cand = f"{folder}-{name}" if folder else name
-    n = 1
-    while taken.get(cand) not in (None, rel):
-        cand = f"{stem}-{n}{ext}"
-        n += 1
-    return cand
+    A tex note's files keep the shape the manuscript gave them — `img/fig1.png`
+    is what the body already writes, and rewriting it to a flat name was work
+    nobody asked for. So the folders are kept and only cleaned: every part
+    slugged, `.` and `..` dropped, nothing resolved against the filesystem. A
+    zip member called `../../etc/passwd` is a file at `etc/passwd` here, and
+    one called `a/../b.tex` is `a/b.tex`."""
+    parts = [_slug(s) for s in str(rel).replace("\\", "/").split("/")
+             if s not in ("", ".", "..")]
+    return "/".join(parts[-8:]) or "file"      # a manuscript is not a disk
 
 
 def _rewrite(body: str, moved: dict) -> tuple[str, int]:
     r"""The document, pointing at where its pictures actually are now.
 
-    A path is rewritten with its extension (`Pictures/fig1.pdf`) and without
-    it, because `\includegraphics{Pictures/fig1}` is how most manuscripts
-    write one. Longest first: `fig/a.pdf` must not be half-replaced by `a.pdf`.
-    """
+    Only an EPS moves (`_pdfify`) — an import keeps every other path as the
+    manuscript wrote it. A path is rewritten with its extension
+    (`img/fig1.eps`) and without it, because `\includegraphics{img/fig1}` is
+    how most manuscripts write one. Longest first: `fig/a.eps` must not be
+    half-replaced by `a.eps`."""
     n = 0
     for rel in sorted(moved, key=len, reverse=True):
         flat = moved[rel]
@@ -698,10 +785,10 @@ async def import_zip(note_id: str, f: UploadFile = File(...),
     with `main.tex`, a folder of pictures and a `.bib`.
 
     It becomes THIS note — the tex is the body, everything else lands in the
-    note's own files folder, flat, and the paths in the body are rewritten to
-    match. Nothing is read back out of the zip's own paths: a name is made
-    from its last component only, so a member called `../../x` is a file
-    called `x`."""
+    note's own files folder AS IT CAME, folders and all, placed relative to
+    where the main tex sat. So the paths the body already writes keep working
+    and the body is not touched (except for an EPS, which no engine can place).
+    The zip's paths are cleaned, never trusted: see `_safe_rel`."""
     p = _path(note_id)
     if not p.is_file():
         raise HTTPException(404, "그 노트가 없습니다.")
@@ -733,16 +820,30 @@ async def import_zip(note_id: str, f: UploadFile = File(...),
 
     folder = _files(note_id)
     folder.mkdir(parents=True, exist_ok=True)
-    moved, taken = {}, {}
+    # Everything is placed relative to where the main tex sat: a zip that is
+    # one folder (`paper/main.tex`, `paper/img/fig1.png`) becomes that folder's
+    # contents, so `img/fig1.png` is still `img/fig1.png` to the body.
+    base = Path(main.filename).parent.as_posix()
+    base = "" if base in (".", "/") else base + "/"
+    moved, kept = {}, []
     for i in members:
         if i is main:
             continue
-        name = _flat(i.filename, taken)
-        taken[name] = i.filename
-        (folder / name).write_bytes(z.read(i))
+        said = i.filename[len(base):] if i.filename.startswith(base) else i.filename
+        rel = _safe_rel(said)
+        at = folder / rel
+        at.parent.mkdir(parents=True, exist_ok=True)
+        at.write_bytes(z.read(i))
+        kept.append(rel)
         # An EPS cannot be placed at all (see `_pdfify`), so the document is
-        # pointed at the PDF made from it instead.
-        moved[i.filename] = _pdfify(folder / name) or name
+        # pointed at the PDF made from it instead. That is the ONLY thing the
+        # import rewrites — every other path is already right.
+        pdf = _pdfify(at)
+        if pdf:
+            to = (Path(rel).parent / pdf).as_posix()
+            moved[said] = to
+            if rel != said:
+                moved[rel] = to
 
     body, rewrote = _rewrite(z.read(main).decode("utf-8", "replace"), moved)
     keys = sorted({k for i in members if i.filename.lower().endswith(".bib")
@@ -755,7 +856,7 @@ async def import_zip(note_id: str, f: UploadFile = File(...),
     # `pdf_at` the way a note read carries it: the PDF on disk is now older
     # than the note, which is exactly what the editor needs to know.
     return {**_read(p), "pdf_at": _pdf_at(note_id), "main": main.filename,
-            "files": sorted(set(moved.values())), "rewrote": rewrote, "bib_keys": keys}
+            "files": sorted(set(kept)), "rewrote": rewrote, "bib_keys": keys}
 
 
 def _braced(text: str, at: int) -> str:
@@ -789,7 +890,7 @@ def bib(note_id: str, _: dict = Depends(signed_in)) -> dict:
     never heard of comes out of the PDF as a `?`."""
     folder = _files(note_id)
     out = {}
-    for f in sorted(folder.glob("*.bib")) if folder.is_dir() else []:
+    for f in sorted(folder.rglob("*.bib")) if folder.is_dir() else []:
         text = f.read_text(encoding="utf-8", errors="replace")
         hits = list(BIB_KEY.finditer(text))
         for i, m in enumerate(hits):
@@ -805,17 +906,4 @@ def whoami(me: dict = Depends(identity)) -> dict:
 
 
 # ── Static SPA (must stay last: the catch-all would shadow /api/*) ────────────
-_assets = DIST / "assets"
-if _assets.is_dir():
-    app.mount("/assets", StaticFiles(directory=str(_assets)), name="assets")
-
-
-@app.get("/{path:path}")
-def spa(path: str):
-    candidate = (DIST / path).resolve()
-    if path and candidate.is_file() and candidate.is_relative_to(DIST.resolve()):
-        return FileResponse(candidate)
-    index = DIST / "index.html"
-    if index.is_file():
-        return FileResponse(index)
-    raise HTTPException(404, "note dist not built")
+mount_spa(app, DIST, name="note")

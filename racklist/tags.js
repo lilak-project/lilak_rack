@@ -1,7 +1,7 @@
 /** Tags shared across services.
  *
  * Every service that says so in its manifest (`capabilities.tags`) answers
- * GET /api/tags on its entry project with the tags its records wear and how
+ * GET /api/tags on its link project (portal.js) with the tags its records wear and how
  * many wear each — the rack services from their `tags` field, note from the
  * `#tags` in its bodies. A tag box anywhere offers all of them, so a tag
  * typed in one service is the same tag in the others.
@@ -12,7 +12,7 @@
  * this only ever reads the others.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { authHeaders } from './portal.js'
+import { authHeaders, linkProject, newId } from './portal.js'
 
 export const tagKey = (t) => String(t ?? '').trim().toLowerCase()
 
@@ -43,12 +43,12 @@ export function loadTagSources() {
   asked ||= fetch('/api/services', { headers: authHeaders() })
     .then((r) => (r.ok ? r.json() : []))
     .then((list) => Promise.all((Array.isArray(list) ? list : [])
-      .filter((s) => s.tags && (s.tags_project || s.entry_project))
-      .map((s) => fetch(`/pp/${s.name}/${s.tags_project || s.entry_project}/api/tags`, { headers: authHeaders() })
-        .then((r) => (r.ok ? r.json() : null)).catch(() => null)
+      .filter((s) => s.tags && s.link_project)
+      .map((s) => fetch(`/pp/${s.name}/${s.link_project}/api/tags`, { headers: authHeaders() })
+        .then((r) => (r.ok ? r.json() : { denied: r.status === 403 })).catch(() => null)
         // Named short where tags are counted: "activity", not "activity manager".
-        .then((x) => ({ svc: s.name, proj: s.tags_project || s.entry_project, label: (s.label || s.name).replace(/\s*manager$/i, ''),
-          color: s.color || '', tags: x?.tags || {} })))))
+        .then((x) => ({ svc: s.name, proj: s.link_project, label: (s.label || s.name).replace(/\s*manager$/i, ''),
+          color: s.color || '', tags: x?.tags || {}, denied: !!x?.denied })))))
     .catch(() => [])
   return asked
 }
@@ -167,18 +167,12 @@ const PM = 'project_manager'
 let projAsk = null
 /** Every project: [{ id, name, tags, match, svc, proj }] ([] without project_manager). */
 export function loadProjects() {
-  projAsk ||= fetch('/api/services', { headers: authHeaders() })
-    .then((r) => (r.ok ? r.json() : []))
-    .then((list) => (Array.isArray(list) ? list : []).find((s) => s.name === PM))
-    .then((s) => {
-      const proj = s && (s.tags_project || s.entry_project)
-      if (!proj) return []
-      return fetch(`/pp/${PM}/${proj}/api/data`, { headers: authHeaders() })
-        .then((r) => (r.ok ? r.json() : {}))
-        .then((d) => (d.projects || []).filter((p) => p?.name)
-          .map((p) => ({ id: p.id, name: p.name, tags: p.tags || [], match: p.match || 'or', svc: PM, proj })))
-    })
-    .catch(() => [])
+  const proj = linkProject(PM)
+  projAsk ||= (!proj ? Promise.resolve([]) : fetch(`/pp/${PM}/${proj}/api/data`, { headers: authHeaders() })
+    .then((r) => (r.ok ? r.json() : {}))
+    .then((d) => (d.projects || []).filter((p) => p?.name)
+      .map((p) => ({ id: p.id, name: p.name, tags: p.tags || [], match: p.match || 'or', svc: PM, proj })))
+    .catch(() => []))
   return projAsk
 }
 export const forgetProjects = () => { projAsk = null }
@@ -196,21 +190,58 @@ const RM = 'reference_manager'
 let refAsk = null
 /** Every reference: [{ id, citeKey, title, svc, proj }] ([] without reference_manager). */
 export function loadReferences() {
-  refAsk ||= fetch('/api/services', { headers: authHeaders() })
-    .then((r) => (r.ok ? r.json() : []))
-    .then((list) => (Array.isArray(list) ? list : []).find((s) => s.name === RM))
-    .then((s) => {
-      const proj = s && (s.tags_project || s.entry_project)
-      if (!proj) return []
-      return fetch(`/pp/${RM}/${proj}/api/data`, { headers: authHeaders() })
-        .then((r) => (r.ok ? r.json() : {}))
-        .then((d) => (d.references || []).filter((r) => String(r?.citeKey || '').trim())
-          .map((r) => ({ id: r.id, citeKey: String(r.citeKey).trim(), title: r.title || '', svc: RM, proj })))
-    })
-    .catch(() => [])
+  const proj = linkProject(RM)
+  refAsk ||= (!proj ? Promise.resolve([]) : fetch(`/pp/${RM}/${proj}/api/data`, { headers: authHeaders() })
+    .then((r) => (r.ok ? r.json() : {}))
+    .then((d) => (d.references || []).filter((r) => String(r?.citeKey || '').trim())
+      .map((r) => ({ id: r.id, citeKey: String(r.citeKey).trim(), title: r.title || '', svc: RM, proj })))
+    .catch(() => []))
   return refAsk
 }
 export const forgetReferences = () => { refAsk = null }
+
+/** reference_manager's whole document — the records with every field, plus the
+ *  `authors` and `journals` a citation is spelled from. `loadReferences` keeps
+ *  three fields of each record because a picker wants a list; a .bib wants the
+ *  paper. Not cached: this is asked when a file is about to be written. */
+export async function referenceDoc() {
+  const proj = linkProject(RM)
+  if (!proj) return null
+  const r = await fetch(`/pp/${RM}/${proj}/api/data`, { headers: authHeaders() })
+  return r.ok ? r.json() : null
+}
+
+/** A paper added to reference_manager from somewhere else, and the record as
+ *  it was stored.
+ *
+ *  The one write across services. Everything else here reads, and this stays
+ *  the exception on purpose: a manuscript IS a paper, so the service that
+ *  keeps the papers should know about it the moment it exists rather than
+ *  when someone remembers to type it in. It is a PUT of the records as this
+ *  moment sees them, which is what reference_manager's own screen sends: the
+ *  store merges record by record against `baseVersion` (rackstore's `merge`),
+ *  so an edit someone is making there at the same time is kept, not run over.
+ *  A key already in the library is not a second record — it is that one. */
+export async function addReference(rec) {
+  const proj = linkProject(RM)
+  if (!proj) throw new Error('reference_manager')
+  const doc = await referenceDoc()
+  if (!doc) throw new Error('reference_manager')
+  const key = String(rec?.citeKey || '').trim()
+  const row = (r) => ({ id: r.id, citeKey: String(r.citeKey || '').trim(), title: r.title || '', svc: RM, proj })
+  const had = key && (doc.references || []).find((r) => String(r.citeKey || '').trim() === key)
+  if (had) return { ref: row(had), had: true }
+  const made = { id: newId(), ...rec }
+  const r = await fetch(`/pp/${RM}/${proj}/api/data`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ baseVersion: doc.version, references: [...(doc.references || []), made] }),
+  })
+  if (r.status === 409) throw new Error('conflict')
+  if (!r.ok) throw new Error(`PUT ${RM} → ${r.status}`)
+  forgetReferences()
+  return { ref: row(made), had: false }
+}
 /** The references ([] until they come). */
 export function useReferences() {
   const [list, setList] = useState([])

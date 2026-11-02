@@ -156,6 +156,10 @@ const openLines = (state) => {
 function build(view, fileSrc) {
   const marks = []
   const tables = []
+  // Where the code is. `#include` is not a tag and `+x` is not a project, so
+  // everything this app draws ON TOP of markdown (below) asks here first.
+  const code = []
+  const inCode = (pos) => code.some((r) => pos >= r.from && pos < r.to)
   const open = openLines(view.state)
   const shown = (pos) => open.has(view.state.doc.lineAt(pos).number)
   const hide = (from, to) => { if (to > from) marks.push(Decoration.replace({}).range(from, to)) }
@@ -195,6 +199,20 @@ function build(view, fileSrc) {
           }
           return
         }
+        // A fence is a BLOCK, and it has to say so with the caret away: every
+        // line of it wears the box the other two views draw, and `return
+        // false` keeps the walk out of it — the ``` were being hidden the way
+        // bold hides its stars, which left a code block looking like plain
+        // text with no way to tell it was one.
+        if (name === 'FencedCode') {
+          code.push({ from: node.from, to: node.to })
+          const first = view.state.doc.lineAt(node.from).number
+          const last = view.state.doc.lineAt(node.to).number
+          for (let n = first; n <= last; n += 1) {
+            marks.push(Decoration.line({ class: 'nt-cm-code' }).range(view.state.doc.line(n).from))
+          }
+          return false
+        }
         if (name === 'HorizontalRule') {
           // Drawn as a line — but not while the caret is on it, or the dashes
           // someone is typing (the start of a table's ruling, say) vanish
@@ -204,6 +222,7 @@ function build(view, fileSrc) {
           }
           return
         }
+        if (name === 'InlineCode') code.push({ from: node.from, to: node.to })
         if (PAINT[name]) {
           marks.push(Decoration.mark({ class: PAINT[name] }).range(node.from, node.to))
           return
@@ -249,27 +268,32 @@ function build(view, fileSrc) {
 
     for (const m of text.matchAll(EMBED)) {
       const start = at(m.index)
+      if (inCode(start)) continue
       marks.push(Decoration.widget({ widget: new Embed(m[1], fileSrc), side: 1 })
         .range(start + m[0].length))
       if (!shown(start)) hide(start, start + m[0].length)
     }
     for (const m of text.matchAll(WIKI)) {
+      if (inCode(at(m.index))) continue
       marks.push(Decoration.mark({ class: 'nt-cm-wiki' }).range(at(m.index), at(m.index + m[0].length)))
     }
     for (const m of text.matchAll(TAG)) {
       const start = at(m.index + m[1].length)
+      if (inCode(start)) continue
       marks.push(Decoration.mark({ class: 'nt-tag-in' }).range(start, start + 1 + m[2].length))
       if (!shown(start)) hide(start, start + 1)
     }
     for (const m of text.matchAll(PROJ)) {
       if (!isProject(m[2])) continue
       const start = at(m.index + m[1].length)
+      if (inCode(start)) continue
       marks.push(Decoration.mark({ class: 'nt-proj-in' }).range(start, start + 1 + m[2].length))
       if (!shown(start)) hide(start, start + 1)
     }
     const today = new Date().toISOString().slice(0, 10)
     for (const m of text.matchAll(DATE)) {
       const start = at(m.index)
+      if (inCode(start)) continue
       const due = '»📅'.includes(m[1])
       // A day that has passed on a line still open: the one date worth a colour.
       const late = due && m[2] < today && !/^\s*[-*+]\s+\[[xX]\]/.test(view.state.doc.lineAt(start).text)

@@ -17,6 +17,13 @@ export const PORTAL_PROJECT = PARTS.length ? PARTS[PARTS.length - 1] : ''
  *  the portal — the nameplate then keeps the plain RACK grey. */
 export const PORTAL_SERVICE = (typeof window !== 'undefined' && window.__PORTAL_SERVICE__) || {}
 
+/** The one project of each service the others see (the manager's choice, in the
+ *  portal's project list): where a tag is read and a link points. A project that
+ *  is not its service's still reads the others' — they do not read it. */
+const LINKS = PORTAL_SERVICE.links || {}
+export const linkProject = (svc) => LINKS[svc] || ''
+export const PROJECT_LINKED = !LINKS[PORTAL_SERVICE.name] || LINKS[PORTAL_SERVICE.name] === PORTAL_PROJECT
+
 /** Readable text on a given plate. Luminance, not a guess: a service may be
  *  painted anything from #f3e5bb to #3d5a80. */
 export function onColor(hex) {

@@ -7,6 +7,7 @@ export { RackCalendar } from './calendar.jsx'
 export { RackItemEditor, dropItems } from './editor.jsx'
 export { RackBulkEditor, bulkFields } from './bulk.jsx'
 export { RackListing } from './listing.jsx'
+export { bibText, bibEntry, bibAuthors, bibOrder, nameParts, jAbbrev, journalRec } from './bib.js'
 export { RackFolder, RackFilePane, RackSettings, useFolders, fileSrc, fileUrl, scanFiles, onDesktop, copyText } from './files.jsx'
 export { registerType, typeOf, remoteDoc, forgetRemote, useRefOptions } from './types.jsx'
 export {
@@ -14,8 +15,8 @@ export {
   classRows, fixedTabs, itemTabId, itemScope, labelOf, useRemoteDocs, valueOf,
 } from './schema.js'
 export { RackTable, RackRow, RackTabs } from './table.jsx'
-export { tagKey, mergeTags, loadSharedTags, loadTagSources, loadTagged, forgetTagSources, renameTagEverywhere, sharedTagRows, useTagSources, useSharedTags, useFavTags, spellTag, uniqueTags, loadProjects, forgetProjects, projectWears, useProjects, loadReferences, forgetReferences, useReferences } from './tags.js'
-export { useEditorPanes, RackPaneStrip, paneLayout, paneStyles, LEFT, RIGHT, FULL } from './panes.jsx'
+export { tagKey, mergeTags, loadSharedTags, loadTagSources, loadTagged, forgetTagSources, renameTagEverywhere, sharedTagRows, useTagSources, useSharedTags, useFavTags, spellTag, uniqueTags, loadProjects, forgetProjects, projectWears, useProjects, loadReferences, forgetReferences, useReferences, referenceDoc, addReference } from './tags.js'
+export { useEditorPanes, RackPaneStrip, RackPaneTools, paneLayout, paneStyles, LEFT, RIGHT, FULL } from './panes.jsx'
 export { RackActions } from './actions.jsx'
 export { RackField, RackTextRows } from './fields.jsx'
 export { useMergeMode, RackMergeButtons, RackMerge } from './merge.jsx'
@@ -27,6 +28,6 @@ export {
 export { bySome, fill, facetOf, passesFilter, asSorts, bumpSort, byKeys } from './sort.js'
 export { useFacetFilter, FilterBar, FacetRows } from './filter.jsx'
 export {
-  PORTAL_BASE, PORTAL_PROJECT, PORTAL_SERVICE, brandStyle, onColor, projectKey, load, save,
+  PORTAL_BASE, PORTAL_PROJECT, PORTAL_SERVICE, PROJECT_LINKED, linkProject, brandStyle, onColor, projectKey, load, save,
   portalToken, portalUser, isManager, authHeaders, newId, fetchDoc, putDoc, openInService, takeOpenRequest, serviceColor, showFilteredInCalendar,
 } from './portal.js'

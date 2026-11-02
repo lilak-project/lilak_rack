@@ -16,28 +16,33 @@
  */
 
 import './strings.js'
-import { PORTAL_BASE, authHeaders, serviceColor } from 'racklist'
+import { PORTAL_BASE, authHeaders, linkProject, serviceColor } from 'racklist'
 import { tr } from 'lilak-ui'
 
 // The note service's todos (GFM checkboxes in any note) that have a due day,
 // on that day in the calendar. The box ticks the line in its note (the note
 // is the only copy); the rest of the bar opens the note beside the records.
-const NOTE = '/pp/note/note'
+const NOTE = () => `/pp/note/${linkProject('note')}`
 // Its `#태그`s stay in the note; on the calendar the words alone.
 const untagged = (s) => s.replace(/(^|[\s(])#[^\s#.,;:!?()[\]{}'"]+/g, '$1').replace(/\s+/g, ' ').trim()
 const noteTodos = async () => {
   try {
-    const r = await fetch(`${NOTE}/api/todos`, { headers: authHeaders() })
+    const r = await fetch(`${NOTE()}/api/todos`, { headers: authHeaders() })
     if (!r.ok) return []
     const [{ todos = [] }, color] = await Promise.all([r.json(), serviceColor('note')])
     return todos.filter((t) => t.due).map((t) => ({
       id: `todo:${t.id}:${t.line}`, feed: tr('aa_todos'), color: color || '#365944',
       title: untagged(t.text), start: t.due, location: t.title, done: t.done,
-      toggle: (done) => fetch(`${NOTE}/api/todos`, {
+      toggle: (done) => fetch(`${NOTE()}/api/todos`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ id: t.id, line: t.line, done, text: t.text }),
       }).then((x) => x.ok),
-      open: (ctx) => ctx?.openRecord?.({ svc: 'note', proj: 'note', id: t.id, label: t.title }),
+      // Only one not yet done moves (a tick would be dated again by the note).
+      move: (due) => fetch(`${NOTE()}/api/todos`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ id: t.id, line: t.line, done: false, text: t.text, due }),
+      }).then((x) => x.ok),
+      open: (ctx) => ctx?.openRecord?.({ svc: 'note', proj: linkProject('note'), id: t.id, label: t.title }),
     }))
   } catch { return [] }
 }
@@ -101,8 +106,8 @@ function nameKey(r) {
   return [PREFIX[r.kind] || 'Activity', day, name].filter(Boolean).join('_')
 }
 
-const PAPERS = { svc: 'reference_manager', proj: 'papers', item: 'references', label: 'citeKey' }
-const PEOPLE = { svc: 'author_manager', proj: 'authors', item: 'authors',
+const PAPERS = { svc: 'reference_manager', item: 'references', label: 'citeKey' }
+const PEOPLE = { svc: 'author_manager', item: 'authors',
   label: (a) => [a.engFirst, a.engMiddle, a.engLast].filter(Boolean).join(' ')
     || `${a.korFamily || ''}${a.korGiven || ''}` || a.nick || '' }
 

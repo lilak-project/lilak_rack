@@ -1,7 +1,7 @@
 import './strings.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RackTable, RackRow, RackTabs } from './table.jsx'
-import { RackPaneStrip, paneLayout, paneStyles, FULL } from './panes.jsx'
+import { RackPaneStrip, RackPaneTools, paneLayout, paneStyles, FULL } from './panes.jsx'
 import { RackBar } from './bar.jsx'
 import { RackMenu, MenuRow, useRackMenu } from './menu.jsx'
 import { PaneFind } from './panefind.jsx'
@@ -24,7 +24,7 @@ import {
   classRows, wornBy, wears, isRef, fixedTabs, itemTabId, itemScope, labelOf, useRemoteDocs, valueOf,
   EMPTY_CELL as D,
 } from './schema.js'
-import { PORTAL_PROJECT, PORTAL_SERVICE, brandStyle, isManager, portalUser, fetchDoc, putDoc, newId, takeOpenRequest, showInCalendar, calAsk, calFilterAsk, load, save, projectKey, serviceColor } from './portal.js'
+import { PORTAL_PROJECT, PORTAL_SERVICE, PROJECT_LINKED, brandStyle, isManager, portalUser, fetchDoc, putDoc, newId, takeOpenRequest, showInCalendar, calAsk, calFilterAsk, load, save, projectKey, serviceColor } from './portal.js'
 import { tr } from 'lilak-ui/i18n.jsx'
 import { tagKey, useTagSources, sharedTagRows, useFavTags, renameTagEverywhere } from './tags.js'
 import { RackTagged, RackTaggedTab, TAGGED_COLS, TAGGED_SORTERS, useTaggedRows } from './tagged.jsx'
@@ -32,7 +32,7 @@ import { RackTagged, RackTaggedTab, TAGGED_COLS, TAGGED_SORTERS, useTaggedRows }
 /**
  * <RackService def={…} /> — a whole rack-list service from its declaration.
  *
- *   타이틀 바     [서비스 이름 ▾] (what the tab can do) · the tabs · ↻ — in its own colour
+ *   타이틀 바     [메뉴 ▾] (what the tab can do) · the tabs · the editors' buttons · ↻ — in its own colour
  *                 the tabs: every item · one tab per class · the tabs you opened · settings
  *   [표]          the items (or a class's records), with [나열] under it
  *   [편집창]      beside it: an item, a class record, a tag, a file, a folder
@@ -339,7 +339,7 @@ function RackList({ def: declared, slots = {} }) {
 
   useRackKeys({
     onNew: () => (cls?.stored ? openClass(cls, null) : openItem(null)),
-    onClose: () => { const cur = panes.current(panes.cols[0]); if (cur) panes.close(cur.id) },
+    onClose: () => { const cur = panes.showing && panes.current(panes.cols[0]); if (cur) panes.leave(cur.id) },
   })
 
   /** A record of ANOTHER service, in a pane here: that service's page for it
@@ -398,7 +398,7 @@ function RackList({ def: declared, slots = {} }) {
   const showDate = useCallback((d, tags) => {
     if (!d) return
     panes.setFull(false)
-    if (L.vw < (panes.cols.length > 1 ? 1500 : 1180)) panes.closeAll()     // as useRackList's showList
+    if (L.vw < 1180 || panes.cols.length > 1) panes.closeAll()     // as useRackList's showList
     openTab({ id: 'calendar', kind: 'calendar', label: tr("rk_tab_calendar") })
     setCalAt({ d: String(d).slice(0, 10), n: Date.now(), ...(tags ? { tags } : {}) })
   }, [openTab, panes, L.vw])
@@ -624,7 +624,7 @@ function RackList({ def: declared, slots = {} }) {
       const rec = etab.who ? items.find((r) => idOf(r) === etab.who) : null
       return (
         <RackItemEditor key={etab.id} def={def} doc={doc} rec={rec} seed={etab.seed} ctx={ctx} onSave={commit}
-          canDelete={IS_ADMIN} onCancel={() => panes.close(etab.id)}
+          canDelete={IS_ADMIN} onCancel={() => panes.close(etab.id)} guard={(fn) => panes.guard(etab.id, fn)}
           onClone={(seed) => openItem(null, null, seed)}
           actions={def.item.actions ? (f, setF) => def.item.actions(f, setF, ctx) : calButton(def, ctx.showDate)}
           onCreated={(r) => { panes.close(etab.id); openItem(idOf(r), r) }}
@@ -666,7 +666,7 @@ function RackList({ def: declared, slots = {} }) {
           movedWhy={field.movedWhy}
           onMerge={async (gone, to) => {
             // A shared tag is merged in every other service too.
-            if (c.shared) {
+            if (c.shared && PROJECT_LINKED) {
               const res = await renameTagEverywhere(gone, to, { skip: PORTAL_SERVICE.name })
               const bad = res.filter((r) => r.error).map((r) => `${r.label} (${r.error})`)
               if (bad.length) setNote(tr('rk_rename_failed_in', bad.join(' · ')))
@@ -687,7 +687,7 @@ function RackList({ def: declared, slots = {} }) {
         const rec = etab.who ? findStored(c, etab.who) : null
         return (
           <RackItemEditor key={etab.id} def={def} doc={doc} rec={rec} fields={c.fields} listKey={c.k} noun={c.noun} cls={c}
-            ctx={ctx} onSave={commit} onCancel={() => panes.close(etab.id)}
+            ctx={ctx} onSave={commit} onCancel={() => panes.close(etab.id)} guard={(fn) => panes.guard(etab.id, fn)}
             actions={c.actions ? (f, setF) => c.actions(f, setF, { ...ctx, doc, rec }) : undefined}
             // A list is its maker's to delete, or a manager's.
             canDelete={IS_ADMIN || (!!c.list?.owner && !!rec && rec[c.list.owner] === ME)}
@@ -703,7 +703,7 @@ function RackList({ def: declared, slots = {} }) {
           onOpen={openItem}
           onSave={async (gone, to, said) => {
             // A shared tag is renamed (or merged) in every other service too.
-            if (c.shared) {
+            if (c.shared && PROJECT_LINKED) {
               const res = await renameTagEverywhere(gone, to, { skip: PORTAL_SERVICE.name })
               const bad = res.filter((r) => r.error).map((r) => `${r.label} (${r.error})`)
               if (bad.length) setNote(tr('rk_rename_failed_in', bad.join(' · ')))
@@ -714,7 +714,7 @@ function RackList({ def: declared, slots = {} }) {
           onCancel={() => panes.close(etab.id)}
           onDelete={IS_ADMIN ? async () => {
             // A shared tag goes from every other service too (an empty new name).
-            if (c.shared) {
+            if (c.shared && PROJECT_LINKED) {
               const res = await renameTagEverywhere([etab.who], '', { skip: PORTAL_SERVICE.name })
               const bad = res.filter((r) => r.error).map((r) => `${r.label} (${r.error})`)
               if (bad.length) setNote(tr('rk_rename_failed_in', bad.join(' · ')))
@@ -757,13 +757,12 @@ function RackList({ def: declared, slots = {} }) {
   const toFrame = (msg) => frameRef.current?.contentWindow?.postMessage(msg, window.location.origin)
   const [frameFind, setFrameFind] = useState('')
   useEffect(() => { setMenu(false); setFrameFind('') }, [L.active])
-  // …and closes it as this page's own would: Esc, or a press anywhere but the ⋯.
+  // …and closes it as this page's own would: Esc.
   useEffect(() => {
     if (tab?.kind !== 'frame') return undefined
-    const off = (e) => { if (e.type === 'keydown' ? e.key === 'Escape' : !e.target.closest?.('.rl-more')) toFrame({ rackMenu: 'close' }) }
-    document.addEventListener('mousedown', off)
+    const off = (e) => { if (e.key === 'Escape') toFrame({ rackMenu: 'close' }) }
     document.addEventListener('keydown', off)
-    return () => { document.removeEventListener('mousedown', off); document.removeEventListener('keydown', off) }
+    return () => document.removeEventListener('keydown', off)
   }, [tab?.kind])
   useEffect(() => {
     if (!BARE) return undefined
@@ -851,14 +850,14 @@ function RackList({ def: declared, slots = {} }) {
         {!BARE && L.opened > 0 && (
           <button type="button" className="rl-btn" title={tr("rk_close_tabs_hint")} onClick={L.closeOpened}>{tr("rk_close_tabs_n", L.opened)}</button>
         )}
-        {panes.tabs.length > 0 && (
-          <button type="button" className="rl-btn" title={tr("rk_close_editors_hint")} onClick={panes.closeAll}>{tr("rk_close_editors_n", panes.tabs.length)}</button>
+        {BARE && panes.tabs.length > 0 && (
+          <button type="button" className="rl-btn" title={tr("rk_close_editors_hint")} onClick={panes.leaveAll}>{tr("rk_close_editors_n", panes.tabs.length)}</button>
         )}
       </MenuRow>
     </>
   )
   const menuButton = (
-    <RackMenu m={menuState} label={def.title} count={tab?.kind === 'frame' ? 0 : picked.size} lit={!!(fNow?.mode || fNow?.on || quick.length)}
+    <RackMenu m={menuState} label={tr("rk_menu")} count={tab?.kind === 'frame' ? 0 : picked.size} lit={!!(fNow?.mode || fNow?.on || quick.length)}
       onToggle={tab?.kind === 'frame' ? () => toFrame({ rackMenu: 'toggle' }) : undefined}>{menuRows}</RackMenu>
   )
   const findField = tab?.kind === 'frame' ? (
@@ -896,12 +895,12 @@ function RackList({ def: declared, slots = {} }) {
   }, [])
 
   // The editors: docked left of the list, right of it, or FULL (panes.jsx).
-  const lay = paneLayout(panes, showList && showEdit)
-  const ps = paneStyles(lay, split, L.sides)
+  const lay = paneLayout(panes, showList, showEdit)
+  const ps = paneStyles(lay, split)
   const editorPane = (c, style) => {
     const etab = panes.current(c)
     return (
-      <div key={c} className="rl-pane rl-epane" data-col={c} onMouseDown={() => { if (c !== FULL) panes.setCol(c) }} style={style}>
+      <div key={c} className="rl-pane rl-epane" data-col={c} onMouseDown={() => { if (c !== FULL) panes.setCol(c) }} style={showEdit ? style : { display: 'none' }}>
         <RackPaneStrip panes={panes} col={c} />
         {pfind?.col === String(c) && <PaneFind again={pfind.n} onClose={() => setPfind(null)} />}
         {etab && editorFor(etab)}
@@ -912,12 +911,12 @@ function RackList({ def: declared, slots = {} }) {
   return (
     <div className="rl" style={brandStyle()}>
       <section className="rl-mod">
-        {!BARE && <RackBar menu={menuButton}
-          tabs={<RackTabs tabs={tabs} active={L.active} fixed={FIXED} onPick={L.setActive} onClose={closeTab} />} />}
+        {!BARE && <RackBar menu={menuButton} tools={panes.count > 0 && <RackPaneTools panes={panes} />}
+          tabs={menuState.open ? null : <RackTabs tabs={tabs} active={L.active} fixed={FIXED} onPick={L.setActive} onClose={closeTab} />} />}
         {BARE && <RackMenu m={menuState} bare>{menuRows}</RackMenu>}
 
         <div className="rl-body">
-          {showEdit && lay.left.map((c) => editorPane(c, ps.left))}
+          {doc && lay.left.map((c) => editorPane(c, ps.left))}
           {ps.before && <div {...ps.before} />}
           {showList && (<div className="rl-pane" style={ps.list}>
 
@@ -1104,12 +1103,15 @@ function RackList({ def: declared, slots = {} }) {
           </div>)}
 
           {ps.after && <div {...ps.after} />}
-          {showEdit && lay.right.map((c) => editorPane(c, ps.right))}
+          {doc && lay.right.map((c) => editorPane(c, ps.right))}
         </div>
 
         <footer className="rl-foot">
           <span>{note || tr("rk_status_hint")}</span>
           <span className="rl-sp" />
+          {/* What this project does and does not reach of the other services. */}
+          {!PROJECT_LINKED && <span className="rl-hint" title={tr("rk_not_linked_hint", PORTAL_SERVICE.links?.[PORTAL_SERVICE.name])}>{tr("rk_not_linked")}</span>}
+          {tagSources.some((s) => s.denied) && <span className="rl-hint rl-warn" title={tr("rk_tags_denied_hint")}>{tr("rk_tags_denied", tagSources.filter((s) => s.denied).map((s) => s.label).join(', '))}</span>}
           <span className="rl-mono">
             {cls ? (classes.length ? tr("rk_n_rows", classes.length) : '') : (tab?.kind === 'items' && rows.length ? tr("rk_n_rows", rows.length) : '')}
           </span>

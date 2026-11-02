@@ -180,6 +180,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   // An item may also carry done (a box to tick), toggle(done) → ok and
   // open(ctx) — a todo kept elsewhere, ticked or opened from here.
   const [ext, setExt] = useState([])
+  const [carried, setCarried] = useState(null)  // a feed's item on its way to another day: { id, day }
   useEffect(() => {
     if (!cal.overlay) return undefined
     let on = true
@@ -216,17 +217,18 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     if (!query) {
       for (const x of ext) {
         if (!x.start || hidden.has(`feed:${x.feed}`) || !tagged((x.title || '').match(/#[^\s#]+/g)?.map((t) => t.slice(1)) || [])) continue
-        const e = x.end && x.end >= x.start ? x.end : x.start
-        out.push({ r: { name: x.title }, id: `ext:${x.id}`, ext: x, s: x.start, e, ts: '', te: '', mk: '', sb: '', to: x.start,
+        const s = carried?.id === x.id ? carried.day : x.start
+        const e = x.end && x.end >= s ? x.end : s
+        out.push({ r: { name: x.title }, id: `ext:${x.id}`, ext: x, s, e, ts: '', te: '', mk: '', sb: '', to: s,
           color: x.color || GRAY, g: -1, low: 0, label: x.time ? `${x.title} (${x.time})` : x.title,
-          pieces: [{ key: 'main', from: x.start, to: e }] })
+          pieces: [{ key: 'main', from: s, to: e }] })
       }
     }
     const r = copying && items.find((x) => x[idk] === copying.id)
     const c = r && build(r, copying.days)
     if (c) out.push(c)
     return out
-  }, [items, over, hidden, tagSel, projects, doc, copying, ext, query, weeks])   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [items, over, hidden, tagSel, projects, doc, copying, ext, carried, query, weeks])   // eslint-disable-line react-hooks/exhaustive-deps
   // The days a carried copy would land on, lit.
   const drop = events.find((ev) => ev.copy)?.pieces[0]
   const inDrop = (d) => drop && d >= drop.from && d <= drop.to
@@ -397,10 +399,12 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
       else if (o.x !== b.x || o.y !== b.y) go(b.el, [{ transform: `translate(${o.x - b.x}px, ${o.y - b.y}px)` }, { transform: 'none' }], { duration: OPEN, delay: first, fill: 'backwards' })
     }
     for (const [d, n] of now.bigs) if (!before.bigs.has(d)) go(n, [{ opacity: 0 }, { opacity: 1 }], { duration: UNROLL, delay: later, fill: 'backwards' })
-    if (links.current && moving.current.length) go(links.current, [{ opacity: 0 }, { opacity: 1 }], { duration: 150, delay: later + UNROLL, fill: 'backwards' })
-    // Settled: the weeks before and after it are looked at again (see onScroll).
+    // Settled: the weeks before and after it are looked at again (see onScroll),
+    // and the lines drawn again — they were placed from where everything was
+    // when it set off, and appear only now.
     const all = moving.current.slice()
-    if (all.length) Promise.all(all.map((x) => x.finished)).then(() => onScroll(), () => {})
+    if (all.length) Promise.all(all.map((x) => x.finished)).then(() => { onScroll(); relayout((n) => n + 1) }, () => {})
+    if (links.current && all.length) go(links.current, [{ opacity: 0 }, { opacity: 1 }], { duration: 150, delay: later + UNROLL, fill: 'backwards' })
     // Hold the line while the weeks open — every frame until they have, and
     // once more at the end (a slow first frame starts them late).
     const line = anchor && now.weeks.get(anchor.w)?.el
@@ -534,7 +538,8 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     g.hidden = false
     g.style.transform = `translate(${e.clientX + 12}px, ${e.clientY + 10}px)`
     const to = d.to && d.to !== d.from ? addDays(d.start, diff(d.from, d.to)) : ''
-    g.textContent = to ? `+  ${Number(to.slice(5, 7))}/${Number(to.slice(8))}` : '+'
+    const sign = d.kind === 'ext' ? '→' : '+'
+    g.textContent = to ? `${sign}  ${Number(to.slice(5, 7))}/${Number(to.slice(8))}` : sign
   }
   useEffect(() => {
     const move = (e) => {
@@ -543,6 +548,12 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
       if (d.kind === 'copy') {
         const to = dayAt(e) || d.to
         if (to !== d.to) { d.to = to; setCopying(to !== d.from ? { id: d.id, days: diff(d.from, to) } : null) }
+        carry(e, d)
+        return
+      }
+      if (d.kind === 'ext') {
+        const to = dayAt(e) || d.to
+        if (to !== d.to) { d.to = to; setCarried({ id: d.ext.id, day: addDays(d.start, diff(d.from, to)) }) }
         carry(e, d)
         return
       }
@@ -565,6 +576,13 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
         document.body.classList.remove('rl-copying')
         if (d.to && d.to !== d.from) Promise.resolve(onCopy?.(d.rec, diff(d.from, d.to))).finally(() => setCopying(null))
         else setCopying(null)
+        return
+      }
+      if (d.kind === 'ext') {
+        if (ghost.current) ghost.current.hidden = true
+        document.body.classList.remove('rl-moving')
+        setCarried(null)
+        if (d.to && d.to !== d.from) extMove(d.ext, addDays(d.start, diff(d.from, d.to)))
         return
       }
       const now = d.now
@@ -601,13 +619,28 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     flip(!x.done)
     Promise.resolve(x.toggle(!x.done)).then((ok) => { if (ok === false) flip(x.done) }).catch(() => flip(x.done))
   }
+  // One with `move(day)` goes to another day with ⌘ and a drag: there at once,
+  // put back if `move` says no.
+  const extMove = (x, day) => {
+    const put = (v) => setExt((xs) => xs.map((y) => (y.id === x.id ? { ...y, start: v } : y)))
+    put(day)
+    Promise.resolve(x.move(day)).then((ok) => { if (ok === false) put(x.start) }).catch(() => put(x.start))
+  }
   const barProps = (ev) => (ev.ext ? {
     // Another calendar's: its name and where, on hover; nothing to pick or open
     // — unless its feed says what its box and the right button do.
     title: [ev.label, ev.ext.feed, ev.ext.location].filter(Boolean).join('\n'),
-    onMouseDown: (e) => e.stopPropagation(),
+    onMouseDown: (e) => {
+      e.stopPropagation()
+      if (e.button !== 0 || !(e.metaKey || e.ctrlKey) || !ev.ext.move || ev.ext.done) return
+      e.preventDefault()
+      const from = dayAt(e)
+      drag.current = { kind: 'ext', ext: ev.ext, start: ev.s, from, to: from }
+      document.body.classList.add('rl-moving')
+      carry(e, drag.current)
+    },
     onClick: (e) => { e.stopPropagation(); if (e.target.closest('.rl-cal-box')) extTick(ev.ext) },
-    onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); ev.ext.open?.(ctx) },
+    onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); if (drag.current?.kind !== 'ext') ev.ext.open?.(ctx) },
   } : {
     onMouseDown: (e) => {
       e.stopPropagation()

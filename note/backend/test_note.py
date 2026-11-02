@@ -12,8 +12,35 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("NOTE_DATA_DIR", "/tmp/note-test-data")
 
 from fastapi import HTTPException            # noqa: E402
-from backend.main import (BIB_KEY, FILES, PROJ_RE, TEX_AT,            # noqa: E402
-                          _braced, _files, _flat, _proj_key, _rewrite)
+from backend.main import (BIB_KEY, FILES, PROJ_RE, TAG_RE, TEX_AT,            # noqa: E402
+                          _braced, _files, _no_code, _proj_key, _rewrite, _safe_rel,
+                          _sub_outside_code)
+
+# ── code is not prose: `#include` in a fence is not a tag ─────────────────
+_code = """#real
+
+```c++
+#include <vector>      // #notatag +notaproject
+```
+
+~~~
+#tilde
+~~~
+
+#after and `#inline` and ``#double`` done
+"""
+assert len(_no_code(_code)) == len(_code), "a blank keeps the text's shape"
+assert [m.group(1) for m in TAG_RE.finditer(_no_code(_code))] == ["real", "after"]
+assert [m.group(1) for m in PROJ_RE.finditer(_no_code(_code))] == []
+# The fence itself, and the prose around it, come back untouched by a rename.
+_ren = _sub_outside_code(TAG_RE, lambda m: f"{m.group(0)}!", _code)
+assert "#include <vector>      // #notatag" in _ren and "#real!" in _ren and "#after!" in _ren
+assert "`#inline`" in _ren, "inline code is code too"
+# A fence nobody closed runs to the end, which is markdown's own rule.
+assert [m.group(1) for m in TAG_RE.finditer(_no_code("#a\n```\n#b\n#c"))] == ["a"]
+# An indented fence closes with its own mark.
+assert [m.group(1) for m in TAG_RE.finditer(_no_code("  ```\n#in\n  ```\n#out"))] == ["out"]
+
 
 # A markdown note shares the vault's one folder; a tex note gets its own.
 assert _files() == FILES
@@ -40,29 +67,34 @@ assert [m.group(1) for m in PROJ_RE.finditer("+STARK 와 (+ELARK), C++ a+b\n+ �
 assert _proj_key("STARK + CRIB") == _proj_key("stark_crib") == "stark_crib"
 assert _proj_key("TAMU TeXAT 실험") == "tamu_texat_실험"
 
-# A zip's paths become flat names, and the body is pointed at them. The first
-# `1.png` keeps the name the document already writes; the second wears its
-# folder, because a tex note's files all sit next to main.tex.
-taken = {}
-for rel, want in (("Pictures/fig1.pdf", "fig1.pdf"), ("Pictures/fig1.pdf", "fig1.pdf"),
-                  ("fig/1.png", "1.png"), ("tab/1.png", "tab-1.png"),
-                  ("deep/../1.png", "1-1.png")):
-    got = _flat(rel, taken)
+# A zip keeps its own layout: `img/fig1.png` is what the body already writes.
+# The parts are cleaned, and a path that tries to leave the folder cannot.
+for rel, want in (("img/fig1.png", "img/fig1.png"),
+                  ("Pictures/sub/a.pdf", "Pictures/sub/a.pdf"),
+                  ("a/../b.tex", "a/b.tex"),
+                  ("./main.tex", "main.tex"),
+                  ("sec\\intro.tex", "sec/intro.tex"),
+                  ("../../etc/passwd", "etc/passwd"),
+                  ("..", "file"), ("", "file"),
+                  ("/abs/x.png", "abs/x.png")):
+    got = _safe_rel(rel)
     assert got == want, (rel, got, want)
-    taken[got] = rel
+# Deep enough to be a disk and not a manuscript: only the tail is kept.
+assert _safe_rel("/".join("abcdefghijkl") + "/x.png").count("/") == 7
 
-# A member whose path tries to leave the folder is a file with a plain name.
-assert "/" not in _flat("../../etc/passwd", {}) and _flat("../../x.tex", {}) == "x.tex"
+# A tex note's drop goes where its kind belongs; a markdown note's stays flat.
+from backend.main import TEX_DIRS            # noqa: E402
+assert TEX_DIRS[".png"] == "img" and TEX_DIRS[".sty"] == "style"
+assert TEX_DIRS[".tex"] == "section" and ".bib" not in TEX_DIRS
 
-moved = {"Pictures/fig1.eps": "fig1.pdf", "fig/1.png": "1.png", "ref/paper.bib": "paper.bib"}
+# An EPS is the one path an import rewrites, because no engine can place one.
+moved = {"img/fig1.eps": "img/fig1.pdf"}
 body, n = _rewrite(
-    r"\includegraphics{Pictures/fig1}" "\n"
-    r"\includegraphics[width=1cm]{./fig/1.png}" "\n"
-    r"\bibliography{ref/paper}" "\n", moved)
-assert r"\includegraphics{fig1}" in body, body
-assert r"{1.png}" in body and "./fig" not in body, body
-assert r"\bibliography{paper}" in body, body
-assert n >= 3, n
+    r"\includegraphics{img/fig1.eps}" "\n"
+    r"\includegraphics[width=1cm]{./img/fig1.eps}" "\n", moved)
+assert body.count("img/fig1.pdf") == 2 and ".eps" not in body, body
+assert "./img" not in body, body
+assert n >= 1, n
 
 # `@article{KEY,` — what a .bib calls a paper.
 assert BIB_KEY.findall("@article{ELARK2026,\n title={a}}\n@book{ b2 , x}") == ["ELARK2026", "b2"]

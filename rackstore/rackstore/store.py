@@ -1106,5 +1106,8 @@ def mount_spa(app: FastAPI, dist: Path, name: str = "service") -> None:
             return FileResponse(candidate)
         index = dist / "index.html"
         if index.is_file():
-            return FileResponse(index)
+            # The page names this build's files (hashed): asked again every
+            # time, so a new build is what the next load gets, not a cached
+            # page pointing at the last one.
+            return FileResponse(index, headers={"Cache-Control": "no-cache"})
         raise HTTPException(404, f"{name} dist not built")

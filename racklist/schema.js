@@ -2,7 +2,7 @@ import './strings.js'
 import { asSorts, byKeys } from './sort.js'
 import { useEffect, useMemo, useState } from 'react'
 import { typeOf, refTarget, remoteDoc, refLabelOf, backlinksOf } from './types.jsx'
-import { portalUser } from './portal.js'
+import { linkProject, portalUser } from './portal.js'
 import { tagKey } from './tags.js'
 import { tr } from 'lilak-ui/i18n.jsx'
 
@@ -22,7 +22,7 @@ import { tr } from 'lilak-ui/i18n.jsx'
  *         { k: 'event', label: '행사', type: 'class', of: 'events', col: 140 },
  *         { k: 'tags',  label: '태그', type: 'tags', col: 160 },
  *         { k: 'paper', label: '논문', type: 'ref',
- *           to: { svc: 'reference_manager', proj: 'papers', item: 'references', label: 'citeKey' } },
+ *           to: { svc: 'reference_manager', item: 'references', label: 'citeKey' } },
  *       ],
  *     },
  *     classes: [
@@ -426,7 +426,7 @@ export function useRemoteDocs(def) {
   const targets = useMemo(() => {
     const all = [...def.item.fields, ...def.classes.flatMap((c) => c.fields || [])]
       .filter((f) => f.type === 'ref' || f.type === 'refs' || f.type === 'backlinks')
-      .map((f) => (f.type === 'backlinks' ? { svc: f.from.svc, proj: f.from.proj } : refTarget(f, def)))
+      .map((f) => (f.type === 'backlinks' ? { svc: f.from.svc, proj: linkProject(f.from.svc) } : refTarget(f, def)))
       .filter((t) => !t.local && t.svc)
     return [...new Map(all.map((t) => [`${t.svc}/${t.proj}`, t])).values()]
   }, [def])

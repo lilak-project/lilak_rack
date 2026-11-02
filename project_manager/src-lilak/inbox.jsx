@@ -1,7 +1,7 @@
 import './strings.js'
 import { useEffect, useState } from 'react'
 import { tr } from 'lilak-ui'
-import { authHeaders, loadTagSources } from 'racklist'
+import { authHeaders, linkProject } from 'racklist'
 
 /**
  * The inbox class's moving parts (def.jsx declares its fields): what approving
@@ -32,8 +32,7 @@ const call = (path, opts = {}) => fetch(path, { ...opts,
     return j
   })
 const post = (path, body) => call(path, { method: 'POST', body: JSON.stringify(body) })
-const projOf = async (svc) => (await loadTagSources()).find((s) => s.svc === svc)?.proj
-  || { academic_activities: 'activities', note: 'note' }[svc]
+const projOf = async (svc) => linkProject(svc)
 
 /** The tags the candidate's project brings (its `project` is a link to one). */
 const projectTags = (r, doc) => (doc?.projects || []).find((p) => p.id === (r.project?.id ?? r.project))?.tags || []

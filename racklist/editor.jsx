@@ -105,7 +105,7 @@ export function cloneOf(def, rec, days = 0) {
 
 export function RackItemEditor({
   def, doc, rec, fields: fieldsIn, listKey, noun, cls, ctx: extra = {},
-  onSave, onCreated, onDeleted, onRenamed, onCancel, onClone, canDelete = true, actions, seed,
+  onSave, onCreated, onDeleted, onRenamed, onCancel, onClone, canDelete = true, actions, seed, guard,
 }) {
   const fields = fieldsIn || def.item.fields
   const key = listKey || def.item.key
@@ -161,7 +161,7 @@ export function RackItemEditor({
     if (await onSave(patch, tr("rk_created_x", what, label))) onCreated?.(r)
   }
   async function save(auto) {
-    if (why) return
+    if (why) return false
     const snap = f
     const r = { ...tidy(f), updatedAt: new Date().toISOString() }
     const patch = { [key]: (doc[key] || []).map((x) => (same(x) ? r : x)) }
@@ -181,7 +181,9 @@ export function RackItemEditor({
     if (await onSave(patch, auto ? tr('rk_autosaved', what, label) : tr('rk_saved_one', what, label))) {
       saved.current = snap
       onRenamed?.(r)
+      return true
     }
+    return false
   }
 
   // Saving is not a step you take: a record you change saves itself a moment
@@ -195,8 +197,17 @@ export function RackItemEditor({
     return () => clearTimeout(t)
   }, [f, rec])   // eslint-disable-line react-hooks/exhaustive-deps
   const flush = useRef(null)
-  flush.current = () => { if (dirty && !why) save(true) }
+  flush.current = () => { if (!draft && !why && !same_(fRef.current, saved.current)) save(true) }
   useEffect(() => () => flush.current?.(), [])
+  // Closing saves first, by this button or the tab's ×. A save that fails, or
+  // a record that fails its checks, keeps the form open: what was typed is not
+  // lost, and the bar or the foot of the page says why.
+  const settle = useRef(null)
+  settle.current = () => !dirty || save(true)
+  useEffect(() => {
+    guard?.(() => settle.current())
+    return () => guard?.(null)
+  }, [])   // eslint-disable-line react-hooks/exhaustive-deps
   async function remove() {
     const patch = isItem ? dropItems(def, doc, [rec]) : { [key]: (doc[key] || []).filter((x) => !same(x)) }
     // Items pointing at it by id keep its name, as text — the way a name
@@ -252,9 +263,10 @@ export function RackItemEditor({
       {/* First, and stuck to the top of the pane: the record is as long as it
           is, and what you do to it is always in the same place. */}
       <RackActions key={f.id || 'draft'} draft={draft}
-        onCreate={create} createDisabled={!!why} saveDisabled={!!why}
+        onCreate={create} createDisabled={!!why}
         hint={why} pending={dirty && !why}
-        onSave={() => save(false)} onCancel={onCancel} onRevert={() => setF(opened.current)}
+        onClose={onCancel && (async () => { if (await settle.current()) onCancel() })} closeDisabled={dirty && !!why}
+        onCancel={onCancel}
         onClone={onClone && isItem ? () => onClone(cloneOf(def, tidy(f))) : undefined}
         onDelete={canDelete ? remove : undefined}
         deleteWarn={own.deleteWarn ? own.deleteWarn(f, doc) : undefined}
@@ -292,6 +304,11 @@ export function RackItemEditor({
                   onClick={() => openInService(p.svc, p.proj, p.id)}>{p.name}</button>
               ))}
             </div>
+          </RackField>
+        )}
+        {!draft && (
+          <RackField label={tr("rk_info")}>
+            <button type="button" className="rl-btn" title={tr("rk_revert_hint")} onClick={() => setF(opened.current)}>revert</button>
           </RackField>
         )}
       </div>
