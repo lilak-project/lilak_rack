@@ -125,11 +125,11 @@ def _sub_outside_code(rule, repl, text: str) -> str:
 # The day a box was ticked: `✓ 2026-08-04`. The vault these notes came from
 # used Obsidian Tasks' `✅`, so that is still read — only what this app WRITES
 # changed, to a mark that is a line rather than a picture.
-DONE_RE = re.compile(r"\s*[✓✅]\s*(\d{4}-\d{2}-\d{2})")
+DONE_RE = re.compile(r"\s*[✓✅]\s*(\d{4}-\d{1,2}-\d{1,2})")
 # The day it is due, the same way. `>>2026-10-20` is the typing-friendly
 # spelling of it — the editor turns one into the other as you write, and a
 # file written elsewhere is read either way.
-DUE_RE = re.compile(r"\s*(?:»|📅|>>)\s*(\d{4}-\d{2}-\d{2})")
+DUE_RE = re.compile(r"\s*(?:»|📅|>>)\s*(\d{4}-\d{1,2}-\d{1,2})")
 # An empty line inside a checklist is written out as `- [ ] <br />`: a box with
 # nothing in it, which is a blank line the person is still typing on, not a job.
 BLANK_RE = re.compile(r"(?:\s|<br\s*/?>|&nbsp;)*$")
@@ -141,12 +141,20 @@ def _todo(line: str):
     return m if m and not BLANK_RE.fullmatch(m.group(4)) else None
 
 
+def _day(m) -> str:
+    """The day a mark holds, padded: `2026-11-4` is written too, and days sort as text."""
+    if not m:
+        return ""
+    y, mo, d = m.group(1).split("-")
+    return f"{y}-{int(mo):02d}-{int(d):02d}"
+
+
 def _todo_text(raw: str) -> tuple[str, str, str]:
     """The todo as a person wrote it, the day it is due, the day it was done."""
     done = DONE_RE.search(raw)
     due = DUE_RE.search(raw)
     text = DUE_RE.sub("", DONE_RE.sub("", raw)).strip()
-    return text, (due.group(1) if due else ""), (done.group(1) if done else "")
+    return text, _day(due), _day(done)
 
 
 def _todo_line(text: str, due: str, done_at: str) -> str:

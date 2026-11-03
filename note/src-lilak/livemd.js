@@ -30,7 +30,7 @@ const MARKS = new Set(['HeaderMark', 'EmphasisMark', 'StrikethroughMark', 'CodeM
 const TAG = /(^|[\s(])#(?![0-9]+(?![^\s#.,;:!?()[\]{}'"]))([^\s#.,;:!?()[\]{}'"]+)/g
 const PROJ = /(^|[\s(])\+(?![0-9]+(?![^\s#+.,;:!?()[\]{}'"]))([^\s#+.,;:!?()[\]{}'"]+)/g
 const AUTH = /(^|[\s(])@(?![0-9]+(?![^\s#+@.,;:!?()[\]{}'"]))([^\s#+@.,;:!?()[\]{}'"]+)/g
-const DATE = /(»|📅|✓|✅)\s*(\d{4}-\d{2}-\d{2})/g
+const DATE = /(»|📅|✓|✅)\s*(\d{4}-\d{1,2}-\d{1,2})/g
 const EMBED = /!\[\[([^\]]+)\]\]/g
 const WIKI = /(?<!!)\[\[([^\]]+)\]\]/g
 const TASK = /^(\s*[-*]\s+)\[([ xX])\]/
@@ -294,7 +294,7 @@ function build(view, fileSrc) {
       if (inCode(start)) continue
       const due = '»📅'.includes(m[1])
       // A day that has passed on a line still open: the one date worth a colour.
-      const late = due && m[2] < today && !/^\s*[-*+]\s+\[[xX]\]/.test(view.state.doc.lineAt(start).text)
+      const late = due && m[2].replace(/-(\d)(?!\d)/g, '-0$1') < today && !/^\s*[-*+]\s+\[[xX]\]/.test(view.state.doc.lineAt(start).text)
       const cls = `${due ? 'nt-due-in' : 'nt-done-in'}${late ? ' nt-due-late' : ''}`
       marks.push(Decoration.mark({ class: cls }).range(start, at(m.index + m[0].length)))
       if (!shown(start)) hide(start, start + m[1].length + (m[0][m[1].length] === ' ' ? 1 : 0))

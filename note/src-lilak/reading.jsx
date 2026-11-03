@@ -14,7 +14,7 @@ import { fileSrc } from './api.js'
  *  calendar label the editor draws, rather than left as the text they are in
  *  the file. react-markdown hands text through as strings, so both are picked
  *  out of those on the way to the page. */
-const CHIP_RE = new RegExp(`${TAG_RE.source}|(»|📅|✓|✅)\\s*(\\d{4}-\\d{2}-\\d{2})|${PROJ_RE.source}|${AUTH_RE.source}`, 'g')
+const CHIP_RE = new RegExp(`${TAG_RE.source}|(»|📅|✓|✅)\\s*(\\d{4}-\\d{1,2}-\\d{1,2})|${PROJ_RE.source}|${AUTH_RE.source}`, 'g')
 
 function tagify(children) {
   return Children.map(children, (child) => {

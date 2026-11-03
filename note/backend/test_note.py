@@ -200,4 +200,9 @@ assert [(h["id"], h["text"]) for h in search("제목만 있는", {})["hits"]] ==
 assert search("본문 줄", {})["hits"][0]["text"] == "본문 줄"
 _f.unlink()
 
+# ── a due day written without its zero is still a due day ──
+from backend.main import _todo_text   # noqa: E402
+assert _todo_text("보내기 #TAMU » 2026-11-4") == ("보내기 #TAMU", "2026-11-04", "")
+assert _todo_text("끝 » 2026-11-04 ✓ 2026-1-2") == ("끝", "2026-11-04", "2026-01-02")
+
 print("note: ok")

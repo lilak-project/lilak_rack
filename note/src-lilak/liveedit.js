@@ -96,7 +96,7 @@ export const citeComplete = autocompletion({
 })
 
 // ── `>>2026-12-24 ` → `» 2026-12-24 `, and `>> ` → a calendar ──────────────
-const DUE_TYPED = /(^|\s)>>(\d{4}-\d{2}-\d{2})$/
+const DUE_TYPED = /(^|\s)>>(\d{4}-\d{1,2}-\d{1,2})$/
 const DUE_BARE = /(^|\s)>>$/
 
 const askDate = StateEffect.define()

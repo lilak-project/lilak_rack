@@ -76,8 +76,8 @@ export const EMBED_RE = /!\[\[([^\]]+)\]\]/g
 /** The day a todo is due, and the day it was done. `»` and `✓` are what this
  *  app writes; `📅` and `✅` (Obsidian Tasks) are still read, because the
  *  notes that came from a vault are full of them. */
-export const DUE_RE = /(?:»|📅)\s*(\d{4}-\d{2}-\d{2})/g
-export const DONE_RE = /(?:✓|✅)\s*(\d{4}-\d{2}-\d{2})/g
+export const DUE_RE = /(?:»|📅)\s*(\d{4}-\d{1,2}-\d{1,2})/g
+export const DONE_RE = /(?:✓|✅)\s*(\d{4}-\d{1,2}-\d{1,2})/g
 
 /** A name a browser can draw. Anything else — a pdf, a sheet, a document — is
  *  a file you open, not a picture to put on the page. */
