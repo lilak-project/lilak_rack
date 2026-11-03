@@ -129,7 +129,19 @@
 
 /* Every chip stands a touch shorter than the line it sits on — one rule, so
    they cannot drift apart again. */
-.nt-tag-in, .nt-tag, .nt-proj-in, .nt-proj, .nt-due-in, .nt-done-in { line-height: 1.6; }
+/* A person — `@JungWooLee` — reads as their name with the spaces back in, on
+   author_manager's navy: a plain pill, because a person is not a label you
+   file something under. The text holds the name run together; this is what a
+   reader sees. */
+.nt-auth-in, .nt-auth {
+  display: inline-block;
+  padding: 0 .45em; border-radius: 999px;
+  border: 1px solid var(--rk-auth, #3d5a80);
+  background: color-mix(in srgb, var(--rk-auth, #3d5a80) 10%, var(--rk-panel, #fff));
+  color: var(--rk-auth, #3d5a80); font-weight: 600; font-size: .92em;
+}
+
+.nt-tag-in, .nt-tag, .nt-proj-in, .nt-proj, .nt-auth-in, .nt-auth, .nt-due-in, .nt-done-in { line-height: 1.6; }
 
 /* The calendar `>> ` opens: it stands in the line, in the field's own clothes.
    Picking a day writes the 📅 mark and the field goes away. */
@@ -250,34 +262,17 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 .nt-linetop:disabled { cursor: default; opacity: 0.45; }
 .nt-title:focus { outline: none; }
 .nt-title::placeholder { color: var(--rk-mute); }
-/* The fold is the same size as every other button in the row — it stands out
-   by COLOUR instead. The row is `align-items: stretch`, which leaves a button
-   of its own height at the TOP of it, so this one says where it sits. */
-.nt-fold { gap: 5px; display: inline-flex; align-items: center; align-self: center; }
-.nt-fold, .nt-fold:hover:not(:disabled) {
-  border-color: var(--rk-cite-t); background: var(--rk-cite); color: var(--rk-cite-t);
-}
-.nt-fold:hover:not(:disabled) { background: #c7dcfd; }
-.nt-caret { font-style: normal; font-size: 15px; line-height: 1; }
 .nt-date {
   height: 22px; padding: 0 4px;
   border: 1px solid var(--rk-edge); border-radius: 0;
   background: var(--rk-panel); font: inherit; font-size: var(--rk-fs);
   color: var(--rk-text);
 }
-/* The `#tags` the body wears — in the fold now, where the rest of what is
-   worked out about the note is, rather than crowding the title. */
+/* The `#tags` the body wears — in 공용 now, where the rest of what is worked
+   out about the note is, rather than crowding the title. */
 .nt-tagline { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rk-cite-t); }
-.nt-meta-open {
-  flex: 0 0 auto;
-  /* A field is as wide as what it says — an imported minute carries a line of
-     attendees, and squeezing that into a column squeezes the date too. */
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px;
-  padding: 2px 11px 6px;
-}
 /* The folder a note's files live in: a long path, said whole. */
 .nt-path { word-break: break-all; }
-.nt-meta-open .rl-hint { flex: 0 1 auto; min-width: 0; }
 /* The body takes everything that is left — to the right edge, to the bottom.
    The editor is a page: one family, sizes that step, nothing bold that is not
    bold in the text. No active-line tint, no visible markup. */
@@ -394,42 +389,169 @@ body.nt-paper #root { height: auto; min-height: 100%; }
    It sits under the note's own line and above the text, and it STAYS: the
    tools are used while writing, not instead of it. So it must not grow into
    the text's half of the pane — a tall tab scrolls inside itself. */
-.nt-manage {
-  flex: 0 0 auto; display: flex; flex-direction: column;
-  border-top: 1px solid var(--rk-line); background: var(--rk-gut);
+/* ── the note, and its toolbox beside it ─────────────────────────────────
+   The tools are a PANE of their own (tools/toolbox.jsx), docked to the other
+   side. A column inside this pane was a pane cut in half: the text squeezed,
+   the strip hiding tabs, and making room for it moved everything else on the
+   screen. A pane is what the rack already has for another view of the thing
+   you are working on. */
+.nt-work { flex: 1; min-height: 0; display: flex; }
+.nt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* The toolbox hangs off the side of the editor and is drawn OVER the pane
+   next door — fixed, because the pane clips (`.rl-epane { overflow: hidden }`)
+   and this reaches outside it. Nothing is resized to make room for it: it
+   covers, it does not push. As wide as its tab strip and no wider. */
+.nt-toolbox {
+  position: fixed; z-index: 20;
+  /* ONE width, set by the button in its bar (box.jsx) and nothing else. */
+  display: flex; flex-direction: column;
+  /* OPAQUE: it is drawn over the list and over the pane next door, and
+     `--rk-bg` is the page's own ground, which is not a colour here. */
+  background: var(--rk-panel);
+  border: 1px solid var(--rk-dim);
+  box-shadow: 0 2px 12px rgba(15, 23, 42, .18);
 }
-.nt-mtabs {
-  display: flex; align-items: center; gap: 4px;
-  padding: 4px 8px 0; border-bottom: 1px solid var(--rk-line);
+/* The kit's tab strip, in one column: it does not wrap onto a second row (the
+   column is narrow and the editor beside it would jump), it scrolls. */
+.nt-toolbox-tabs { flex-wrap: nowrap; max-height: none; overflow-x: auto; }
+/* The toolbox's own title bar: what it is, and the two things it can do. As
+   tall as the pane's tab strip beside it, and the same ground, so the two read
+   as one row across. */
+.nt-toolbox-bar {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 5px;
+  height: var(--rk-row); padding: 0 4px 0 9px;
+  background: var(--rk-head); border-bottom: 1px solid var(--rk-edge);
+  color: var(--rk-dim);
 }
-/* The tab you are in is the one the body below belongs to, so it is joined to
-   it: the page's background, and no line between the two. */
-.nt-mtabs .rl-btn.on {
-  background: var(--rk-bg); border-bottom-color: var(--rk-bg);
-  margin-bottom: -1px; font-weight: 600;
+.nt-toolbox-name { font-size: var(--rk-fs); white-space: nowrap; }
+.nt-toolbox-btn {
+  height: calc(var(--rk-row) - 4px); min-width: 26px; padding: 0 7px;
+  justify-content: center; border-color: transparent; background: none;
 }
-.nt-mbody {
-  max-height: 34vh; overflow: auto; padding: 6px 10px 8px;
-  background: var(--rk-bg); font-size: var(--fs-small);
+/* The width button is pressed often and aimed at while reading something
+   else: a long box to hit. */
+.nt-toolbox-span { min-width: 46px; }
+.nt-toolbox-btn:hover:not(:disabled) { border-color: var(--rk-ink); background: var(--rk-panel); }
+.nt-toolbox-tabs::-webkit-scrollbar { height: 0; }
+.nt-toolbox-tabs .rl-tab.on { font-weight: 600; background: var(--rk-panel); }
+
+.nt-toolbox-body {
+  flex: 1; min-height: 0; overflow: auto;
+  background: var(--rk-panel); font-size: var(--fs-small);
+  display: flex; flex-direction: column;
 }
+/* A tool that is a list of rows gets the padding; one that is a field grid
+   (공용) or a sheet (미리보기) runs to the edges. */
+.nt-toolbox-body > .nt-mrow:first-child { padding: 6px 10px 0; }
+.nt-toolbox-body > :not(.rl-rec):not(.nt-read) { padding-left: 10px; padding-right: 10px; }
+.nt-toolbox-body > .nt-read { margin-top: 6px; }
 .nt-mrow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 /* The one thing the tab is for — compile, 맞추기 — reads as the one thing. */
-.nt-mbody .rl-btn.nt-go { font-weight: 600; }
+.nt-toolbox-body .rl-btn.nt-go { font-weight: 600; }
 /* A line the tool says back: what the import brought, what the .bib will be. */
 .nt-mnote {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
   margin-top: 6px; padding: 4px 8px;
   background: var(--rk-gut); border: 1px solid var(--rk-line); border-radius: 3px;
 }
-.nt-mbody .nt-texerr { margin-top: 6px; border-top: 0; border-radius: 3px; max-height: none; }
-.nt-mbody .nt-path { flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.nt-toolbox-body .nt-texerr { margin-top: 6px; border-top: 0; border-radius: 3px; max-height: none; }
+.nt-toolbox-body .nt-path { flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── 목차 ─────────────────────────────────────────────────────────────── */
+.nt-outline { display: flex; flex-direction: column; padding: 4px 0 8px; }
+.nt-out {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 3px 10px 3px 8px;
+  border: 0; background: none;
+  font: inherit; font-size: var(--rk-fs); color: var(--rk-text);
+  text-align: left; cursor: pointer;
+}
+.nt-out:hover { background: var(--rk-gut); color: var(--rk-ink); }
+.nt-out-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nt-out-n { flex: 0 0 auto; font-family: var(--rk-mono); }
+.nt-empty { padding: 8px 10px; }
+/* A run of `%` lines, folded away (comments.js): a dashed rule where they
+   were. It says something is here without being something to read — which was
+   the point of folding them. It runs the width of the text and starts at the
+   gutter's edge, so it reads as a line of the document rather than a mark in
+   it. */
+.nt-folded {
+  display: block; height: 7px;
+  margin: 2px 0 2px -14px;            /* back out to .cm-content's own inset */
+  border-top: 1px dashed var(--rk-dim);
+  cursor: default;
+}
+/* A comment's own text, which is prose rather than a name. */
+.nt-cmts .nt-out-text { font-family: var(--rk-sans); color: var(--rk-dim); }
+
+/* ── 서식 ─────────────────────────────────────────────────────────────── */
+.nt-fmt { padding-top: 6px; }
+.nt-fmt .rl-btn { min-width: 30px; justify-content: center; }
+.nt-tbl { display: inline-flex; align-items: center; gap: 6px; }
+.nt-tbl label { display: inline-flex; align-items: center; gap: 3px; }
+.nt-num { width: 48px; height: 22px; padding: 0 2px 0 4px; font: inherit; font-size: var(--rk-fs); }
+.nt-fmt-hint { padding: 8px 10px 2px; line-height: 1.6; }
+
+/* ── 참조: the labels, and what points at them ───────────────────────────
+   A label nobody calls for is not an error, only worth seeing — it greys
+   rather than shouts. */
+.nt-refs { margin: 6px 0 0; padding: 0; list-style: none; }
+.nt-refs li { display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--rk-line); }
+.nt-refs li:last-child { border-bottom: 0; }
+.nt-refs li.off .nt-out-text { color: var(--rk-mute); }
+/* Defined twice: not greyed like an unused one — it is a mistake, not a
+   leftover. */
+.nt-refs li.dup .nt-out-text { color: var(--rk-ink); }
+.nt-dupmark {
+  flex: 0 0 auto; padding: 0 5px;
+  border: 1px solid #b91c1c; border-radius: 2px;
+  color: #b91c1c; font-size: var(--fs-small);
+}
+.nt-refs .nt-out { flex: 1; min-width: 0; }
+.nt-refs .nt-out:disabled { cursor: default; }
+/* A bib entry says what it is, after its key: the title is why you know which
+   paper `Pain2007` is. */
+.nt-bibs .nt-out-text { flex: 0 0 auto; max-width: 45%; }
+.nt-bib-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nt-refs .rl-btn { flex: 0 0 auto; margin-right: 10px; }
 
 /* The folder, as it is. A tex note's files are a tree now, and a tree nobody
    can see is a tree you guess at. */
 .nt-files { margin: 6px 0 0; padding: 0; list-style: none; }
 .nt-files li {
-  display: flex; align-items: baseline; gap: 8px;
-  padding: 1px 0; border-bottom: 1px solid var(--rk-line);
+  display: flex; align-items: center; gap: 8px;
+  padding: 2px 0; border-bottom: 1px solid var(--rk-line);
+}
+/* A picture says what it is better than its name does; one that is not a
+   picture keeps the same square of space so the names stay in a column. */
+.nt-thumb {
+  flex: 0 0 auto; width: 34px; height: 24px;
+  object-fit: contain; background: var(--rk-gut); border: 1px solid var(--rk-line);
+}
+.nt-thumb-no { border-style: dashed; }
+
+/* 그림 모아 보기: the folder's pictures as pictures. Pressing one puts it in
+   the note, which is the only thing one usually wants from a figure list. */
+.nt-gal {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 6px; padding: 8px 10px;
+}
+.nt-gal button {
+  display: flex; flex-direction: column; align-items: stretch; gap: 3px;
+  padding: 3px; border: 1px solid var(--rk-line); background: var(--rk-panel);
+  font: inherit; cursor: pointer;
+}
+.nt-gal button:hover { border-color: var(--rk-ink); background: var(--rk-gut); }
+.nt-gal img { width: 100%; height: 72px; object-fit: contain; background: var(--rk-gut); }
+/* Bigger, for looking rather than finding. */
+.nt-gal.big { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.nt-gal.big img { height: 150px; }
+/* What the list is divided into: pictures, and what the document is made of. */
+.nt-files-head { padding: 8px 10px 2px; }
+.nt-gal span {
+  font-size: var(--fs-small); color: var(--rk-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .nt-files li:last-child { border-bottom: 0; }
 .nt-files a { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -531,6 +653,8 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 /* ?solo: the editor alone, filling the frame another service shows it in. */
 /* No .rl padding: the frame it is shown in is already the pane, so the
    editor sits exactly as it does in note's own pane. */
+/* A crash, said rather than drawn as nothing (main.jsx). */
+.nt-broke { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .nt-solo { height: 100vh; display: flex; flex-direction: column; background: var(--rk-panel); padding: 0; }
 .nt-solo-note { padding: 4px 11px; border-top: 1px solid var(--rk-line); }
 

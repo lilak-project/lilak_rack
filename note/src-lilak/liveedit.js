@@ -1,8 +1,8 @@
 import { EditorView, Decoration, WidgetType } from '@codemirror/view'
 import { StateEffect, StateField } from '@codemirror/state'
-import { autocompletion } from '@codemirror/autocomplete'
+import { autocompletion, pickedCompletion, startCompletion } from '@codemirror/autocomplete'
 import { keymap } from '@codemirror/view'
-import { choicesFor, citesFor, projectsFor, projText } from './marks.js'
+import { authorsFor, choicesFor, citesFor, projectsFor, projText } from './marks.js'
 
 /** What typing does in the source editor.
  *
@@ -15,21 +15,48 @@ import { choicesFor, citesFor, projectsFor, projText } from './marks.js'
 // ── `#태그` and `+프로젝트` while you type ──────────────────────────────────
 const TAG_HEAD = /(?:^|[\s(])#[^\s#.,;:!?()[\]{}'"]*$/
 const PROJ_HEAD = /(?:^|[\s(])\+[^\s#+.,;:!?()[\]{}'"]*$/
+const AUTH_HEAD = /(?:^|[\s(])@[^\s#+@.,;:!?()[\]{}'"]*$/
 
 /** `#` offers its tags the moment it is typed — a `#` on its own means a tag
  *  is coming. `+` waits for one letter: a plus between two numbers is a plus,
  *  and a menu open over it would take the next Enter for a choice.
  */
+/** A parent chosen: it goes in, and the menu opens again on what is inside. */
+const deeper = (view, c, from, to) => {
+  view.dispatch({ changes: { from, to, insert: c.label }, selection: { anchor: from + c.label.length },
+    annotations: pickedCompletion.of(c) })
+  startCompletion(view)
+}
 const names = (ctx, head, mark, pick, atOnce, write = (t) => t) => {
   const before = ctx.matchBefore(head)
   if (!before) return null
   const where = before.text.indexOf(mark)
   const typed = before.text.slice(where + 1)
   if (!typed && !atOnce && !ctx.explicit) return null
-  const options = pick(typed).map((label) => ({ label, apply: write(label), type: 'keyword' }))
-  return options.length
-    ? { from: before.from + where + 1, options, validFor: /^[^\s#+]*$/ }
-    : null
+  const options = pick(typed).map((label) => ({ label, apply: label.endsWith('/') ? deeper : write(label), type: 'keyword' }))
+  // No `validFor`: the list is cut to eight and changes level at a `/`, so it
+  // is asked for again at each letter rather than narrowed.
+  return options.length ? { from: before.from + where + 1, options } : null
+}
+
+/** `@` offers people the moment it is typed, as `#` does: an address cannot
+ *  start a mention — the `@` of kim@jinr.ru has a letter in front of it — so
+ *  there is nothing to wait for the way `+` waits past a plus sign.
+ *
+ *  A row shows the name as it is written, the name in the other script and the
+ *  address; what goes IN is the name run together (`@JungWooLee`). The rows are
+ *  already the right ones in the right order (authorsFor), so the library is
+ *  told not to filter them again: `jungwoo` is not a prefix of "Jung Woo Lee"
+ *  by any matcher but ours. */
+const people = (ctx) => {
+  const before = ctx.matchBefore(AUTH_HEAD)
+  if (!before) return null
+  const where = before.text.indexOf('@')
+  const options = authorsFor(before.text.slice(where + 1)).map((x) => ({
+    label: x.show, apply: x.text, type: 'keyword',
+    detail: [x.other, x.email].filter(Boolean).join(' · '),
+  }))
+  return options.length ? { from: before.from + where + 1, options, filter: false } : null
 }
 
 export const tagComplete = autocompletion({
@@ -37,6 +64,7 @@ export const tagComplete = autocompletion({
     (ctx) => names(ctx, TAG_HEAD, '#', choicesFor, true),
     // a project is offered by its name and written as one word (projText)
     (ctx) => names(ctx, PROJ_HEAD, '+', projectsFor, false, projText),
+    people,
   ],
   icons: false,
 })
@@ -154,7 +182,7 @@ const filesOf = (dt) => (dt ? [...(dt.files || [])] : [])
  *  where the backend just put it (`TEX_DIRS`). A style or a class belongs in
  *  the preamble, not where the caret is, so that one goes in commented: the
  *  line to move up, rather than a line that breaks the build. */
-const dropped = (name, tex) => {
+export const dropped = (name, tex) => {
   if (!tex) return `![[${name}]]\n`
   const ext = (name.match(/\.[^./]+$/) || [''])[0].toLowerCase()
   const bare = name.replace(/\.[^./]+$/, '')
@@ -194,6 +222,26 @@ async function stow(view, at, files, upload, tex) {
 }
 
 // ── a table, without counting pipes ────────────────────────────────────────
+// ── `**bold**` ────────────────────────────────────────────────────────────
+/** Put `before`/`after` round the selection and keep it selected, so pressing
+ *  the key twice reads as taking the marks off rather than nesting them. The
+ *  tool's `edit.wrap` and the keys below are the same thing by design. */
+export const wrapSel = (view, before, after = before) => {
+  const r = view.state.selection.main
+  const had = view.state.sliceDoc(r.from, r.to)
+  view.dispatch({
+    changes: { from: r.from, to: r.to, insert: before + had + after },
+    selection: { anchor: r.from + before.length, head: r.from + before.length + had.length },
+  })
+  return true
+}
+
+/** What every editor binds: ⌘B and ⌘I. Markdown's own keymap does not. */
+export const markKeys = keymap.of([
+  { key: 'Mod-b', run: (v) => wrapSel(v, '**') },
+  { key: 'Mod-i', run: (v) => wrapSel(v, '*') },
+])
+
 // ── pasting into a quote ──────────────────────────────────────────────────
 /** The quote mark the caret's line wears: `> `, `>> `, and its indent. */
 const QUOTE = /^\s*((?:>\s?)+)/

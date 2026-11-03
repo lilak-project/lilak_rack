@@ -12,8 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("NOTE_DATA_DIR", "/tmp/note-test-data")
 
 from fastapi import HTTPException            # noqa: E402
-from backend.main import (BIB_KEY, FILES, PROJ_RE, TAG_RE, TEX_AT,            # noqa: E402
-                          _braced, _files, _no_code, _proj_key, _rewrite, _safe_rel,
+from backend.main import (AUTH_RE, BIB_KEY, FILES, PROJ_RE, TAG_RE, TEX_AT,            # noqa: E402
+                          _braced, _files, _name_key, _no_code, _proj_key, _rewrite, _safe_rel,
                           _sub_outside_code)
 
 # ── code is not prose: `#include` in a fence is not a tag ─────────────────
@@ -121,18 +121,20 @@ assert f.read_text(encoding="utf-8") == raw
 BIN.drop("notes", "bin-check")
 f.unlink()
 
-# ── search finds a note by its title, and a body line still wins ──
-from backend.main import search   # noqa: E402
-_f = NOTES / "search-check.md"
-_f.write_text("---\ntitle: 제목만 있는 낱말\ndate: 2026-11-03\n---\n\n본문 줄\n", encoding="utf-8")
-assert [(h["id"], h["text"]) for h in search("제목만 있는", {})["hits"]] == [("search-check", "")]
-assert search("본문 줄", {})["hits"][0]["text"] == "본문 줄"
-_f.unlink()
-
-# ── a save adds one final newline at most: reading and saving back changes nothing
-from backend.main import _join, _split                                          # noqa: E402
-_once = _join({"title": "t"}, "본문")
-assert _once.endswith("본문\n") and _join(*_split(_once)) == _once, _once
+# ── a markdown note's folder does not show the manuscripts' own ──────────
+from backend.main import NOTES as _N, list_files   # noqa: E402
+_N.mkdir(parents=True, exist_ok=True)
+FILES.mkdir(parents=True, exist_ok=True)
+(_N / "a-paper.md").write_text("---\ntitle: p\n---\n", encoding="utf-8")
+(FILES / "a-paper" / "img").mkdir(parents=True, exist_ok=True)
+(FILES / "a-paper" / "img" / "fig1.png").write_bytes(b"x")
+(FILES / "shared.png").write_bytes(b"y")
+_shared = [f["name"] for f in list_files("", {})["files"]]
+assert "shared.png" in _shared, _shared
+assert not any(n.startswith("a-paper/") for n in _shared), _shared
+# The paper's own folder still shows the paper's own files.
+assert [f["name"] for f in list_files("a-paper", {})["files"]] == ["img/fig1.png"]
+(_N / "a-paper.md").unlink()
 
 # Two "+new" at once: both notes are made, under different names, and both
 # saves land (each writer its own .tmp).
@@ -144,5 +146,58 @@ assert len(set(_made)) == 4, _made
 for _i in _made:
     assert (_N / f"{_i}.md").read_text(encoding="utf-8").startswith("---"), _i
     (_N / f"{_i}.md").unlink()
+
+# #agent finds what is inside it (#agent/rack), not what merely starts the same.
+from backend.main import tagged   # noqa: E402
+(_N / "tree-check.md").write_text("---\ntitle: t\n---\n\n#Agent/rack\n\n- [ ] 할 일 #agent/note\n", encoding="utf-8")
+(_N / "tree-other.md").write_text("---\ntitle: o\n---\n\n#agents\n", encoding="utf-8")
+_got = tagged(tag="agent", project="", _={})["items"]
+assert {x["key"] for x in _got} == {"notes", "todos"} and all(x["rec"]["id"] == "tree-check" for x in _got), _got
+(_N / "tree-check.md").unlink()
+(_N / "tree-other.md").unlink()
+
+# A template saved from a note keeps the body alone, and the note made from
+# it gets its own title and date rather than the template's.
+from backend.main import TEMPLATES, TemplateBody, save_template   # noqa: E402
+assert save_template(TemplateBody(name="회의 록", body="---\ntitle: x\n---\n\n## 논의\n\n#회의\n"), {}) == {"name": "회의 록"}
+assert (TEMPLATES / "회의 록.md").read_text(encoding="utf-8") == "## 논의\n\n#회의\n"
+_t = new_note(NewBody(title="그 회의", template="회의 록"), {})
+assert _t["title"] == "그 회의" and "## 논의" in _t["body"], _t
+(_N / f"{_t['id']}.md").unlink()
+(TEMPLATES / "회의 록.md").unlink()
+try:
+    save_template(TemplateBody(name="  ", body="x"), {})
+    raise AssertionError("a nameless template was saved")
+except HTTPException as e:
+    assert e.status_code == 400
+
+# ── a save adds one final newline at most: reading and saving back changes nothing
+from backend.main import _join, _split                                          # noqa: E402
+_once = _join({"title": "t"}, "본문")
+assert _once.endswith("본문\n") and _join(*_split(_once)) == _once, _once
+
+# ── `@사람`: the name run together, without case, is the key ───────────────
+# The same rule as the screen's (racklist tags.js nameKey): the two have to
+# agree or a mention found here would not be the one shown there.
+assert _name_key("Jung Woo Lee") == "jungwoolee"
+assert _name_key("F.-K. Thielemann") == _name_key("F. K. Thielemann")
+assert _name_key("이정우") == "이정우"
+
+_names = lambda t: [m.group(1) for m in AUTH_RE.finditer(_no_code(t))]  # noqa: E731
+# A mention starts a word; an address's `@` has a letter in front of it.
+assert _names("고마워요 @이정우 그리고 @JungWooLee") == ["이정우", "JungWooLee"]
+assert _names("@이정우 가 처음") == ["이정우"]
+assert _names("(@이정우)") == ["이정우"]
+assert _names("kim@jinr.ru 로 보냈다") == []
+assert _names("a@b.com @이정우") == ["이정우"]
+assert _names("```\n@이정우\n```") == []
+
+# ── search finds a note by its title, and a body line still wins ──
+from backend.main import search   # noqa: E402
+_f = NOTES / "search-check.md"
+_f.write_text("---\ntitle: 제목만 있는 낱말\ndate: 2026-11-03\n---\n\n본문 줄\n", encoding="utf-8")
+assert [(h["id"], h["text"]) for h in search("제목만 있는", {})["hits"]] == [("search-check", "")]
+assert search("본문 줄", {})["hits"][0]["text"] == "본문 줄"
+_f.unlink()
 
 print("note: ok")

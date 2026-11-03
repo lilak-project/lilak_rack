@@ -3,7 +3,8 @@ import { EditorState, RangeSet, StateEffect, StateField } from '@codemirror/stat
 import { EditorView, keymap, lineNumbers, gutterLineClass, GutterMarker,
   highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { syntaxHighlighting, defaultHighlightStyle, StreamLanguage } from '@codemirror/language'
+import { syntaxHighlighting, defaultHighlightStyle, HighlightStyle, StreamLanguage } from '@codemirror/language'
+import { tags } from '@lezer/highlight'
 import { markdown, markdownLanguage, markdownKeymap } from '@codemirror/lang-markdown'
 import { stex } from '@codemirror/legacy-modes/mode/stex'
 import { python } from '@codemirror/legacy-modes/mode/python'
@@ -12,8 +13,9 @@ import { shell } from '@codemirror/legacy-modes/mode/shell'
 import { json } from '@codemirror/legacy-modes/mode/javascript'
 import { yaml } from '@codemirror/legacy-modes/mode/yaml'
 import { livePreview, liveLook } from './livemd.js'
+import { commentFold, setFoldComments } from './comments.js'
 import { placeBack, placeSave } from './scrolled.js'
-import { tagComplete, citeComplete, dueKeys, quotePaste, takeFiles, tableKeys, tableInput } from './liveedit.js'
+import { tagComplete, citeComplete, dueKeys, markKeys, quotePaste, takeFiles, tableKeys, tableInput } from './liveedit.js'
 
 /** The note as the file has it, in a real text editor — plain (`원문`) or with
  *  the markdown drawn over it (`라이브`).
@@ -46,6 +48,18 @@ const fenceLanguage = (info) => {
   const mode = FENCE[String(info).trim().toLowerCase()]
   return mode ? StreamLanguage.define(mode) : null
 }
+
+/** CodeMirror's own style, with ONE rule changed: it underlines a heading as
+ *  well as bolding it, and the line under it read as a link — a note's
+ *  headings are bold and a size larger, which says it already.
+ *
+ *  Built from `defaultHighlightStyle.specs` rather than added beside it: a
+ *  second (non-fallback) highlighter REPLACES the fallback one outright
+ *  (`getHighlighters`), so laying one over the default took every colour in
+ *  the editor — LaTeX's and markdown's — away with it. */
+export const noteHighlight = HighlightStyle.define(
+  defaultHighlightStyle.specs.map((spec) => (
+    spec.tag === tags.heading ? { ...spec, textDecoration: 'none' } : spec)))
 
 const mark = (cls) => new (class extends GutterMarker { elementClass = cls })()
 const PIN = mark('nt-pin')
@@ -98,7 +112,7 @@ const look = EditorView.theme({
 })
 
 export default function RawArea({ value, onChange, live = false, tex = false, at, fileSrc, onFiles, onOpenNote,
-  pins, onPin, onEdit, onGutter, goto: go, openAt = 0 }) {
+  pins, onPin, onEdit, onGutter, goto: go, openAt = 0, hold, fold = false }) {
   const host = useRef(null)
   const view = useRef(null)
   const cb = useRef(onChange)
@@ -154,6 +168,8 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
             EditorView.lineWrapping,
             // The one menu a LaTeX document wants: the keys it can cite.
             citeComplete,
+            // `%` lines, folded away when the 주석 tool says so.
+            commentFold,
           ] : [
             // A table's own Tab and Enter go first: the general keymap's Tab
             // indents the line, which is not what a cell wants.
@@ -161,13 +177,14 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
             keymap.of([...markdownKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
             // ```python and friends are read in that language inside the fence.
             markdown({ base: markdownLanguage, codeLanguages: fenceLanguage }),
+            markKeys,
             tagComplete,
             ...dueKeys,
             tableInput,
             quotePaste,
           ]),
           ...(onFiles ? [takeFiles(onFiles, tex)] : []),
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+          syntaxHighlighting(noteHighlight, { fallback: true }),
           look,
           EditorView.updateListener.of((u) => {
             // How wide the numbers are, so the title bar can carry the column
@@ -187,13 +204,22 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
       }),
     })
     view.current = v
+    // The manage column's tools reach the document through `edit` upstairs,
+    // which reaches it through here.
+    if (hold) hold.current = v
     // Where this note was last read, and where it is read from now on — the
     // pane's side can change under it, and that builds a new editor
     // (scrolled.js). The line at the top of the box, not its pixels: the pane
     // it comes back in is another width, so the text wraps elsewhere.
     const top = () => {
-      const box = v.scrollDOM.getBoundingClientRect()
-      return v.posAtCoords({ x: box.left + 1, y: box.top + 1 }, false)
+      // CodeMirror can be between renders when a scroll arrives (the tools
+      // column opening, a pane docking), and asking it what is at a point
+      // then throws from inside its own tile map. A place not written down
+      // is no loss; a scroll handler that throws on every tick is.
+      try {
+        const box = v.scrollDOM.getBoundingClientRect()
+        return v.posAtCoords({ x: box.left + 1, y: box.top + 1 }, false)
+      } catch { return null }
     }
     const was = placeBack(at)
     if (was) {
@@ -207,7 +233,10 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
       v.dispatch({ selection: { anchor: line.from },
         effects: EditorView.scrollIntoView(line.from, { y: 'center' }) })
     }
-    v.scrollDOM.addEventListener('scroll', () => placeSave(at, top()), { passive: true })
+    v.scrollDOM.addEventListener('scroll', () => {
+      const p = top()
+      if (p != null) placeSave(at, p)
+    }, { passive: true })
     // Measured now rather than on the next update: a note nobody has touched
     // produces no update, and the column at the top would be the wrong width
     // until the first keystroke. CodeMirror has drawn itself into `host` by
@@ -242,8 +271,14 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
       }),
       clear: () => {},
     }
-    return () => { v.destroy(); view.current = null }
+    return () => { v.destroy(); view.current = null; if (hold) hold.current = null }
   }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Whether the `%` lines are folded (comments.js). A prop, not a mode of
+  // this editor: the tool holds the switch and the note remembers it.
+  useEffect(() => {
+    view.current?.dispatch({ effects: setFoldComments.of(!!fold) })
+  }, [fold])
 
   // The bookmarks, as the gutter shows them.
   useEffect(() => {

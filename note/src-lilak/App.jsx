@@ -11,21 +11,21 @@
  * rackstore), the editor, a PDF, the to-dos tab, daily · templates · print.
  */
 import './strings.js'
-import { Children, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { api, ask, fileSrc, kb, noteQ, openTab, putFile } from './api.js'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  RackService, RackTable, RackRow, RackActions, useRackKeys, bumpSort, byKeys, PORTAL_BASE, brandStyle,
-  projectKey, load, authHeaders, tagKey, mergeTags as tagCounts, useTagSources, uniqueTags, useProjects,
-  useReferences, openInService, save, addReference, referenceDoc, bibText,
+  RackService, RackTable, RackRow, RackActions, useRackKeys, FAV, bumpSort, byKeys, PORTAL_BASE, brandStyle,
+  projectKey, load, authHeaders, tagKey, tagWithin, mergeTags as tagCounts, useTagSources, uniqueTags, useProjects,
+  useReferences, useAuthors, save, addReference, referenceDoc, bibText,
 } from 'racklist'
-// The same renderer elog writes its logs with: GFM (so `- [ ]` is a checkbox)
-// and one newline means one line break, because a note is typed, not typeset.
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import remarkMath from 'remark-math'
-import rehypeKatex from 'rehype-katex'
-import { remarkSoftBreaks } from 'lilak-ui/log/Markdown.jsx'
-import { TAG_RE, PROJ_RE, EMBED_RE, embedSpec, isImage, outsideCode, replaceOutsideCode, setTagChoices, setProjChoices, setCiteChoices, isProject } from './marks.js'
+import { TAG_RE, TAG_COMMENT, outsideCode, replaceOutsideCode, setTagChoices, setProjChoices, setCiteChoices, setAuthorChoices, authorShow } from './marks.js'
 import SourceArea from './SourceArea.jsx'
+import { wrapSel } from './liveedit.js'
+import { Rendered } from './reading.jsx'
+import { toolsFor } from './tools/index.js'
+import { press } from './tools/press.js'
+import Toolbox from './tools/toolbox.jsx'
+import { citedIn, citeMap } from './tools/bib.jsx'
 import { placeBack, placeSave } from './scrolled.js'
 import { clearPins, lastEdit, marksOf, pinned, sawEdit, togglePin } from './pins.js'
 import 'katex/dist/katex.min.css'
@@ -37,8 +37,6 @@ const VIEW_KEY = projectKey('nt', 'view')
 /** Where a file a note embeds is served from. `note` is the tex note whose
  *  own folder to look in first (see the backend's `_files`); a markdown note
  *  passes nothing and reads the project's shared files folder. */
-/** `\cite{a,b}`, `\citep[see][]{c}` — the keys a tex note's body calls for. */
-const CITE_IN_TEXT = /\\[a-zA-Z]*cite[a-zA-Z]*(?:\[[^\]]*\])*\{([^}]*)\}/g
 /** `\bibliography{reference}` — the file the document asks for, without its
  *  `.bib`. A document that does not say takes the name everyone writes. */
 const BIB_AT = /\\bibliography\s*\{([^}]*)\}/g
@@ -47,33 +45,6 @@ const bibName = (body) => {
     .flatMap((m) => m[1].split(',').map((x) => x.trim()))
     .filter((x) => x && !x.startsWith('<'))      // the template's `<your bibdatabase>`
   return (names.length === 1 ? names[0] : 'reference').replace(/\.bib$/i, '')
-}
-const noteQ = (note) => (note ? `?note=${encodeURIComponent(note)}` : '')
-/** A file's size, in the unit a person would say it in. */
-const kb = (b) => (b < 1024 ? `${b} B` : b < (1 << 20) ? `${Math.round(b / 1024)} KB`
-  : `${(b / (1 << 20)).toFixed(1)} MB`)
-// Each part on its own: a tex note's file is at a path (`img/fig1.png`) and
-// the slashes are the URL's, not characters in a name.
-const fileSrc = (name, note) =>
-  `${PORTAL_BASE}/api/file/${String(name).split('/').map(encodeURIComponent).join('/')}${noteQ(note)}`
-/** A file dropped into a note: stored beside the notes, named back. Not `api`
- *  — a multipart body writes its own content type, boundary and all. */
-async function putFile(file, note, replace = false) {
-  const form = new FormData()
-  form.append('f', file)
-  const r = await fetch(`${PORTAL_BASE}/api/file${noteQ(note)}${replace ? '&replace=1' : ''}`,
-    { method: 'POST', headers: authHeaders(), body: form })
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || tr("nt_upload_failed", r.status))
-  return (await r.json()).name
-}
-const api = (p, o) => fetch(`${PORTAL_BASE}/api${p}`, {
-  ...o, headers: { 'Content-Type': 'application/json', ...authHeaders(), ...(o?.headers || {}) },
-})
-async function ask(p, o) {
-  const r = await api(p, o)
-  if (r.status === 409) return { conflict: true, body: await r.json() }
-  if (!r.ok) throw new Error(`${o?.method || 'GET'} ${p} → ${r.status}`)
-  return { body: await r.json() }
 }
 
 /** Where this project keeps its notes and their files — asked once, since it
@@ -84,6 +55,12 @@ const whereIs = (note = '') => (whereAsked[note] ||=
 
 const D = '·'
 const tagsOf = (n) => (n.tags || []).filter(Boolean)
+/** The people a note mentions, by the name author_manager shows them under —
+ *  so `@이정우` and `@JungWooLee` are ONE value here however the note spells
+ *  them, and a `@word` naming nobody is left as it was written. */
+const peopleOf = (n) => [...new Set((n.authors || []).map((w) => authorShow(w) || w).filter(Boolean))]
+/** `format: tex` in the front matter — the note is a LaTeX document. */
+const texNote = (n) => String(n?.fields?.format || '').toLowerCase() === 'tex'
 /** The tags a body carries — and the body is the only place one lives.
  *  `#태그` is Obsidian's spelling, and markdown's own rule keeps it apart from
  *  a heading: `# ` has a space after the hash. */
@@ -137,7 +114,7 @@ const TONE = { title: 'ink', text: 'ink', date: 'dim', updated: 'dim', tags: 'di
 
 const TODO_SORTERS = {
   text: (t) => t.text || '', title: (t) => t.title || '', date: (t) => t.date || '',
-  tags: (t) => (t.tags || []).join(' '), done: (t) => t.doneAt || '',
+  tags: Object.assign((t) => (t.tags || []).join(' '), { many: (t) => t.tags || [] }), done: (t) => t.doneAt || '',
   // A todo with no date is not due before everything that has one.
   due: (t) => t.due || '9999',
 }
@@ -159,10 +136,13 @@ const TODO_SCOPES = [
 
 
 /** project_manager's projects, handed to what `+` offers and draws — while
- *  rendering, not after: the page drawn in this same pass asks it. */
+ *  rendering, not after: the page drawn in this same pass asks it. And
+ *  author_manager's people, for `@`, which works the same way. */
 function useProjectChoices() {
   const projects = useProjects()
+  const people = useAuthors()
   useMemo(() => setProjChoices(projects.map((p) => p.name)), [projects])
+  useMemo(() => setAuthorChoices(people), [people])
 }
 
 /** The tags `#` offers: every service's that shares them (note's own among
@@ -196,9 +176,26 @@ function useTagChoices(own) {
  *  A tag lives in the body, so a tag change is an edit to the text: the ones
  *  gone are renamed into the one that came (a merge, a rename) or taken out,
  *  and one that is new and not in the text yet is added at the end. */
+/** ★ is about the FILE, not about what is written in it, so it lives in the
+ *  front matter (`favorite: true`) and not as a `#favorite` in the text. The
+ *  kit's star reads it from a field of its own (`star`, NOTE_DEF.item.favorite)
+ *  rather than from the tags — otherwise starring a note edits its words.
+ *
+ *  A `#favorite` already in the body still lights the star, and comes out of
+ *  the text the first time the star is turned off: the notes migrate as they
+ *  are touched rather than all at once. */
+// As the FILE has it — the front matter, or an old `#favorite` in the text.
+const wasStarred = (n) => !!n.fields?.favorite || tagsOf(n).some((t) => tagKey(t) === FAV)
+// As the RECORD has it: the kit's star writes `star`, and loadNotes fills it
+// from the file. One field, so a change is a comparison rather than a guess.
+const starred = (n) => (Array.isArray(n?.star) ? n.star : []).some((t) => tagKey(t) === FAV)
 async function loadNotes() {
   const { body } = await ask('/notes')
-  return { notes: body.notes || [], templates: body.templates || [], version: String(Date.now()) }
+  return {
+    notes: (body.notes || []).map((n) => ({ ...n, star: wasStarred(n) ? [FAV] : [] })),
+    templates: body.templates || [],
+    version: String(Date.now()),
+  }
 }
 async function saveNotes(next, doc) {
   const was = new Map((doc.notes || []).map((n) => [n.id, n]))
@@ -209,6 +206,19 @@ async function saveNotes(next, doc) {
     if (!r.ok) throw new Error(`DELETE /notes/${id} → ${r.status}`)
   }
   const same = (a, b) => tagKey(a) === tagKey(b)
+  // ★ first, and on its own: it is a key in the front matter, so it never
+  // touches the text — except to take an old `#favorite` out of it.
+  for (const [id, n] of now) {
+    const old = was.get(id)
+    if (!old || starred(old) === starred(n)) continue
+    const { body: cur } = await ask(`/notes/${encodeURIComponent(id)}`)
+    const fields = { ...(cur.fields || {}) }
+    if (starred(n)) fields.favorite = true
+    else delete fields.favorite
+    const body = starred(n) ? undefined : renameBodyTag(cur.body, FAV, '').replace(/\s+$/, '')
+    const { conflict } = await putNote(id, cur.version, { fields, ...(body === undefined ? {} : { body }) })
+    if (conflict) return { conflict: true, doc: await loadNotes() }
+  }
   for (const [id, n] of now) {
     const old = was.get(id)
     if (!old) continue
@@ -216,12 +226,30 @@ async function saveNotes(next, doc) {
     const came = tagsOf(n).filter((t) => !tagsOf(old).some((x) => same(x, t)))
     if (!gone.length && !came.length) continue
     const { body: cur } = await ask(`/notes/${encodeURIComponent(id)}`)
+    const tex = texNote(n) || texNote(cur)
     let text = cur.body
+    // A tex note's tag line is written again below, so it comes off first —
+    // renaming inside it would leave the `%` standing on its own.
+    if (tex) text = text.split('\n').filter((l) => !TAG_COMMENT.test(l)).join('\n')
     for (const g of gone) text = renameBodyTag(text, g, came.length === 1 ? came[0] : '')
     // A line that held only the tags taken out goes with them.
     const lines = String(cur.body || '').split('\n')
     text = text.split('\n').filter((l, i) => l.trim() || !lines[i]?.trim()).join('\n')
-    for (const t of came) if (!bodyTags(text).some((x) => same(x, t))) text = `${String(text || '').replace(/\n+$/, '')}\n\n#${t}`
+    if (tex) {
+      // A LaTeX document cannot hold a bare `#`: it is TeX's macro parameter
+      // character, and a `#태그` written into the document errors where it
+      // lands ("You can't use `macro parameter character #' in vertical
+      // mode"). So a tex note keeps its tags on ONE comment line at the end —
+      // `% #a #b` — which LaTeX ignores and the tag rule still reads. It is
+      // rewritten whole rather than edited: the record's tags are the truth,
+      // and a tag the document already wears somewhere else is left where it
+      // is rather than said twice.
+      const body = text.replace(/\s+$/, '')
+      const mine = tagsOf(n).filter((t) => !bodyTags(body).some((x) => same(x, t)))
+      text = mine.length ? `${body}\n\n% ${mine.map((t) => `#${t}`).join(' ')}` : body
+    } else {
+      for (const t of came) if (!bodyTags(text).some((x) => same(x, t))) text = `${String(text || '').replace(/\n+$/, '')}\n\n#${t}`
+    }
     // The server ends the file with one newline of its own.
     text = text.replace(/\s+$/, '')
     if (text === String(cur.body || '').replace(/\s+$/, '')) continue
@@ -236,6 +264,9 @@ const NOTE_DEF = {
   source: { load: loadNotes, save: saveNotes },
   item: {
     key: 'notes', noun: tr("nt_noun"), label: 'title', tabId: 'notes', allLabel: 'notes',
+    // ★ is the file's own property (`favorite:` in the front matter), carried
+    // on a field of its own so the kit's star never edits the body's tags.
+    favorite: 'star',
     findHint: tr("nt_find_hint"),
     order: { k: 'date', dir: -1 },
     // Made at once by the API (a file needs a name), then opened at its title.
@@ -249,15 +280,24 @@ const NOTE_DEF = {
       const { body } = await ask(`/search?q=${encodeURIComponent(q)}`)
       return new Map(body.hits.map((h) => [h.id, h.text]))
     },
-    search: (n, q, ctx) => [n.title, n.date, n.excerpt, ...tagsOf(n)]
+    search: (n, q, ctx) => [n.title, n.date, n.excerpt, ...tagsOf(n), ...peopleOf(n), ...(n.authors || [])]
       .filter(Boolean).some((v) => String(v).toLowerCase().includes(q)) || !!ctx.hits?.has(n.id),
     fields: [
-      // A whole 2026-08-04 at 15px is 90px wide, and the cell keeps 6 either side.
-      { k: 'date', label: 'date', get: (n) => n.date || '', col: { w: 106, min: 84 }, tone: 'dim' },
-      // When the FILE last changed, beside the date the note gives itself.
+      // When the FILE last changed — first, because it is how you find what you
+      // were doing. A whole 2026-08-04 at 15px is 90px wide, and the cell keeps
+      // 6 either side.
       { k: 'updated', label: 'updated', get: updatedOn, col: { w: 106, min: 84 }, tone: 'dim' },
       { k: 'title', label: 'title', get: (n) => n.title || '', col: { w: 260, min: 100 }, tone: 'ink' },
       { k: 'tags', label: 'tags', type: 'tags', bulk: true, col: { w: 170, min: 60 }, tone: 'dim' },
+      // Who the note mentions (`@이정우`). Like tags, it lives in the body and
+      // nowhere else — so it is read, never edited here — and the filter
+      // offers one row per person rather than the list as one string.
+      { k: 'people', label: tr("nt_people"), get: (n) => peopleOf(n).join(`, `),
+        many: peopleOf, col: { w: 150, min: 60, drop: 1100 }, tone: 'dim' },
+      // The date the NOTE gives itself, which is about the note rather than
+      // about the file — so it stands with what the note says, not with when
+      // it was touched.
+      { k: 'date', label: 'date', get: (n) => n.date || '', col: { w: 106, min: 84 }, tone: 'dim' },
       { k: 'todo', label: tr("nt_todo"), get: (n) => (n.todo ? `${n.todo}` : n.done ? '✓' : ''), col: { w: 52, min: 40 } },
       { k: 'words', label: 'words', get: (n) => (n.words ? `${n.words}` : ''), col: { w: 58, min: 40, drop: 1040 } },
       // While searching, the line the BODY matched on is more use than the first line.
@@ -316,6 +356,19 @@ function PdfPane({ t }) {
   )
 }
 
+/** Whose notes the list shows, pressed round in turn: everything, the person's,
+ *  the ones Claude sessions keep (`#agent`, `#agent/rack`). */
+const isAgentNote = (n) => tagsOf(n).some((t) => tagWithin(t, 'agent'))
+const WHO_ICON = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.3, strokeLinejoin: 'round', strokeLinecap: 'round' }
+const WHO = [
+  { k: 'all', is: () => true, label: () => tr("nt_who_all"),
+    icon: <path d="M5 7.5v6.5H2V7.5zM5 7.5 8.2 1.8c1 0 1.8.8 1.8 1.9V6.5h3.2c.9 0 1.5.8 1.3 1.7l-1 4.5c-.2.8-.8 1.3-1.6 1.3H5" /> },
+  { k: 'people', is: (n) => !isAgentNote(n), label: () => tr("nt_who_people"),
+    icon: <><circle cx="8" cy="5" r="3" /><path d="M2.5 14.5C3.1 11.5 5.3 10 8 10s4.9 1.5 5.5 4.5" /></> },
+  { k: 'agent', is: isAgentNote, label: () => tr("nt_who_agent"),
+    icon: <><rect x="1.5" y="2.5" width="13" height="9" rx="1" /><path d="M8 11.5v3M5 14.5h6" /></> },
+]
+
 /** Notes just made: their editor takes the caret at the title, once. */
 const FRESH = new Set()
 
@@ -328,6 +381,9 @@ export default function App() {
   useProjectChoices()
   const [tscope, setTscope] = useState(() => load(VIEW_KEY, {}).tscope || 'open')
   useEffect(() => { save(VIEW_KEY, { ...load(VIEW_KEY, {}), tscope }) }, [tscope])
+  const [whoK, setWhoK] = useState(() => load(VIEW_KEY, {}).who || 'all')
+  useEffect(() => { save(VIEW_KEY, { ...load(VIEW_KEY, {}), who: whoK }) }, [whoK])
+  const who = WHO.find((x) => x.k === whoK) || WHO[0]
 
   // A file dropped anywhere but the editor: the browser's own answer is to
   // leave the app and show the picture, which inside the portal's frame reads
@@ -345,9 +401,16 @@ export default function App() {
 
   const slots = useMemo(() => ({
     commands: (a) => <NoteCommands a={a} tscope={tscope} setTscope={setTscope} />,
+    keep: who.is,
+    barTools: () => (
+      <button type="button" className={`rl-reload${who.k === 'all' ? '' : ' on'}`} title={who.label()}
+        onClick={() => setWhoK(WHO[(WHO.indexOf(who) + 1) % WHO.length].k)}>
+        <svg viewBox="0 0 16 16" aria-hidden="true" {...WHO_ICON}>{who.icon}</svg>
+      </button>
+    ),
     tabs: [
-      { id: 'todos', label: 'todos', render: (a) => <Todos a={a} tscope={tscope} /> },
-      { id: 'system', label: 'system todo', render: (a) => <Todos a={a} tscope={tscope} system /> },
+      { id: 'todos', label: 'todos', render: (a) => <Todos a={a} tscope={tscope} who={who} /> },
+      { id: 'system', label: 'system todo', render: (a) => <Todos a={a} tscope={tscope} who={who} system /> },
     ],
     editors: {
       item: (t, a) => (
@@ -369,11 +432,18 @@ export default function App() {
               src: `${PORTAL_BASE}/api/pdf/${encodeURIComponent(nid)}?v=${v}` })
           }}
           onPrint={() => preview([t.who], a.setNote)}
+          make={{
+            // `daily` is the button beside the list, not a line in it.
+            templates: (a.doc?.templates || []).filter((t) => t !== 'daily'),
+            from: (template) => fromTemplate(a, template),
+            daily: () => openDaily(a),
+            save: (name, body) => saveTemplate(a, name, body),
+          }}
           onClosed={() => { a.closeEdit(t.id); a.reload() }} />
       ),
       pdf: (t) => <PdfPane t={t} />,
     },
-  }), [tscope])
+  }), [tscope, who])
 
   return <RackService def={NOTE_DEF} slots={slots} />
 }
@@ -383,7 +453,17 @@ export default function App() {
  *  the one thing a JS pdf library makes hard and a print dialog makes free. */
 function preview(ids, say) {
   if (!ids.length) { say(tr("nt_pick_note")); return }
-  window.open(`${PORTAL_BASE}/?print=${ids.join(',')}`, '_blank', 'noopener')
+  openTab(`${PORTAL_BASE}/?print=${ids.join(',')}`)
+}
+
+/** A new note from a template, made and opened. Parked in the toolbox's
+ *  `공용`: nothing uses templates now, and `templates/` is a folder, so the
+ *  one place it could go without a store behind it is beside the note. */
+async function fromTemplate(a, template) {
+  try {
+    const { body } = await ask('/notes', { method: 'POST', body: JSON.stringify({ title: tr("nt_untitled"), template }) })
+    await made(a, body, tr("nt_made_from_template", template))
+  } catch (e) { a.setNote(String(e.message || e)) }
 }
 
 /** A note made (from a template, or today's) and opened. */
@@ -394,49 +474,41 @@ async function made(a, body, said) {
   a.setNote(said)
 }
 
-/** note's own line in the ⋯: today's note, a template, print what is picked —
- *  and, on the to-dos tab, which of them it shows. */
+/** Today's note, under the name it always has. One a day: if today's is
+ *  already there this opens it instead of making a second one, and a template
+ *  called `daily` is used when there is one.
+ *
+ *  Two places press this — the ⋯ menu and the toolbox's `공용` — because it is
+ *  the one template that gets used, so it is a button and not a list entry. */
+async function openDaily(a) {
+  const title = `Daily ${day(new Date())}`
+  const had = (a.doc?.notes || []).find((n) => n.title === title)
+  if (had) { a.openItem(had.id); a.setNote(tr("nt_opened", title)); return }
+  try {
+    const template = (a.doc?.templates || []).includes('daily') ? 'daily' : null
+    const { body } = await ask('/notes', { method: 'POST', body: JSON.stringify({ title, template }) })
+    // The tag lives in the body, like every other tag here.
+    if (!bodyTags(body.body).includes('daily')) {
+      await putNote(body.id, body.version,
+        { title, body: body.body ? `${body.body.replace(/\n+$/, '')}\n\n#daily` : '#daily' })
+    }
+    await made(a, { ...body, title }, tr("nt_made_named", title))
+  } catch (e) { a.setNote(String(e.message || e)) }
+}
+
+/** This note's text, kept in `templates/` under a name. */
+async function saveTemplate(a, name, body) {
+  await ask('/templates', { method: 'POST', body: JSON.stringify({ name, body }) })
+  await a.reload()
+  a.setNote(tr("nt_tmpl_saved", name))
+}
+
+/** note's own line in the ⋯: today's note, and, on the to-dos tab, which of
+ *  them it shows. Printing and templates live in the toolbox (`공용`). */
 function NoteCommands({ a, tscope, setTscope }) {
-  const notes = a.doc?.notes || []
-  const templates = a.doc?.templates || []
-  /** Today's note, under the name it always has. One a day: if today's is
-   *  already there this opens it instead of making a second one, and a
-   *  template called `daily` is used when there is one. */
-  async function openDaily() {
-    const title = `Daily ${day(new Date())}`
-    const had = notes.find((n) => n.title === title)
-    if (had) { a.openItem(had.id); a.setNote(tr("nt_opened", title)); return }
-    try {
-      const template = templates.includes('daily') ? 'daily' : null
-      const { body } = await ask('/notes', { method: 'POST', body: JSON.stringify({ title, template }) })
-      // The tag lives in the body, like every other tag here.
-      if (!bodyTags(body.body).includes('daily')) {
-        await putNote(body.id, body.version,
-          { title, body: body.body ? `${body.body.replace(/\n+$/, '')}\n\n#daily` : '#daily' })
-      }
-      await made(a, { ...body, title }, tr("nt_made_named", title))
-    } catch (e) { a.setNote(String(e.message || e)) }
-  }
-  async function fromTemplate(template) {
-    try {
-      const { body } = await ask('/notes', { method: 'POST', body: JSON.stringify({ title: tr("nt_untitled"), template }) })
-      await made(a, body, tr("nt_made_from_template", template))
-    } catch (e) { a.setNote(String(e.message || e)) }
-  }
   return (
     <>
-      <button type="button" className="rl-btn rl-go" title={tr("nt_today_hint")} onClick={openDaily}>daily</button>
-      {!!templates.length && (
-        /* A template is a note in templates/ — so this list is a folder
-           listing, not a feature with a store behind it. */
-        <select className="rl-btn rl-go rl-pick" value=""
-          onChange={(e) => { if (e.target.value) fromTemplate(e.target.value) }}>
-          <option value="">{tr("nt_from_template")}</option>
-          {templates.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-      )}
-      <button type="button" className="rl-btn" disabled={!a.picked.size}
-        onClick={() => preview([...a.picked], a.setNote)}>{tr("nt_preview_n", a.picked.size)}</button>
+      <button type="button" className="rl-btn rl-go" title={tr("nt_today_hint")} onClick={() => openDaily(a)}>daily</button>
       {(a.tab?.id === 'todos' || a.tab?.id === 'system') && TODO_SCOPES.map((x) => (
         <button key={x.k} type="button" data-keep className={`rl-btn${tscope === x.k ? ' on' : ''}`}
           onClick={() => setTscope(x.k)}>{x.label}</button>
@@ -447,7 +519,7 @@ function NoteCommands({ a, tscope, setTscope }) {
 
 /** The to-dos: every GFM checkbox in every note, read by the server. A press
  *  ticks one (an edit to its note's text); a right-click opens the note. */
-function Todos({ a, tscope, system = false }) {
+function Todos({ a, tscope, who, system = false }) {
   const [todos, setTodos] = useState(null)
   const [sort, setSort] = useState([{ k: 'date', dir: -1 }])
   const reload = useCallback(() => ask('/todos').then(({ body }) => setTodos(body.todos)).catch((e) => a.setNote(String(e.message || e))), [])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -456,10 +528,12 @@ function Todos({ a, tscope, system = false }) {
   const rows = useMemo(() => {
     const q = (a.query || '').trim().toLowerCase()
     const keep = (TODO_SCOPES.find((x) => x.k === tscope) || TODO_SCOPES[0]).is
-    return (todos || []).filter((t) => isSystemTodo(t) === system).filter(keep)
+    // A todo goes by the note it is in: its own tags say what it is, not whose.
+    const shown = new Set((a.doc?.notes || []).filter(who.is).map((n) => n.id))
+    return (todos || []).filter((t) => isSystemTodo(t) === system).filter(keep).filter((t) => shown.has(t.id))
       .filter((t) => !q || [t.text, t.title, ...(t.tags || [])].filter(Boolean).some((v) => String(v).toLowerCase().includes(q)))
       .sort(byKeys(sort, TODO_SORTERS))
-  }, [todos, a.query, tscope, sort, system])
+  }, [todos, a.query, tscope, sort, system, who, a.doc])
   async function toggle(t) {
     try {
       const { conflict, body } = await ask('/todos', { method: 'PUT',
@@ -528,7 +602,7 @@ export function SoloNote({ id }) {
     <div className="rl nt-solo" style={brandStyle()}>
       {gone ? <p className="rl-msg">{tr("nt_deleted")}</p> : (
         <Editor id={id} say={say} onClosed={closed}
-          onPrint={() => window.open(`${PORTAL_BASE}/?print=${encodeURIComponent(id)}`, '_blank', 'noopener')} />
+          onPrint={() => openTab(`${PORTAL_BASE}/?print=${encodeURIComponent(id)}`)} />
       )}
       {said && <div className="rl-hint nt-solo-note">{said}</div>}
     </div>
@@ -558,25 +632,21 @@ const Ribbon = ({ on }) => (
  * in a checkbox somewhere else — picking a mode is picking what you are
  * editing.
  *
- * A mode brings its own TOOLS, and how many it has decides their shape.
- * Markdown has one — read it as it reads — and one tool is one button.
- * LaTeX has a drawerful (compile, the files beside the manuscript, the
- * bibliography) and those are a `관리` panel with a tab each, so the bar does
- * not grow a button every time a mode learns something. The next mode is an
- * entry here and a tab or two in `tools` below.
+ * A mode has a KIND, and the kind is what tools are for (`tools/`): `md` is
+ * the two ways of looking at markdown, `tex` is a LaTeX document. The mode
+ * does not list its tools — each tool says which kinds it appears for, so a
+ * new tool is a file and a line in `tools/index.js`, not an edit here.
  */
 const MODES = {
-  live: { label: () => tr("nt_live"), paint: true, preview: true },
-  raw: { label: () => tr("nt_raw"), preview: true },
-  tex: { label: () => 'LaTeX', hint: () => tr("nt_tex"), format: 'tex',
-    tabs: ['compile', 'files', 'bib'] },
+  live: { kind: 'md', label: () => 'MD', paint: true },
+  raw: { kind: 'md', label: () => tr("nt_raw") },
+  tex: { kind: 'tex', label: () => 'LaTeX', hint: () => tr("nt_tex"), format: 'tex' },
 }
 
-function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpenNote, onPdf }) {
+function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpenNote, onPdf, make }) {
   const [n, setN] = useState(null)
   const [f, setF] = useState(null)
-  const [open, setOpen] = useState(false)     // the fold beside the title
-  const [where, setWhere] = useState(null)   // the folders, once the fold asks
+  const [where, setWhere] = useState(null)   // the folders, once a tool asks
   // Which markdown mode: live (the text with the markdown drawn over it) or
   // raw (the text alone). A tex note is neither — its mode is the format.
   // Kept with the place (scrolled.js) for the same reason the scroll is:
@@ -584,15 +654,65 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   // when you were reading is the same lost place by another name.
   const [view, setView] = useState(() => placeBack(`${id}:view`) || 'live')
   useEffect(() => { placeSave(`${id}:view`, view) }, [id, view])
-  // The note as it reads — not a mode of its own. It is the one tool a
-  // markdown note has, and a tool is a button you press and let go.
-  const [preview, setPreview] = useState(() => !!placeBack(`${id}:preview`))
-  useEffect(() => { placeSave(`${id}:preview`, preview) }, [id, preview])
-  // Which tool is open in the manage panel, '' for closed. It stays open
-  // while you work — compiling is not a thing you do once — so it is kept
-  // across a re-dock like everything else about where you were.
+  // Which tool is open, '' for shut. The toolbox belongs to THIS tab: moving
+  // to another takes it away with this editor, and that tab opens and shuts
+  // its own. Kept with the rest of where-you-were (scrolled.js).
   const [tab, setTab] = useState(() => placeBack(`${id}:tab`) || '')
-  useEffect(() => { placeSave(`${id}:tab`, tab) }, [id, tab])
+  useEffect(() => { placeSave(`${id}:tab`, tab); if (tab) placeSave(`${id}:was`, tab) }, [id, tab])
+  // What the toolbox hangs off: this editor's own box. It is drawn OVER the
+  // pane next door, not inside this one, so it measures rather than flows.
+  const root = useRef(null)
+  // How far the toolbox pushes the editor over, when it had nowhere beside
+  // the pane to stand (a full-width tab). 0 the rest of the time — covering
+  // the list is free, covering the text is not.
+  const [push, setPush] = useState(0)
+  // The editor itself, for `edit` below: a tool changes the document through
+  // that and never touches CodeMirror.
+  const cm = useRef(null)
+  /** What a tool may do to the DOCUMENT, and the whole of it. Each call is one
+   *  transaction, so one undo takes it back — a tool is not allowed to leave a
+   *  mess that takes five presses to clear. */
+  const edit = useMemo(() => {
+    const now = () => cm.current
+    return {
+      /** At the caret, replacing what is selected. */
+      put(text) {
+        const v = now()
+        if (!v) return
+        const r = v.state.selection.main
+        v.dispatch({ changes: { from: r.from, to: r.to, insert: text },
+          selection: { anchor: r.from + text.length }, scrollIntoView: true })
+        v.focus()
+      },
+      /** Round what is selected — `**` and `**`, `\\textbf{` and `}`. The same
+       *  function ⌘B is bound to (liveedit.js), so they cannot disagree. */
+      wrap(before, after = before) {
+        const v = now()
+        if (!v) return
+        wrapSel(v, before, after)
+        v.focus()
+      },
+      /** Over the lines the selection touches: return the line as it should
+       *  be, or anything else to leave it alone. */
+      lines(fn) {
+        const v = now()
+        if (!v) return
+        const r = v.state.selection.main
+        const changes = []
+        for (let n = v.state.doc.lineAt(r.from).number; n <= v.state.doc.lineAt(r.to).number; n += 1) {
+          const line = v.state.doc.line(n)
+          const next = fn(line.text, n)
+          if (typeof next === 'string' && next !== line.text) {
+            changes.push({ from: line.from, to: line.to, insert: next })
+          }
+        }
+        if (changes.length) v.dispatch({ changes })
+        v.focus()
+      },
+      at: () => { const v = now(); return v ? v.state.doc.lineAt(v.state.selection.main.head).number : 0 },
+      text: () => now()?.state.doc.toString() ?? '',
+    }
+  }, [])
   // What is in the note's folder, for the files tab (`/api/files`).
   const [files, setFiles] = useState(null)
   // Lines bookmarked in this note, and the line last typed in (pins.js). Both
@@ -606,6 +726,15 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   // How wide the gutter's numbers are, so the title bar can carry the column
   // up to itself and have it line up. Told only when it changes (SourceArea).
   const [gut, setGut] = useState(0)
+  // The note as it READS, in place of the editor. A markdown note's one
+  // other way of being looked at — the 공용 tool holds the switch, because
+  // that is where the note itself is described.
+  const [read, setRead] = useState(() => !!placeBack(`${id}:sheet`))
+  useEffect(() => { placeSave(`${id}:sheet`, read) }, [id, read])
+  // Are this note's `%` lines folded (comments.js)? Kept with the rest of
+  // where-you-were: a pane moving sideways is no reason to unfold them.
+  const [fold, setFold] = useState(() => !!placeBack(`${id}:fold`))
+  useEffect(() => { placeSave(`${id}:fold`, fold) }, [id, fold])
   // What a click on a line number does: leave a bookmark, or go there. Kept
   // with the rest of where-you-were (scrolled.js) — it is a way of working,
   // and the pane moving sideways is no reason to put the pen down.
@@ -627,14 +756,12 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   // flag costs nothing there — the editor reads it and changes language, and
   // the note's files get a folder of their own (`files/<id>/`), because LaTeX
   // names a plain `fig1.pdf` that the compile copies next to main.tex.
-  const tex = String(f?.fields?.format || '').toLowerCase() === 'tex'
+  const tex = texNote(f)
   // The mode this note is in, and what it can do (MODES above). A tex note is
   // in its format's mode whatever `view` says; a markdown note is in the one
   // it is being looked at in.
   const mode = tex ? 'tex' : view
   const can = MODES[mode] || MODES.live
-  // Reading replaces the editor, so it is only ever on where the mode has it.
-  const read = preview && !!can.preview
   const [errs, setErrs] = useState(null)      // what stopped the last compile
   const [busy, setBusy] = useState(false)
   // When this note's PDF was made (nanoseconds, the backend's `_pdf_at`), or
@@ -683,17 +810,21 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
     // is half of it. A browser tab gets the whole viewer, which is the point
     // of opening one.
     + (frame ? '#toolbar=0&navpanes=0' : '')
-  // The folders, once something asks: the info fold, or the files tool.
-  useEffect(() => {
-    if ((open || tab === 'files') && !where) whereIs(tex ? id : '').then(setWhere)
-  }, [open, tab, tex])   // eslint-disable-line react-hooks/exhaustive-deps
+  // The folders (공용 names them). Asked once per note — `whereIs` answers
+  // every tab of it from the same promise.
+  useEffect(() => { whereIs(tex ? id : '').then(setWhere) }, [id, tex])
   /** What is in the note's folder. Asked when the tab opens and after
    *  anything puts a file there — an import, an upload, a generated .bib. */
+  // `null` not asked yet · `false` asked and could not be read · [] the folder
+  // is empty. The three are different things and the tool says so — read as
+  // "empty", a folder that failed had the note pointing at files that are not
+  // there, which was a lie about the note. (A backend too old for /api/files
+  // answers 200 with the SPA's own HTML, which is how this was found.)
   const seeFiles = useCallback(() => {
     ask(`/files${noteQ(tex ? id : '')}`).then(({ body }) => setFiles(body.files || []))
-      .catch(() => setFiles([]))
+      .catch(() => setFiles(false))
   }, [id, tex])
-  useEffect(() => { if (tab === 'files') seeFiles() }, [tab, seeFiles, imp])
+  useEffect(() => { seeFiles() }, [seeFiles, imp])
   const live = useRef({})                    // the latest, for the last save
   const titleRef = useRef(null)
   live.current = { f, n }
@@ -774,16 +905,7 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   // Keys the body cites that this note's bib does not define: each one is a
   // `?` in the PDF. Checked only when there IS a bib — a note without one
   // has nothing to be measured against, not a hundred mistakes.
-  const missing = !tex || !bib.length ? [] : (() => {
-    const known = new Set(bib.map((c) => c.key))
-    const out = []
-    for (const m of f.body.matchAll(CITE_IN_TEXT)) {
-      for (const k of m[1].split(',').map((x) => x.trim())) {
-        if (k && k !== '*' && !known.has(k) && !out.includes(k)) out.push(k)
-      }
-    }
-    return out
-  })()
+  const missing = !tex || !bib.length ? [] : citeMap(f.body, bib).loose.map((c) => c.key)
   // What a shut panel still has to say. A compile that failed and a `\cite{}`
   // nothing answers are both things worth knowing while writing, and both now
   // live inside a tab — so the button wears a dot and its title says why.
@@ -825,10 +947,7 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
     try {
       const doc = await referenceDoc()
       if (!doc) { say(tr("nt_ref_no_svc")); return }
-      const want = new Set()
-      for (const m of f.body.matchAll(CITE_IN_TEXT)) {
-        for (const k of m[1].split(',').map((x) => x.trim())) if (k && k !== '*') want.add(k)
-      }
+      const want = new Set(citedIn(f.body).map((c) => c.key))
       const key = (r) => String(r?.citeKey || '').trim()
       const mine = refKey ? (doc.references || []).find((r) => key(r) === refKey) : null
       for (const c of mine?.cites || []) {
@@ -903,7 +1022,7 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
       setImp(body)
       // Which paper this manuscript IS cannot be read out of the zip — its own
       // .bib holds what it cites, not itself. So the fold opens on the cite box.
-      if (!String(body.fields?.reference || '').trim()) setOpen(true)
+      if (!String(body.fields?.reference || '').trim()) setTab('bib')
     } catch (e) {
       say(String(e.message || e))
     } finally {
@@ -917,145 +1036,53 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   }
 
 
-  // Each tool, its tab's contents. They are built here, with the note, rather
-  // than in MODES: the table says which tools a mode HAS, this says what they
-  // are, and every one of them works on the document being edited.
-  const tools = {
-    compile: () => (<>
-      <div className="nt-mrow">
-        <button type="button" className="rl-btn nt-go" onClick={compile}
-          disabled={busy || asPdf} title={asPdf ? tr("nt_tex_fresh") : undefined}>
-          {busy ? tr("nt_tex_running") : tr("nt_tex_compile")}</button>
-        {/* Two ways to read what came out: a tab of this app's own, beside
-            the text, or a browser tab with the whole PDF viewer in it. */}
-        {pdfAt ? (<>
-          {/* Solo — one note inside another service — has no tab strip of
-              its own to open one in. */}
-          {onPdf ? <button type="button" className="rl-btn" title={tr("nt_tex_rtab_hint")}
-            onClick={() => onPdf(id, f.title, pdfAt)}>rtab</button> : null}
-          <button type="button" className="rl-btn" title={tr("nt_tex_btab_hint")}
-            onClick={() => window.open(pdfUrl(false), `pdf-${id}`)}>btab</button>
-        </>) : <span className="rl-hint">{tr("nt_tex_nopdf")}</span>}
-      </div>
-      {errs?.length ? (
-        <div className="nt-texerr">
-          {errs.map((e, i) => (
-            <div key={i}>{e.line ? <b>{tr("nt_tex_line", e.line)}</b> : null}{e.text}</div>
-          ))}
-        </div>
-      ) : null}
-    </>),
-
-    files: () => (<>
-      <div className="nt-mrow">
-        {where ? (<>
-          <span className="rl-hint rl-mono nt-path" title={where.files}>{where.files}</span>
-          <button type="button" className="rl-btn" title={where.files}
-            onClick={() => ask(`/reveal${noteQ(tex ? id : '')}`, { method: 'POST' })
-              .then(() => say(tr("nt_folder_opened")))
-              .catch(() => say(tr("nt_folder_no")))}>{tr("nt_folder_open")}</button>
-        </>) : null}
-        {/* A file input wearing the bar's button. Only on an empty tex note —
-            see `empty` — so it is gone by the time there is a manuscript to
-            overwrite. */}
-        {empty ? <label className="rl-btn nt-zipbtn" title={tr("nt_zip_hint")}>{tr("nt_zip")}
-          <input type="file" accept=".zip,application/zip" hidden disabled={busy}
-            onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) importZip(file) }} />
-        </label> : null}
-        <span className="rl-sp" />
-        <button type="button" className="rl-btn" onClick={seeFiles}>{tr("nt_files_again")}</button>
-      </div>
-      {imp ? (
-        <div className="nt-mnote">
-          <span>{tr("nt_zip_in", imp.main, imp.files?.length || 0, imp.bib_keys?.length || 0)}</span>
-          {refKey ? null : <span className="rl-hint">{tr("nt_zip_cite")}</span>}
-          <button type="button" className="rl-btn" onClick={() => setImp(null)}>×</button>
-        </div>
-      ) : null}
-      {/* The folder as it is, which is the one thing the host's file manager
-          cannot show a note read from another machine. */}
-      {files === null ? <p className="rl-hint">{tr("nt_loading")}</p>
-        : !files.length ? <p className="rl-hint">{tr("nt_files_none")}</p> : (
-          <ul className="nt-files">
-            {files.map((x) => (
-              <li key={x.name}>
-                <a className="rl-mono" href={fileSrc(x.name, tex ? id : '')}
-                  target="_blank" rel="noreferrer">{x.name}</a>
-                <span className="rl-hint">{kb(x.bytes)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-    </>),
-
-    bib: () => (<>
-      <div className="nt-mrow">
-        {/* The paper this document IS. Typed rather than picked from a list:
-            reference_manager holds hundreds, and the browser's own datalist
-            finds one as you type the key. */}
-        <label className="rl-hint" title={tr("nt_ref_hint")}>cite
-          <input className="rl-in nt-ref" list="nt-refs" value={refKey} placeholder={tr("nt_ref_none")}
-            onChange={(e) => setF((st) => {
-              const fields = { ...(st.fields || {}) }
-              const v = e.target.value.trim()
-              if (v) fields.reference = v
-              else delete fields.reference
-              return { ...st, fields }
-            })} />
-        </label>
-        <datalist id="nt-refs">
-          {references.map((r) => <option key={r.id} value={r.citeKey}>{r.title}</option>)}
-        </datalist>
-        {ref ? (
-          <button type="button" className="rl-btn" title={ref.title}
-            onClick={() => openInService(ref.svc, ref.proj, ref.id)}>{tr("nt_ref_open")}</button>
-        ) : refKey ? (<>
-          <span className="rl-hint nt-ref-no">{tr("nt_ref_unknown")}</span>
-          {/* A manuscript IS a paper, and the library should hold it from the
-              day it is written rather than the day it is published: the key
-              typed here becomes a record, and that record is what collects
-              the reference list. */}
-          <button type="button" className="rl-btn" disabled={busy} title={tr("nt_ref_make_hint")}
-            onClick={makeRef}>{tr("nt_ref_make")}</button>
-        </>) : null}
-        <span className="rl-sp" />
-        {/* The .bib, out of reference_manager — what the body cites, plus the
-            reference list of the paper this note is. */}
-        <button type="button" className="rl-btn nt-go" disabled={busy}
-          title={tr("nt_bib_hint")} onClick={planBib}>{tr("nt_bib_do")}</button>
-      </div>
-      {plan ? (
-        /* Shown before it is written, not after: the file it lands on is the
-           bibliography the document compiles with, and the keys reference_manager
-           does not have are the ones that will come out of the PDF as a `?`
-           whatever we write. */
-        <div className="nt-mnote">
-          <span>{tr("nt_bib_plan", plan.name, plan.have.length, plan.cited)}</span>
-          {plan.gone.length ? (
-            <span className="nt-ref-no">{tr("nt_bib_gone", plan.gone.length)} <b>{plan.gone.join(', ')}</b></span>
-          ) : null}
-          <button type="button" className="rl-btn" disabled={busy || !plan.have.length}
-            onClick={writeBib}>{tr("nt_bib_write")}</button>
-          <button type="button" className="rl-btn" onClick={() => setPlan(null)}>×</button>
-        </div>
-      ) : null}
-      {missing.length ? (
-        <div className="nt-texerr">{tr("nt_cite_missing", missing.length)} <b>{missing.join(', ')}</b></div>
-      ) : null}
-      {bib.length ? <p className="rl-hint">{tr("nt_bib_has", bib.length)}</p> : null}
-    </>),
+  // ── what a tool is given (tools/index.js) ───────────────────────────────
+  // Built here because it is all about THIS note; the tools themselves are
+  // files that know nothing but this.
+  const kit = toolsFor(can.kind)
+  const Tool = kit.find((t) => t.id === tab) || kit[0]
+  const ctx = {
+    note: { id, title: f.title, body: f.body, date: f.date, fields: f.fields, tex, dirty },
+    setNote: setF,
+    edit,
+    go: jump,
+    print: onPrint,
+    say,
+    ask,
+    keep: { pins, last, marks, setPins, clear: () => { setPins(clearPins(id)); setGo(null) } },
+    where,
+    tags,
+    words: f.body.split(/\s+/).filter(Boolean).length,
+    fold: { on: fold, set: setFold },
+    read: { on: read, set: setRead },
+    // The note's folder — both kinds have one, so it is not tex's.
+    files,
+    seeFiles,
+    // Making a note, which is not about THIS note — the toolbox is simply
+    // the only field grid note has.
+    // Making a note, which is not about THIS note — except `save`, which is
+    // this note's text under a template's name.
+    make: !make ? null : { ...make, save: (name) => make.save(name, f.body) },
+    // ponytail: still Editor's state, handed down. It moves into a hook of
+    // its own when something other than these three tools wants it.
+    tex: !tex ? null : {
+      busy, errs, pdfAt, asPdf, compile, empty, importZip, imp, setImp,
+      // The stamp is nanoseconds; what is worth reading is the clock time.
+      madeAt: pdfAt ? new Date(Number(pdfAt) / 1e6).toLocaleString() : '',
+      refKey, references, ref, makeRef, plan, setPlan, planBib, writeBib, missing, keys: bib,
+      rtab: onPdf ? () => onPdf(id, f.title, pdfAt) : null,
+      btab: () => openTab(pdfUrl(false)),
+    },
   }
-  // Which tabs have something waiting, for the mark on the tab itself.
-  const marked = { compile: !!errs?.length, bib: missing.length > 0 }
 
   return (
-    <div className="nt-edit">
+    <div className="nt-edit" ref={root} style={push ? { paddingRight: push } : undefined}>
       {/* The buttons sit above the title: everything below them is the note.
           The same bar every editor in every rack-list service wears. */}
       {/* The note saves itself, and closing it keeps what is there. */}
       <RackActions key={id}
         pending={dirty}
-        onClose={() => onClosed?.(id)}
+        onClose={() => onClosed?.(id)} closeLast
         extra={<>
           {/* One choice, not a row of buttons that have to agree with each
               other. What it picks is the MODE (see MODES): three of these are
@@ -1071,31 +1098,22 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
                 return { ...st, fields }
               })
               if (!MODES[v].format) setView(v)
-              // A tool belongs to the mode that has it: leaving the mode puts
-              // it away rather than leaving a panel open over a note that has
-              // nothing to put in it.
-              if (!MODES[v].preview) setPreview(false)
-              if (!MODES[v].tabs) setTab('')
+              // A tool belongs to the kind that has it: leaving for a kind
+              // without this tool puts the column away rather than leaving it
+              // open on something the note no longer is.
+              if (tab && !toolsFor(MODES[v].kind).some((t) => t.id === tab)) setTab('')
             }}>
             {Object.entries(MODES).map(([k, m]) => (
               <option key={k} value={k} title={m.hint?.()}>{m.label()}</option>
             ))}
           </select>
-          {/* One tool, one button. */}
-          {can.preview ? (
-            <button type="button" className={`rl-btn${preview ? ' on' : ''}`} aria-pressed={preview}
-              title={tr("nt_preview_hint")} onClick={() => setPreview(!preview)}>{tr("nt_preview")}</button>
-          ) : null}
-          {read ? <button type="button" className="rl-btn" onClick={onPrint}>{tr("nt_print")}</button> : null}
-          {/* Many tools, one button and a tab each. The dot is the only thing
-              a closed panel still says: something inside it wants reading. */}
-          {can.tabs ? (
-            <button type="button" className={`rl-btn${tab ? ' on' : ''}`} aria-expanded={!!tab}
-              title={flag.join(' · ') || tr("nt_manage_hint")}
-              onClick={() => setTab(tab ? '' : (placeBack(`${id}:tab`) || can.tabs[0]))}>
-              {tr("nt_manage")}{flag.length && !tab ? <i className="nt-dot">●</i> : null}
-            </button>
-          ) : null}
+          {/* Every tool behind ONE button. The dot is the only thing a shut
+              toolbox still says: something inside it wants reading. */}
+          <button type="button" className={`rl-btn${tab ? ' on' : ''}`} aria-expanded={!!tab}
+            title={flag.join(' · ') || tr("nt_manage_hint")}
+            {...press(() => setTab(tab ? '' : (placeBack(`${id}:was`) || kit[0].id)))}>
+            {tr("nt_manage")}{flag.length && !tab ? <i className="nt-dot">●</i> : null}
+          </button>
         </>}
         onDelete={remove}
         deleteWarn={tr("nt_delete_warn")} />
@@ -1103,119 +1121,69 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
       {/* Reading, the sheet carries the title and the date itself. */}
       {/* One line: the title, its tags, and the fold — a button with a word on
           it, big enough to hit — which opens the date and the file's name below. */}
-      <div className="nt-titlerow" hidden={read} style={gut ? { '--nt-gut': `${gut}px` } : undefined}>
-        {/* The line column, carried up to the title bar. What stands at the
-            top of it is the number the caret is in, and it is clicked for the
-            same thing every other number in that column is clicked for:
-            bookmark this line, and again to take it off. */}
-        <button type="button" className={`nt-linetop${marking ? ' on' : ''}`}
-          aria-pressed={marking} aria-label={tr(marking ? "nt_mark_on" : "nt_mark_off")}
-          title={tr(marking ? "nt_mark_on" : "nt_mark_off")}
-          onClick={() => setMarking(!marking)}>
-          <Ribbon on={marking} />
-        </button>
-        {marking ? (
-          /* Bookmark mode takes the title's PLACE rather than finding room
-             beside it: in this mode the line is what you are naming, not the
-             note. The two ends, the line last typed in, every bookmark, and —
-             last — a box for a line nobody bookmarked. */
-          <span className="nt-jump">
-            <button type="button" className="rl-btn" onClick={() => jump(1)}>{tr("nt_jump_top")}</button>
-            <button type="button" className="rl-btn" onClick={() => jump(lines)}>{tr("nt_jump_end")}</button>
-            {last && !pins.includes(last) ? (
-              <button type="button" className="rl-btn nt-pin-go nt-pin-tmp" title={tr("nt_pin_last")}
-                onClick={() => jump(last)}>{last}</button>
-            ) : null}
-            {pins.map((ln) => (
-              <button key={ln} type="button" className="rl-btn nt-pin-go" title={tr("nt_pin_go", ln)}
-                onClick={() => jump(ln)}>{ln}</button>
-            ))}
-            {pins.length ? (
-              <button type="button" className="rl-btn" title={tr("nt_pin_clear_hint")}
-                onClick={() => { setPins(clearPins(id)); setGo(null) }}>{tr("nt_pin_clear")}</button>
-            ) : null}
-            {/* A form, so the Enter key is the `go` button and neither has to
-                be told about the other. */}
-            <form className="nt-goto" onSubmit={(e) => { e.preventDefault(); jump(parseInt(num, 10)) }}>
-              <input className="rl-in nt-gotoin" inputMode="numeric" value={num} title={tr("nt_jump_hint")}
-                placeholder={tr("nt_jump_at")} onChange={(e) => setNum(e.target.value.replace(/\D/g, ''))} />
-              <button type="submit" className="rl-btn">{tr("nt_jump_go")}</button>
-            </form>
-          </span>
-        ) : (
-          <input className="nt-title" ref={titleRef} value={f.title} placeholder={tr("nt_title")}
-            onChange={(e) => setF((s) => ({ ...s, title: e.target.value }))} />
-        )}
-        <button type="button" className="rl-btn nt-fold" onClick={() => setOpen(!open)}
-          title={open ? tr("nt_fold") : tr("nt_date_file")} aria-expanded={open}>{tr("nt_info")} <i className="nt-caret">{open ? '▾' : '▸'}</i>
-        </button>
-      </div>
-      {open && !read && (
-        <div className="nt-meta-open">
-          <label className="rl-hint">{tr("nt_date_with", ' ')}<input type="date" className="rl-in nt-date" value={f.date || ''}
-              onChange={(e) => setF((s) => ({ ...s, date: e.target.value }))} />
-          </label>
-          <span className="rl-hint rl-mono">{f.id}.md</span>
-          {/* The `#tags` the body wears. They are in the text already — this
-              is a reading of it, which is what the fold is for. */}
-          {tags.length ? <span className="nt-tagline">{tags.map((t) => `#${t}`).join(' ')}</span> : null}
-          {where && (
-            <>
-              <span className="rl-hint rl-mono nt-path" title={where.files}>{where.files}</span>
-              <button type="button" className="rl-btn" title={where.files}
-                onClick={() => ask(`/reveal${noteQ(tex ? id : '')}`, { method: 'POST' })
-                  .then(() => say(tr("nt_folder_opened")))
-                  .catch(() => say(tr("nt_folder_no")))}>{tr("nt_folder_open")}</button>
-            </>
-          )}
-          {Object.entries(f.fields || {}).filter(([k]) => k !== 'format' && k !== 'reference').map(([k, v]) => (
-            <span key={k} className="rl-hint"><b className="rl-mono">{k}</b> {String(v ?? '')}</span>
-          ))}
-          <button type="button" className="rl-btn" title={tr("nt_revert_hint")} onClick={() => setF(orig.current)}>revert</button>
-          <span className="rl-sp" />
-          <span className="rl-hint">{tr("nt_n_words", f.body.split(/\s+/).filter(Boolean).length)}</span>
-        </div>
-      )}
-
-      {/* The mode's tools, a tab each (MODES). It stands between the note's
-          own line and its text because that is what it is about: the document,
-          not what is in it. It stays open — compiling is not something you do
-          once — and the tab is remembered with everything else about where
-          you were (scrolled.js). */}
-      {can.tabs && tab && !read ? (
-        <div className="nt-manage">
-          <div className="nt-mtabs">
-            {can.tabs.map((k) => (
-              <button key={k} type="button" className={`rl-btn${tab === k ? ' on' : ''}`}
-                onClick={() => setTab(k)}>
-                {tr(`nt_tab_${k}`)}{marked[k] ? <i className="nt-dot">●</i> : null}
-              </button>
-            ))}
-            <span className="rl-sp" />
-            <button type="button" className="rl-btn" title={tr("nt_manage_shut")}
-              onClick={() => setTab('')}>×</button>
+      <div className="nt-work">
+        <div className="nt-main">
+              <div className="nt-titlerow" style={gut ? { '--nt-gut': `${gut}px` } : undefined}>
+            {/* The line column, carried up to the title bar. What stands at the
+                top of it is the number the caret is in, and it is clicked for the
+                same thing every other number in that column is clicked for:
+                bookmark this line, and again to take it off. */}
+            <button type="button" className={`nt-linetop${marking ? ' on' : ''}`}
+              aria-pressed={marking} aria-label={tr(marking ? "nt_mark_on" : "nt_mark_off")}
+              title={tr(marking ? "nt_mark_on" : "nt_mark_off")}
+              {...press(() => setMarking(!marking))}>
+              <Ribbon on={marking} />
+            </button>
+            {marking ? (
+              /* Bookmark mode takes the title's PLACE rather than finding room
+                 beside it: in this mode the line is what you are naming, not the
+                 note. The two ends, the line last typed in, every bookmark, and —
+                 last — a box for a line nobody bookmarked. */
+              <span className="nt-jump">
+                <button type="button" className="rl-btn" {...press(() => jump(1))}>{tr("nt_jump_top")}</button>
+                <button type="button" className="rl-btn" {...press(() => jump(lines))}>{tr("nt_jump_end")}</button>
+                {last && !pins.includes(last) ? (
+                  <button type="button" className="rl-btn nt-pin-go nt-pin-tmp" title={tr("nt_pin_last")}
+                    {...press(() => jump(last))}>{last}</button>
+                ) : null}
+                {pins.map((ln) => (
+                  <button key={ln} type="button" className="rl-btn nt-pin-go" title={tr("nt_pin_go", ln)}
+                    {...press(() => jump(ln))}>{ln}</button>
+                ))}
+                {pins.length ? (
+                  <button type="button" className="rl-btn" title={tr("nt_pin_clear_hint")}
+                    {...press(() => { setPins(clearPins(id)); setGo(null) })}>{tr("nt_pin_clear")}</button>
+                ) : null}
+                {/* A form, so the Enter key is the `go` button and neither has to
+                    be told about the other. */}
+                <form className="nt-goto" onSubmit={(e) => { e.preventDefault(); jump(parseInt(num, 10)) }}>
+                  <input className="rl-in nt-gotoin" inputMode="numeric" value={num} title={tr("nt_jump_hint")}
+                    placeholder={tr("nt_jump_at")} onChange={(e) => setNum(e.target.value.replace(/\D/g, ''))} />
+                  <button type="submit" className="rl-btn">{tr("nt_jump_go")}</button>
+                </form>
+              </span>
+            ) : (
+              <input className="nt-title" ref={titleRef} value={f.title} placeholder={tr("nt_title")}
+                onChange={(e) => setF((s) => ({ ...s, title: e.target.value }))} />
+            )}
           </div>
-          <div className="nt-mbody">{tools[tab]?.()}</div>
-        </div>
-      ) : null}
-
-      {read ? (
-        /* The same sheet the print page draws, inside the pane — reading does
-           not need a tab of its own, only printing does. */
-        <div className="nt-read" ref={(el) => { if (el) el.scrollTop = placeBack(`${id}:read`) || 0 }}
-          onScroll={(e) => placeSave(`${id}:read`, e.currentTarget.scrollTop)}>
-          <article className="nt-sheet">
-            <h1>{f.title}</h1>
-            <p className="nt-meta">{f.date}</p>
-            <Rendered>{f.body}</Rendered>
-          </article>
-        </div>
-      ) : (
-        /* The file as it is on disk: nothing is written back. `원문` shows the
-           text with its line numbers; `라이브` paints the markdown over it and
-           keeps the marks on the line the caret is in. Either way what is
-           saved is what is typed, character for character. */
-        <>
+          {/* Reading, in place of the text — the same sheet the print page
+              draws. Everything else about the tab stays where it was, tools
+              and all, so it is one press back. */}
+          {read && !tex ? (
+            <div className="nt-read" ref={(el) => { if (el) el.scrollTop = placeBack(`${id}:read`) || 0 }}
+              onScroll={(e) => placeSave(`${id}:read`, e.currentTarget.scrollTop)}>
+              <article className="nt-sheet">
+                <h1>{f.title}</h1>
+                <p className="nt-meta">{f.date}</p>
+                <Rendered>{f.body}</Rendered>
+              </article>
+            </div>
+          ) : (<>
+          {/* The file as it is on disk: nothing is written back. `원문` shows
+              the text with its line numbers; `MD` paints the markdown over it
+              and keeps the marks on the line the caret is in. Either way what
+              is saved is what is typed, character for character. */}
           <SourceArea key={`${view}${tex}`} live={view === 'live'} tex={tex} at={id}
             pins={gutter} goto={go} openAt={openAt}
             onGutter={setGut}
@@ -1231,86 +1199,23 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
               tex && empty && /\.zip$/i.test(file.name)
                 ? importZip(file).then(() => null)
                 : putFile(file, tex ? id : '')
-                  .then((name) => { if (tab === 'files') seeFiles(); return name })
+                  .then((name) => { seeFiles(); return name })
                   .catch((e) => { say(String(e.message || e)); return null }))}
-            value={f.body} onChange={(v) => setF((s) => ({ ...s, body: v }))} />
-        </>
-      )}
+            value={f.body} onChange={(v) => setF((s) => ({ ...s, body: v }))} hold={cm} fold={tex && fold} />
+          </>)}
+        </div>
+      </div>
+      {/* Hanging off the side of this tab, drawn over whatever is beside it —
+          nothing is resized to make room (tools/toolbox.jsx). */}
+      {tab ? (
+        <Toolbox anchor={root} kit={kit} at={Tool} ctx={ctx}
+          onPick={setTab} onShut={() => setTab('')} onPush={setPush} />
+      ) : null}
     </div>
   )
 }
 
 // ─── Reading ────────────────────────────────────────────────────────────────
-/** The body, rendered — with `#태그` drawn as a tag and `» 2026-12-24` as the
- *  calendar label the editor draws, rather than left as the text they are in
- *  the file. react-markdown hands text through as strings, so both are picked
- *  out of those on the way to the page. */
-const CHIP_RE = new RegExp(`${TAG_RE.source}|(»|📅|✓|✅)\\s*(\\d{4}-\\d{2}-\\d{2})|${PROJ_RE.source}`, 'g')
-
-function tagify(children) {
-  return Children.map(children, (child) => {
-    if (typeof child !== 'string') return child
-    const out = []
-    let last = 0
-    for (const m of child.matchAll(CHIP_RE)) {
-      // A tag (lead + #name), a date (mark + day) or a project (lead + +name) —
-      // one project_manager has; any other `+word` stays text.
-      const tag = m[2] !== undefined, proj = m[6] !== undefined
-      if (proj && !isProject(m[6])) continue
-      const at = m.index + (tag ? m[1].length : proj ? m[5].length : 0)
-      if (at > last) out.push(child.slice(last, at))
-      out.push(tag ? <span className="nt-tag" key={at}>{m[2]}</span>
-        : proj ? <span className="nt-proj" key={at}>{m[6]}</span>
-          : <span className={'»📅'.includes(m[3]) ? 'nt-due-in' : 'nt-done-in'} key={at}>{m[4]}</span>)
-      last = at + (tag ? 1 + m[2].length : proj ? 1 + m[6].length : m[0].length)
-    }
-    out.push(child.slice(last))
-    return out
-  })
-}
-const tagged = (Tag) => function Tagged({ node, children, ...rest }) {
-  return <Tag {...rest}>{tagify(children)}</Tag>
-}
-/** `![alt|400](…)` — the width rides in the alt text, as it does in the
- *  editor and in Obsidian. */
-function Img({ node, alt, ...rest }) {
-  const [text, w] = embedSpec(alt || '')
-  // An embed that is not a picture — a pdf, a sheet, a document — is handed
-  // over as a file rather than drawn as a broken image.
-  if (!isImage(text)) {
-    return <a className="nt-file" href={rest.src} target="_blank" rel="noreferrer">{text}</a>
-  }
-  return <img alt={text} {...rest} style={w ? { width: `${w}px` } : undefined} />
-}
-/** A link out of the note opens a tab of its own: this page is inside the
- *  portal's frame, and a site that refuses to be framed would otherwise just
- *  not arrive. */
-function Link({ node, ...rest }) {
-  return <a {...rest} target="_blank" rel="noreferrer" />
-}
-const RENDER = {
-  p: tagged('p'), li: tagged('li'), td: tagged('td'), blockquote: tagged('blockquote'),
-  h1: tagged('h1'), h2: tagged('h2'), h3: tagged('h3'), h4: tagged('h4'),
-  img: Img, a: Link,
-}
-function Rendered({ children }) {
-  // Maths is `$x^2$` and `$$…$$`, which KaTeX draws here and the editor leaves
-  // as the text it is — the file is the same either way.
-  // `![[name]]` is Obsidian's embed, not markdown — here it is turned into the
-  // markdown image it means. Only on the way to the page: the file keeps its
-  // own spelling.
-  const md = String(children || '').replace(EMBED_RE, (_, spec) => {
-    const [name] = embedSpec(spec)
-    return `![${spec}](${fileSrc(name)})`
-  })
-  return (
-    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath, remarkSoftBreaks]}
-      rehypePlugins={[rehypeKatex]} components={RENDER}>
-      {md}
-    </ReactMarkdown>
-  )
-}
-
 // ─── Printing ───────────────────────────────────────────────────────────────
 /** The notes, rendered as a document and handed to the browser's printer —
  *  which is also its PDF writer, with the system's fonts, which is the whole

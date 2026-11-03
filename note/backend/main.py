@@ -70,6 +70,12 @@ TAG_RE = re.compile(r"(?:^|[\s(])#(?![0-9]+(?![^\s#.,;:!?()\[\]{}'\"]))([^\s#.,;
 # them, and anything else a name cannot hold, run into one `_`: `+STARK_CRIB`.
 _proj_key = lambda s: re.sub(r"[\s#+.,;:!?()\[\]{}'\"_]+", "_", str(s).strip().lower()).strip("_")  # noqa: E731
 PROJ_RE = re.compile(r"(?:^|[\s(])\+(?![0-9]+(?![^\s#+.,;:!?()\[\]{}'\"]))([^\s#+.,;:!?()\[\]{}'\"]+)")
+# `@이정우`, `@JungWooLee` — a person (author_manager's). The name run together
+# and without case IS the key: there is no handle to keep in step, and one
+# person is reached by their Korean name, their English one or their nick
+# (racklist tags.js nameKey — one rule, two spellings of it).
+_name_key = lambda s: re.sub(r"[\s.\u00b7'\u2019-]+", "", str(s).strip()).lower()  # noqa: E731
+AUTH_RE = re.compile(r"(?:^|[\s(])@(?![0-9]+(?![^\s#+@.,;:!?()\[\]{}'\"]))([^\s#+@.,;:!?()\[\]{}'\"]+)")
 # ── code is not prose ──────────────────────────────────────────────────────
 _FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
 # A code span is a RUN of backticks closed by the same run: ``#x`` is one too.
@@ -236,11 +242,19 @@ def _read(p: Path) -> dict:
     for m in TAG_RE.finditer(_no_code(body)):
         if m.group(1) not in tags:
             tags.append(m.group(1))
+    # The people the body mentions, as they are written: who they ARE is
+    # author_manager's to say, so the screen resolves them and this only
+    # reports the words.
+    people = []
+    for m in AUTH_RE.finditer(_no_code(body)):
+        if m.group(1) not in people:
+            people.append(m.group(1))
     return {
         "id": p.stem,
         "title": str(meta.get("title") or p.stem),
         "date": (d.isoformat() if isinstance(d, (date, datetime)) else str(d or "")),
         "tags": tags,
+        "authors": people,
         "fields": extra,
         "body": body,
         # A STRING on purpose: st_mtime_ns is ~1.8e18, past JavaScript's safe
@@ -259,6 +273,7 @@ def _summary(n: dict) -> dict:
     todos = [m for m in (_todo(ln) for ln in n["body"].splitlines()) if m]
     return {
         "id": n["id"], "title": n["title"], "date": n["date"], "tags": n["tags"],
+        "authors": n["authors"],
         "fields": n["fields"], "excerpt": first[:160], "version": n["version"],
         "words": len(n["body"].split()), "bytes": n["bytes"],
         "todo": sum(1 for m in todos if m.group(2) == " "),
@@ -289,6 +304,11 @@ class SaveBody(BaseModel):
 class NewBody(BaseModel):
     title: str = ""
     template: Optional[str] = None
+
+
+class TemplateBody(BaseModel):
+    name: str = ""
+    body: str = ""
 
 
 class TodoBody(BaseModel):
@@ -342,6 +362,25 @@ def new_note(body: NewBody, _: dict = Depends(signed_in)) -> dict:
             n += 1
     _atomic_write(p, _join(meta, text))
     return _read(p)
+
+
+@app.post("/api/templates", status_code=201)
+def save_template(body: TemplateBody, _: dict = Depends(signed_in)) -> dict:
+    """This note's text, kept as a template.
+
+    A template is a note in `templates/` and nothing more — no front matter,
+    because `new_note` takes the title and the date from what is being made,
+    not from here. A name already taken is overwritten: the button says
+    "save as", and two templates of one name is not a thing the folder can
+    hold anyway."""
+    name = _slug(body.name)
+    if not body.name.strip():
+        raise HTTPException(400, "템플릿 이름이 필요합니다.")
+    # The editor hands over the body alone, but a whole file pasted in would
+    # carry front matter, and a template's own `title:` would be dropped on
+    # create regardless. Keep only the body either way.
+    _atomic_write(TEMPLATES / f"{name}.md", _split(body.body)[1])
+    return {"name": name}
 
 
 @app.put("/api/notes/{note_id}")
@@ -433,16 +472,29 @@ def rename_tags(body: dict, _: dict = Depends(signed_in)) -> dict:
 
 
 @app.get("/api/tagged")
-def tagged(tag: str = "", project: str = "", _: dict = Depends(signed_in)) -> dict:
-    """The notes wearing `tag` (any case), and the todos written with it — what
+def tagged(tag: str = "", project: str = "", author: str = "", _: dict = Depends(signed_in)) -> dict:
+    """The notes wearing `tag` (any case) or a tag inside it (`tag/x`), and the todos written with it — what
     project_manager gathers from every service. With `project` instead, the
-    ones that name it (`+STARK`)."""
-    rule, want = (PROJ_RE, _proj_key(project)) if project.strip() else (TAG_RE, tag.strip().lower())
-    hit = (lambda m: _proj_key(m.group(1)) == want) if rule is PROJ_RE else (lambda m: m.group(1).lower() == want)
+    ones that name it (`+STARK`); with `author`, the ones that mention them.
+
+    A person is written by any of their names (`@JungWooLee`, `@이정우`), and
+    only author_manager knows those are one person — so the caller sends all
+    of their spellings at once, separated by commas. A name cannot hold a
+    comma (AUTH_RE), so there is nothing to escape."""
+    if author.strip():
+        rule = AUTH_RE
+        want = {k for k in (_name_key(a) for a in author.split(",")) if k}
+        hit = lambda m: _name_key(m.group(1)) in want  # noqa: E731
+    elif project.strip():
+        rule, want = PROJ_RE, _proj_key(project)
+        hit = lambda m: _proj_key(m.group(1)) == want  # noqa: E731
+    else:
+        rule, want = TAG_RE, tag.strip().lower()
+        hit = lambda m: f"{m.group(1).lower()}/".startswith(f"{want}/")  # noqa: E731
     out = []
     for note in _all(NOTES):
-        if want and (any(t.lower() == want for t in note["tags"]) if rule is TAG_RE
-                     else any(hit(m) for m in PROJ_RE.finditer(_no_code(note["body"])))):
+        if want and (any(f"{t.lower()}/".startswith(f"{want}/") for t in note["tags"]) if rule is TAG_RE
+                     else any(hit(m) for m in rule.finditer(_no_code(note["body"])))):
             out.append({"key": "notes", "rec": {"id": note["id"], "title": note["title"], "date": note["date"]}})
         for i, ln in enumerate(note["body"].splitlines()):
             m = _todo(ln)
@@ -555,8 +607,14 @@ def list_files(note: str = "", _: dict = Depends(signed_in)) -> dict:
     root = _files(note)
     if not root.is_dir():
         return {"files": []}
+    # A markdown note's folder is the one the vault shares, and a TEX note's
+    # folder sits inside it — so without this the shared list was every
+    # manuscript's tree as well, under a name nobody there would recognise.
+    mine = {d.name for d in root.iterdir() if d.is_dir() and (NOTES / f"{d.name}.md").is_file()} if not note else set()
     out = [{"name": f.relative_to(root).as_posix(), "bytes": f.stat().st_size}
-           for f in root.rglob("*") if f.is_file() and not f.name.startswith(".")]
+           for f in root.rglob("*")
+           if f.is_file() and not f.name.startswith(".")
+           and f.relative_to(root).parts[0] not in mine]
     out.sort(key=lambda x: x["name"])
     return {"files": out}
 

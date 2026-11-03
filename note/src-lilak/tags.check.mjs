@@ -4,7 +4,7 @@
  *  pull in JSX to run. If the two drift, the first case fails.
  */
 import assert from 'node:assert/strict'
-import { outsideCode, replaceOutsideCode, projText, isProject, setProjChoices } from './marks.js'
+import { outsideCode, replaceOutsideCode, TAG_COMMENT, projText, isProject, setProjChoices } from './marks.js'
 
 export const TAG_RE = /(^|[\s(])#(?![0-9]+(?![^\s#.,;:!?()[\]{}'"]))([^\s#.,;:!?()[\]{}'"]+)/g
 export const renameBodyTag = (body, from, to) =>
@@ -59,8 +59,25 @@ assert.equal(
   replaceOutsideCode('#old\n```\n#old\n```\n#old', TAG_RE, (m, lead, name) => (name === 'old' ? `${lead}#new` : m)),
   '#new\n```\n#old\n```\n#new')
 
+// ── a tex note's tags live on a comment line ─────────────────────────────
+// `#` is TeX's macro parameter character, so the tag goes where LaTeX does not
+// read it — and the tag rule still does.
+const comments = [
+  ['% #favorite', true], ['%#a #b', true], ['%   #한글태그  ', true],
+  ['#favorite', false],                       // a markdown note's, not a tex note's
+  ['% favorite', false],                      // nothing to read: the `#` is gone
+  ['% #favorite 쓴 이유', false],              // a sentence, not a tag line — left alone
+  ['%% #a', false],                           // `%%` is the template's own comment
+  ['\\section{A} % #a', false],                // a tag beside text stays where it is
+]
+for (const [line, want] of comments) {
+  assert.equal(TAG_COMMENT.test(line), want, JSON.stringify(line))
+}
+// What the line says is read as tags, the `%` notwithstanding.
+assert.deepEqual([...outsideCode('x\n% #favorite #elark').matchAll(TAG_RE)].map((m) => m[2]), ['favorite', 'elark'])
+
 // Only project_manager's projects are projects; a name with spaces is one word in text.
 setProjChoices(['STARK + CRIB'])
 assert.equal(projText('STARK + CRIB'), 'STARK_CRIB')
 assert.ok(isProject('stark_crib') && !isProject('STARK') && !isProject('없는것'))
-console.log(`${cases.length + projs.length + codes.length + 1}개 통과`)
+console.log(`${cases.length + projs.length + codes.length + comments.length + 2}개 통과`)

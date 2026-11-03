@@ -2,7 +2,8 @@ import { Decoration, EditorView, WidgetType } from '@codemirror/view'
 import { ViewPlugin } from '@codemirror/view'
 import { StateField } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
-import { isImage, embedSpec, isProject, onProjChoices } from './marks.js'
+import { openTab as open } from './api.js'
+import { isImage, embedSpec, isProject, isAuthor, onProjChoices, onAuthorChoices } from './marks.js'
 
 /** Markdown drawn on top of the text that IS the file.
  *
@@ -28,6 +29,7 @@ const MARKS = new Set(['HeaderMark', 'EmphasisMark', 'StrikethroughMark', 'CodeM
 
 const TAG = /(^|[\s(])#(?![0-9]+(?![^\s#.,;:!?()[\]{}'"]))([^\s#.,;:!?()[\]{}'"]+)/g
 const PROJ = /(^|[\s(])\+(?![0-9]+(?![^\s#+.,;:!?()[\]{}'"]))([^\s#+.,;:!?()[\]{}'"]+)/g
+const AUTH = /(^|[\s(])@(?![0-9]+(?![^\s#+@.,;:!?()[\]{}'"]))([^\s#+@.,;:!?()[\]{}'"]+)/g
 const DATE = /(»|📅|✓|✅)\s*(\d{4}-\d{2}-\d{2})/g
 const EMBED = /!\[\[([^\]]+)\]\]/g
 const WIKI = /(?<!!)\[\[([^\]]+)\]\]/g
@@ -49,7 +51,7 @@ class Embed extends WidgetType {
       a.textContent = name
       a.addEventListener('mousedown', (e) => {
         e.preventDefault()
-        window.open(a.href, '_blank', 'noopener')
+        open(a.href)
       })
       return a
     }
@@ -114,20 +116,6 @@ class Box extends WidgetType {
     return b
   }
   ignoreEvent() { return false }
-}
-
-/** A new tab for an address. `window.open` can be refused (a frame, a popup
- *  blocker), and then a link clicked in the page's own name is not. */
-function open(url) {
-  const w = window.open(url, '_blank', 'noopener')
-  if (w) return
-  const a = document.createElement('a')
-  a.href = url
-  a.target = '_blank'
-  a.rel = 'noreferrer noopener'
-  document.body.append(a)
-  a.click()
-  a.remove()
 }
 
 /** The address a position stands in: `[말](주소)` or a bare one. */
@@ -290,6 +278,16 @@ function build(view, fileSrc) {
       marks.push(Decoration.mark({ class: 'nt-proj-in' }).range(start, start + 1 + m[2].length))
       if (!shown(start)) hide(start, start + 1)
     }
+    // A person stays the one word that is in the file — a reader sees the
+    // name with its spaces (reading.jsx), but widening text under the caret
+    // while it is being typed is not something an editor should do.
+    for (const m of text.matchAll(AUTH)) {
+      if (!isAuthor(m[2])) continue
+      const start = at(m.index + m[1].length)
+      if (inCode(start)) continue
+      marks.push(Decoration.mark({ class: 'nt-auth-in' }).range(start, start + 1 + m[2].length))
+      if (!shown(start)) hide(start, start + 1)
+    }
     const today = new Date().toISOString().slice(0, 10)
     for (const m of text.matchAll(DATE)) {
       const start = at(m.index)
@@ -369,7 +367,10 @@ const paint = (fileSrc, onOpenNote) => ViewPlugin.fromClass(class {
   constructor(view) {
     this.decorations = build(view, fileSrc)
     // The projects come after the first paint: draw again when they do.
-    this.off = onProjChoices(() => setTimeout(() => { if (this.off) { this.again = true; view.dispatch({}) } }))
+    const redraw = () => setTimeout(() => { if (this.off) { this.again = true; view.dispatch({}) } })
+    const offProj = onProjChoices(redraw)
+    const offAuth = onAuthorChoices(redraw)
+    this.off = () => { offProj(); offAuth() }
   }
   update(u) {
     if (u.docChanged || u.selectionSet || u.viewportChanged || this.again) {
