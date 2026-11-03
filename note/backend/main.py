@@ -130,6 +130,8 @@ DONE_RE = re.compile(r"\s*[✓✅]\s*(\d{4}-\d{1,2}-\d{1,2})")
 # spelling of it — the editor turns one into the other as you write, and a
 # file written elsewhere is read either way.
 DUE_RE = re.compile(r"\s*(?:»|📅|>>)\s*(\d{4}-\d{1,2}-\d{1,2})")
+# `!!`, a word of its own: this todo is urgent. It stays in the line as written.
+URGENT_RE = re.compile(r"(?:^|(?<=\s))!!(?=\s|$)")
 # An empty line inside a checklist is written out as `- [ ] <br />`: a box with
 # nothing in it, which is a blank line the person is still typing on, not a job.
 BLANK_RE = re.compile(r"(?:\s|<br\s*/?>|&nbsp;)*$")
@@ -531,7 +533,8 @@ def todos(_: dict = Depends(signed_in)) -> dict:
                 out.append({"id": n["id"], "title": n["title"], "date": n["date"],
                             "tags": [t.group(1) for t in TAG_RE.finditer(text)],
                             "line": i, "done": m.group(2) != " ",
-                            "due": due, "doneAt": at, "text": text})
+                            "due": due, "doneAt": at, "text": text,
+                            "urgent": bool(URGENT_RE.search(_no_code(text)))})
     return {"todos": out}
 
 

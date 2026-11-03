@@ -3,7 +3,7 @@ import { ViewPlugin } from '@codemirror/view'
 import { StateField } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
 import { openTab as open } from './api.js'
-import { isImage, embedSpec, isProject, isAuthor, onProjChoices, onAuthorChoices } from './marks.js'
+import { isImage, embedSpec, isProject, isAuthor, onProjChoices, onAuthorChoices, URGENT_RE } from './marks.js'
 
 /** Markdown drawn on top of the text that IS the file.
  *
@@ -298,6 +298,12 @@ function build(view, fileSrc) {
       const cls = `${due ? 'nt-due-in' : 'nt-done-in'}${late ? ' nt-due-late' : ''}`
       marks.push(Decoration.mark({ class: cls }).range(start, at(m.index + m[0].length)))
       if (!shown(start)) hide(start, start + m[1].length + (m[0][m[1].length] === ' ' ? 1 : 0))
+    }
+    // Stays as typed, and means something on a todo still open only.
+    for (const m of text.matchAll(URGENT_RE)) {
+      const start = at(m.index + m[1].length)
+      if (inCode(start) || TASK.exec(view.state.doc.lineAt(start).text)?.[2] !== ' ') continue
+      marks.push(Decoration.mark({ class: 'nt-urgent' }).range(start, start + 2))
     }
   }
 

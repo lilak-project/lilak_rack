@@ -18,7 +18,7 @@ import {
   projectKey, load, authHeaders, tagKey, tagWithin, mergeTags as tagCounts, useTagSources, uniqueTags, useProjects,
   useReferences, useAuthors, save, addReference, referenceDoc, bibText,
 } from 'racklist'
-import { TAG_RE, TAG_COMMENT, outsideCode, replaceOutsideCode, setTagChoices, setProjChoices, setCiteChoices, setAuthorChoices, authorShow } from './marks.js'
+import { TAG_RE, TAG_COMMENT, URGENT_RE, outsideCode, replaceOutsideCode, setTagChoices, setProjChoices, setCiteChoices, setAuthorChoices, authorShow } from './marks.js'
 import SourceArea from './SourceArea.jsx'
 import { wrapSel } from './liveedit.js'
 import { Rendered } from './reading.jsx'
@@ -100,6 +100,8 @@ const untagged = (text) => replaceOutsideCode(text, TAG_RE, (m, lead) => lead)
   .replace(/\s{2,}/g, ' ')
   .trim()
 
+/** Urgent and not done: on top whatever the sort, and the mark before its text. */
+const urgentNow = (t) => !!t.urgent && !t.done
 const TODO_COLS = [
   { k: 'chk', w: 26, min: 26, fix: true },
   { k: 'num', w: 40, min: 30, fix: true, label: '#' },
@@ -532,7 +534,7 @@ function Todos({ a, tscope, who, system = false }) {
     const shown = new Set((a.doc?.notes || []).filter(who.is).map((n) => n.id))
     return (todos || []).filter((t) => isSystemTodo(t) === system).filter(keep).filter((t) => shown.has(t.id))
       .filter((t) => !q || [t.text, t.title, ...(t.tags || [])].filter(Boolean).some((v) => String(v).toLowerCase().includes(q)))
-      .sort(byKeys(sort, TODO_SORTERS))
+      .sort((x, y) => urgentNow(y) - urgentNow(x) || byKeys(sort, TODO_SORTERS)(x, y))
   }, [todos, a.query, tscope, sort, system, who, a.doc])
   async function toggle(t) {
     try {
@@ -555,7 +557,7 @@ function Todos({ a, tscope, who, system = false }) {
             chk: <input type="checkbox" checked={t.done} aria-label={t.text}
               onChange={() => toggle(t)} onClick={(e) => e.stopPropagation()} />,
             num: i + 1,
-            text: untagged(t.text) || D,
+            text: <>{urgentNow(t) && <b className="nt-urgent">!!</b>}{untagged(t.text.replace(URGENT_RE, '$1')) || D}</>,
             title: (
               <button type="button" className="rl-lnk"
                 onClick={(e) => { e.stopPropagation(); a.openItem(t.id) }}>{t.title}</button>

@@ -24,7 +24,7 @@ import { tr } from 'lilak-ui'
 // is the only copy); the rest of the bar opens the note beside the records.
 const NOTE = () => `/pp/note/${linkProject('note')}`
 // Its `#태그`s stay in the note; on the calendar the words alone.
-const untagged = (s) => s.replace(/(^|[\s(])#[^\s#.,;:!?()[\]{}'"]+/g, '$1').replace(/\s+/g, ' ').trim()
+const untagged = (s) => s.replace(/(^|[\s(])#[^\s#.,;:!?()[\]{}'"]+/g, '$1').replace(/(^|\s)!!(?=\s|$)/g, '$1').replace(/\s+/g, ' ').trim()
 const noteTodos = async () => {
   try {
     const r = await fetch(`${NOTE()}/api/todos`, { headers: authHeaders() })
@@ -32,7 +32,7 @@ const noteTodos = async () => {
     const [{ todos = [] }, color] = await Promise.all([r.json(), serviceColor('note')])
     return todos.filter((t) => t.due).map((t) => ({
       id: `todo:${t.id}:${t.line}`, feed: tr('aa_todos'), color: color || '#365944',
-      title: untagged(t.text), start: t.due, location: t.title, done: t.done,
+      title: untagged(t.text), start: t.due, location: t.title, done: t.done, urgent: !!t.urgent,
       toggle: (done) => fetch(`${NOTE()}/api/todos`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ id: t.id, line: t.line, done, text: t.text }),
@@ -217,10 +217,10 @@ export default {
     time: (r) => r.startTime || r.talkTime,
     // Google calendars shown read-only (구글 캘린더 tab → backend/gcal.py),
     // and the note service's todos that have a due day (noteTodos).
-    overlay: () => Promise.all([
+    overlay: () => [
       fetch(`${PORTAL_BASE}/api/gcal/overlay`, { headers: authHeaders() }).then((r) => (r.ok ? r.json() : [])).catch(() => []),
       noteTodos(),
-    ]).then(([g, t]) => [...(Array.isArray(g) ? g : []), ...t]),
+    ],
     outline: { start: 'tripStart', end: 'tripEnd' },
     // Registered, not gone: struck through.
     hatch: (r) => r.role === 'absence',

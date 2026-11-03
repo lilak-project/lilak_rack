@@ -1070,11 +1070,10 @@ button.rl-auth { cursor: pointer; }
 .rl-cal-box.open { display: inline-block; box-sizing: border-box; width: .8em; height: .8em; vertical-align: -1px; background: #fff; border: 1px solid currentColor; border-radius: 1px; }
 .rl-cal-bar.ext.done .rl-cal-label { text-decoration: line-through; opacity: .55; }
 .rl-cal-bar.ext.done .rl-cal-fill i { background: #fff; }
-/* An urgent todo (`!!`) not yet done: the one bar filled solid. */
-.rl-cal-bar.ext.urgent { color: #fff; font-weight: 700; }
-.rl-cal-bar.ext.urgent .rl-cal-fill i { background: #c2410c; }
+/* An urgent todo (`!!`) not yet done: its words and edge in orange, on the same
+   ground as any todo, so a name that runs past the bar can still be read. */
+.rl-cal-bar.ext.urgent { color: #c2410c; }
 .rl-cal-bar.ext.urgent::after { border-color: #c2410c; }
-.rl-cal-bar.ext.urgent .rl-cal-box.open { border-color: #fff; }
 .rl-cal-key.rl-cal-feed i { background: none; border: 1.5px dashed; }
 /* A name is not something to point at: running on over the days beside its
    bar, it must not answer for them (the bar's own box still does). */

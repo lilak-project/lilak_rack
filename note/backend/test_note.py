@@ -204,5 +204,9 @@ _f.unlink()
 from backend.main import _todo_text   # noqa: E402
 assert _todo_text("보내기 #TAMU » 2026-11-4") == ("보내기 #TAMU", "2026-11-04", "")
 assert _todo_text("끝 » 2026-11-04 ✓ 2026-1-2") == ("끝", "2026-11-04", "2026-01-02")
+# ── `!!` is urgent only as a word of its own ──
+from backend.main import URGENT_RE  # noqa: E402
+assert all(URGENT_RE.search(s) for s in ["!! 보내기", "보내기 !!", "보내기 !! #TAMU"])
+assert not any(URGENT_RE.search(s) for s in ["좋다!!", "!!!", "![[그림]]", "a!! b"])
 
 print("note: ok")

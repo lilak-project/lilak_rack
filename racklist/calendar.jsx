@@ -176,15 +176,23 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     return ev
   }
   // Other calendars, shown read only (calendar.overlay: () => Promise<[{ id,
-  // feed, color, title, start, end, time, location }]>): drawn, never edited.
+  // feed, color, title, start, end, time, location }]>, or a list of such
+  // promises): drawn, never edited.
   // An item may also carry done (a box to tick), toggle(done) → ok and
-  // open(ctx) — a todo kept elsewhere, ticked or opened from here.
+  // open(ctx) — a todo kept elsewhere, ticked or opened from here — and urgent.
   const [ext, setExt] = useState([])
   const [carried, setCarried] = useState(null)  // a feed's item on its way to another day: { id, day }
   useEffect(() => {
     if (!cal.overlay) return undefined
     let on = true
-    Promise.resolve(cal.overlay()).then((x) => { if (on) setExt(Array.isArray(x) ? x : []) }).catch(() => {})
+    // Several feeds draw as each arrives: one slow (Google) holds none of the others up.
+    const feeds = [].concat(cal.overlay())
+    const got = feeds.map(() => [])
+    feeds.forEach((p, i) => Promise.resolve(p).then((x) => {
+      if (!on) return
+      got[i] = Array.isArray(x) ? x : []
+      setExt(got.flat())
+    }).catch(() => {}))
     return () => { on = false }
   }, [cal])
   const feeds = useMemo(() => [...new Map(ext.map((x) => [x.feed, x.color])).entries()], [ext])
@@ -631,6 +639,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     // — unless its feed says what its box and the right button do.
     title: [ev.label, ev.ext.feed, ev.ext.location].filter(Boolean).join('\n'),
     onMouseDown: (e) => {
+      if (e.button === 1) return                  // the wheel pressed: the body's, back to today
       e.stopPropagation()
       if (e.button !== 0 || !(e.metaKey || e.ctrlKey) || !ev.ext.move || ev.ext.done) return
       e.preventDefault()
@@ -643,6 +652,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); if (drag.current?.kind !== 'ext') ev.ext.open?.(ctx) },
   } : {
     onMouseDown: (e) => {
+      if (e.button === 1) return                  // the wheel pressed: the body's, back to today
       e.stopPropagation()
       // ⌘ (Ctrl) and drag: carry a copy to another day; its dates move by as many days.
       if (e.button !== 0 || !(e.metaKey || e.ctrlKey) || !onCopy || ev.occ) return
@@ -870,14 +880,14 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
                   const sIn = own && ev.s >= ws && ev.s <= we, eIn = own && ev.e >= ws && ev.e <= we
                   const skip = skipOf(ev, a, b)
                   return (
-                    <div key={`${ev.id}:${p.key}`} data-ev={ev.id} data-piece={p.key} data-bottom={bottom ? '1' : undefined} className={`rl-cal-bar${ev.paper ? ' paper' : ''}${ev.hatch ? ' hatch' : ''}${ev.online ? ' online' : ''}${ev.ext ? ' ext' : ''}${ev.ext?.done ? ' done' : ''}${ev.copy ? ' copy' : ''}${free ? ' spill' : ''}${ev.occ ? ' occ' : ''}${picked?.has(ev.base || ev.id) ? ' on' : ''}${p.from < ws ? ' cont-l' : ''}${p.to > we ? ' cont-r' : ''}${rows > 1 ? ' tall' : ''}`}
+                    <div key={`${ev.id}:${p.key}`} data-ev={ev.id} data-piece={p.key} data-bottom={bottom ? '1' : undefined} className={`rl-cal-bar${ev.paper ? ' paper' : ''}${ev.hatch ? ' hatch' : ''}${ev.online ? ' online' : ''}${ev.ext ? ' ext' : ''}${ev.ext?.done ? ' done' : ''}${ev.ext?.urgent && !ev.ext.done ? ' urgent' : ''}${ev.copy ? ' copy' : ''}${free ? ' spill' : ''}${ev.occ ? ' occ' : ''}${picked?.has(ev.base || ev.id) ? ' on' : ''}${p.from < ws ? ' cont-l' : ''}${p.to > we ? ' cont-r' : ''}${rows > 1 ? ' tall' : ''}`}
                       style={{ '--c': ev.color, gridRow: `${lane + 1} / span ${rows}`, gridColumn: `${a + 1} / ${b + 2}`, '--lines': Math.floor((rows * 22 + (rows - 1) * gap - 4) / 15) }} {...barProps(ev)}>
                       <span className="rl-cal-fill">
                         {Array.from({ length: n }, (_, i) => { const d = addDays(ws, a + i); return <i key={i} data-day={d} className={`lv${level(d)}${miss(d) ? ' miss' : ''}`} /> })}
                       </span>
                       <span className="rl-cal-label" data-submit={p.key === 'submit' ? '' : undefined} style={{ marginLeft: skip ? `${(skip / n) * 100}%` : undefined,
                         width: free ? `${((n - skip + free) / n) * 100}%` : undefined }}>
-                        {typeof ev.ext?.done === 'boolean' && <i className="rl-cal-box" title={tr("rk_todo_tick")}>{ev.ext.done ? '☑' : '☐'}</i>}
+                        {typeof ev.ext?.done === 'boolean' && <i className={`rl-cal-box${ev.ext.done ? '' : ' open'}`} title={tr("rk_todo_tick")}>{ev.ext.done ? '☑' : ''}</i>}
                         {ev.label}</span>
                       {sIn && (
                         <b className="rl-cal-grip" style={{ left: `${((col(ev.s) - a) / n) * 100}%` }} title={tr("rk_move_start")}

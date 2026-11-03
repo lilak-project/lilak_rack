@@ -4,7 +4,7 @@
  *  pull in JSX to run. If the two drift, the first case fails.
  */
 import assert from 'node:assert/strict'
-import { outsideCode, replaceOutsideCode, TAG_COMMENT, projText, isProject, setProjChoices } from './marks.js'
+import { outsideCode, replaceOutsideCode, TAG_COMMENT, projText, isProject, setProjChoices, URGENT_RE } from './marks.js'
 
 export const TAG_RE = /(^|[\s(])#(?![0-9]+(?![^\s#.,;:!?()[\]{}'"]))([^\s#.,;:!?()[\]{}'"]+)/g
 export const renameBodyTag = (body, from, to) =>
@@ -79,5 +79,8 @@ assert.deepEqual([...outsideCode('x\n% #favorite #elark').matchAll(TAG_RE)].map(
 // Only project_manager's projects are projects; a name with spaces is one word in text.
 setProjChoices(['STARK + CRIB'])
 assert.equal(projText('STARK + CRIB'), 'STARK_CRIB')
+// `!!` is urgent only as a word of its own.
+for (const t of ['!! 보내기', '보내기 !!', '보내기 !! #TAMU']) assert.equal([...t.matchAll(URGENT_RE)].length, 1, t)
+for (const t of ['좋다!!', '!!!', '![[그림]]', 'a!! b']) assert.equal([...t.matchAll(URGENT_RE)].length, 0, t)
 assert.ok(isProject('stark_crib') && !isProject('STARK') && !isProject('없는것'))
 console.log(`${cases.length + projs.length + codes.length + comments.length + 2}개 통과`)
