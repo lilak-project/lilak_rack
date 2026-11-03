@@ -14,6 +14,7 @@ export default {
   aa_place: "Place",
   aa_online: "Online",
   aa_online_hint: "Joined over zoom or similar",
+  aa_online_link: "Online link",
   aa_role: "Role",
   aa_trip_start: "Trip starts",
   aa_trip_end: "Trip ends",

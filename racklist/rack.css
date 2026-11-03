@@ -683,7 +683,14 @@ button.rl-auth { cursor: pointer; }
 .rl-btn.rl-tabonly:disabled { border-color: var(--rk-line); background: none; color: var(--rk-mute); }
 
 /* The group picker is a button that happens to open its own list. */
-.rl-btn.rl-pick { padding-right: 2px; }
+/* A select: drawn by the system it is rounded whatever its radius, so we draw it, arrow and all. */
+.rl-btn.rl-pick { appearance: none; -webkit-appearance: none; padding-right: 18px; }
+.rl-btn.rl-pick, .rl-btn.rl-pick:hover:not(:disabled) {
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right 9px center, right 5px center;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+}
 
 /* A number or a name that is also the way to the thing it names. */
 .rl-lnk {
@@ -991,7 +998,6 @@ button.rl-auth { cursor: pointer; }
 .rl-cal-cell { border-right: 1px solid var(--rk-edge); padding: 4px 8px; text-align: right; }
 .rl-cal-cell:last-child { border-right: 0; }
 .rl-cal-cell.rest { background: color-mix(in srgb, var(--rk-gut, #f4f5f7) 60%, transparent); }
-.rl-cal-cell.out .rl-cal-num { color: var(--rk-mute); }
 .rl-cal-cell { cursor: default; }
 /* The week mode: no line of weekdays above (each day says its own), a week's
    two rows held together by a dark line under the pair (as a month's first days have above), and the week's own cell. */
@@ -1031,7 +1037,6 @@ button.rl-auth { cursor: pointer; }
 .rl-cal-num.big { font-weight: 400; }
 .rl-cal-num.big.first { font-weight: 700; }
 .rl-cal-num.big:not(.today):not(.shown) { color: var(--rk-dim); }
-.rl-cal-num.big.out:not(.today):not(.shown) { color: var(--rk-mute); }
 .rl-cal-num.big.sweep:not(.today):not(.shown) { background: var(--rk-cite-t, #2563eb); color: #fff; }
 .rl-cal-events {
   position: relative; z-index: 2; display: grid; grid-template-columns: repeat(var(--cols, 7), minmax(0, 1fr)); row-gap: 2px;   /* minmax: a name running on never widens a day */
@@ -1104,11 +1109,13 @@ button.rl-auth { cursor: pointer; }
 /* A record drawn struck through (calendar.hatch — one not gone to), and the
    days of one its trip does not cover: white stripes cut through the fill, so
    the name stays as readable as ever. */
-/* Taken part in online (calendar.online): a Wi-Fi mark in white, one in the
-   middle of each day. */
-.rl-cal-bar.online .rl-cal-fill i {
-  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'30'%20height%3D'22'%20viewBox%3D'0%200%2030%2022'%3E%3Cg%20fill%3D'none'%20stroke%3D'white'%20stroke-width%3D'1.6'%20stroke-linecap%3D'round'%3E%3Cpath%20d%3D'M9%209%20a8.5%208.5%200%200%201%2012%200'%2F%3E%3Cpath%20d%3D'M11.5%2012%20a5%205%200%200%201%207%200'%2F%3E%3C%2Fg%3E%3Ccircle%20cx%3D'15'%20cy%3D'15'%20r%3D'1.3'%20fill%3D'white'%2F%3E%3C%2Fsvg%3E");
-  background-position: center; background-size: 30px 22px; background-repeat: no-repeat;
+/* Taken part in online (calendar.online): a camera before the name (Tabler's video,
+   outline), in a dark shade of the bar's colour. */
+.rl-cal-online {
+  display: inline-block; width: 13px; height: 13px; margin-right: 3px; vertical-align: -2px;
+  background: color-mix(in srgb, var(--c) 55%, #000);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2024%2024%22%20fill=%22none%22%20stroke=%22black%22%20stroke-width=%222%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22%3E%3Cpath%20d=%22M15%2010l4.553%20-2.276a1%201%200%200%201%201.447%20.894v6.764a1%201%200%200%201%20-1.447%20.894l-4.553%20-2.276v-4z%22/%3E%3Cpath%20d=%22M3%208a2%202%200%200%201%202%20-2h8a2%202%200%200%201%202%202v8a2%202%200%200%201%20-2%202h-8a2%202%200%200%201%20-2%20-2z%22/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2024%2024%22%20fill=%22none%22%20stroke=%22black%22%20stroke-width=%222%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22%3E%3Cpath%20d=%22M15%2010l4.553%20-2.276a1%201%200%200%201%201.447%20.894v6.764a1%201%200%200%201%20-1.447%20.894l-4.553%20-2.276v-4z%22/%3E%3Cpath%20d=%22M3%208a2%202%200%200%201%202%20-2h8a2%202%200%200%201%202%202v8a2%202%200%200%201%20-2%202h-8a2%202%200%200%201%20-2%20-2z%22/%3E%3C/svg%3E") center / contain no-repeat;
 }
 .rl-cal-bar.hatch .rl-cal-fill i, .rl-cal-fill i.miss {
   background-image: repeating-linear-gradient(135deg, #fff 0 2px, transparent 2px 6px);

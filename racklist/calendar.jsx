@@ -3,7 +3,7 @@ import './strings.js'
 import { tr } from 'lilak-ui/i18n.jsx'
 import { typeOf } from './types.jsx'
 import { ctxFor, labelOf, valueOf, favField } from './schema.js'
-import { tagKey, useProjects, projectWears } from './tags.js'
+import { tagKey, tagWithin, nameKey, useProjects, projectWears, useAuthors } from './tags.js'
 import { load, save, projectKey } from './portal.js'
 import { occurrences, DAYS, dow } from './rrule.js'
 
@@ -25,7 +25,19 @@ import { occurrences, DAYS, dow } from './rrule.js'
  * in its colour, the marked day banded below. A week has room for two lanes at
  * least and is as tall as its records need — nothing folds into "…"; a bar
  * with nothing under it grows down into the free lanes, its name wrapping onto
- * as many lines as it then has. A record without a start is not on it.
+ * as many lines as it then has; a todo whose name is longer than its bar moves
+ * the todos under it down, while free lanes are left; a bar stacked from the
+ * bottom grows up, moving those over it up. A name may run on over the days to
+ * its right instead: each week takes what cuts the fewest names (see arrange). A record without a start is not on it.
+ *
+ * The week mode folds each week, Monday to Sunday, into two rows of four cells:
+ * the week's own (which week of which month, and how many of each kind), Mon
+ * Tue Wed / Thu Fri Sat Sun. The days are wider, so a bar there takes only the
+ * lanes its name needs.
+ *
+ * The MWD mode is the month's stack with Monday to Friday only. A record wholly
+ * on a weekend is not drawn there; one running over a weekend is cut as at a
+ * week's end.
  *
  *   left-click a bar        picks it (as in the table)
  *   right-click a bar       opens it in the editor
@@ -44,7 +56,124 @@ const diff = (a, b) => Math.round((parse(b) - parse(a)) / 86400000)
 const min = (...xs) => xs.filter(Boolean).sort()[0]
 const max = (...xs) => xs.filter(Boolean).sort().at(-1)
 const sunday = (s) => addDays(s, -parse(s).getDay())
+const monday = (s) => addDays(s, -((parse(s).getDay() + 6) % 7))
 const monthOf = (s) => s.slice(0, 7)
+/** The Thursday of the week a row is in; a week belongs to its Thursday's month. */
+const thursdayOf = (s, week) => (week ? addDays(monday(s), 3) : addDays(sunday(s), 4))
+/** Which week of which month a week is, by its Thursday: [month, nth]. */
+export const weekOfMonth = (s) => { const t = addDays(monday(s), 3); return [Number(t.slice(5, 7)), Math.ceil(Number(t.slice(8)) / 7)] }
+/** The day that names its month: the 1st — or, with no weekends drawn, the Monday after a 1st on one. */
+export const opensMonth = (s, noWeekend) => s.slice(8) === '01' || (noWeekend && parse(s).getDay() === 1 && Number(s.slice(8)) <= 3)
+/** What moves down a lane to give a bar one more, in a week of `total` lanes: what is
+ *  under it, and what is under that — null if that runs out of lanes or meets anything but a todo. */
+export const toShove = (placed, s, total) => {
+  const moved = new Set()
+  const under = (x) => placed.every((y) => {
+    if (y.lane !== x.lane + x.rows || y.b < x.a || y.a > x.b || moved.has(y)) return true
+    if (typeof y.ev.ext?.done !== 'boolean' || y.lane + y.rows >= total) return false
+    moved.add(y)
+    return under(y)
+  })
+  return under(s) ? [...moved] : null
+}
+/** What moves up a lane to give a bar stacked from the bottom one more: what is over
+ *  it, and what is over that — null if that runs out of lanes or meets anything not so stacked. */
+export const toLift = (placed, s) => {
+  const moved = new Set()
+  const over = (x) => placed.every((y) => {
+    if (y.lane + y.rows !== x.lane || y.b < x.a || y.a > x.b || moved.has(y)) return true
+    if (!y.ev.low || y.lane === 0) return false
+    moved.add(y)
+    return over(y)
+  })
+  return over(s) ? [...moved] : null
+}
+/** A bar takes the lanes above it until its name fits. */
+export const growUp = (placed, s, ownFits) => {
+  while (s.lane > 0 && !ownFits(s)) {
+    const moved = toLift(placed, s)
+    if (!moved) return
+    for (const x of moved) x.lane -= 1
+    s.lane -= 1
+    s.rows += 1
+  }
+}
+const clearBelow = (taken, s) => taken[s.lane + s.rows].every(([x, y]) => s.b < x || s.a > y)
+/** The widest week's bars whose name is too long for them that are tried both ways: 2^this layouts. */
+const TRIED = 8
+/** The lanes of a week's bars. A bar whose name is too long for it can take more lanes
+ *  (to the point its name fits) or leave it to run on over the free days to its right, and
+ *  either may cut another's name: of all those choices, the one that cuts the fewest names,
+ *  then runs on the fewest, then takes the fewest lanes. What `fills` says then takes the
+ *  free lanes below as well, while that cuts no name. Sets each bar's lane, rows and free.
+ *  fits(s, days): does its name fit in its lanes and so many days to its right.
+ *  s.ends: it ends in this week, so its name may run on. */
+export const arrange = (placed, total, count, fits, fills, measured = true) => {
+  const base = placed.map((s) => s.lane)
+  const taken = Array.from({ length: total }, () => [])
+  const clear = (used, d) => used.every(([x, y]) => d < x || d > y)
+  const retake = () => {
+    taken.forEach((used) => { used.length = 0 })
+    for (const x of placed) for (let r = x.lane; r < x.lane + x.rows; r++) taken[r].push([x.a, x.b])
+  }
+  const freeOf = (s) => {
+    let free = 0
+    if (!s.ends) return 0
+    while (s.b + free < count - 1 && taken.slice(s.lane, s.lane + s.rows).every((used) => clear(used, s.b + free + 1))) free += 1
+    return free
+  }
+  const ownFits = (s) => fits(s, 0)
+  const whole = (s) => fits(s, freeOf(s))
+  const byLane = (list) => [...list].sort((x, y) => x.lane - y.lane)
+  const start = () => {
+    placed.forEach((s, i) => { s.lane = base[i]; s.rows = 1 })
+    retake()
+  }
+  // Each takes the lanes below, moving the todos in them down if it is a todo itself;
+  // what stacks from the bottom takes those above, moving what stacks over it up.
+  const lay = (chosen) => {
+    start()
+    for (const s of byLane(chosen)) {
+      while (s.lane + s.rows < total && !ownFits(s)) {
+        const open = clearBelow(taken, s)
+        const moved = open ? [] : typeof s.ev.ext?.done === 'boolean' ? toShove(placed, s, total) : null
+        if (!(open || moved?.length)) break
+        s.rows += 1
+        for (const x of moved) x.lane += 1
+        retake()
+      }
+    }
+    for (const s of byLane(chosen.filter((x) => x.ev.low))) growUp(placed, s, ownFits)
+    retake()
+  }
+  const cost = () => placed.reduce((n, s) => n + (ownFits(s) ? 0 : whole(s) ? 1e3 : 1e6) + s.rows, 0)
+  start()
+  const long = byLane(placed.filter((s) => !ownFits(s)))
+  // ponytail: a week with more of them than this has the rest always take lanes.
+  const tried = long.slice(0, TRIED), rest = long.slice(TRIED)
+  let best = long, least = Infinity
+  for (let m = (1 << tried.length) - 1; m >= 0; m--) {
+    const chosen = [...tried.filter((_, i) => m >> i & 1), ...rest]
+    lay(chosen)
+    const c = cost()
+    if (c < least) { least = c; best = chosen }
+  }
+  lay(best)
+  for (const s of byLane(placed.filter(fills))) {
+    while (s.lane + s.rows < total && clearBelow(taken, s)) {
+      const kept = placed.filter((x) => x !== s && whole(x))
+      s.rows += 1
+      retake()
+      if (kept.every(whole)) continue
+      s.rows -= 1
+      retake()
+      break
+    }
+  }
+  // A name its lanes hold stays in them; only one they do not runs on.
+  for (const s of placed) s.free = measured && ownFits(s) ? 0 : freeOf(s)
+}
+const shortDay = (s) => `${Number(s.slice(5, 7))}/${Number(s.slice(8))}`
 /** 'YYYY-MM' as the month's short name: Sep, 9월. */
 const monthName = (ym) => tr('rk_month_short', Number(ym.slice(5, 7)))
 const shiftMonth = (ym, n) => { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}` }
@@ -67,10 +196,30 @@ const NONE = []
 // A name's width as a bar draws it (--fs-small), with its padding and room for
 // a mark before it (☐, ↻, the handed-in file).
 let pen
-const textW = (t) => {
-  pen ||= document.createElement('canvas').getContext('2d')
-  pen.font = `12px ${getComputedStyle(document.body).fontFamily}`
-  return pen.measureText(t || '').width + 14 + 16
+const widths = new Map()
+const widthOf = (t) => {
+  const key = document.fonts.status + t
+  if (!widths.has(key)) {
+    pen ||= document.createElement('canvas').getContext('2d')
+    pen.font = `12px ${getComputedStyle(document.body).fontFamily}`
+    widths.set(key, pen.measureText(t).width)
+  }
+  return widths.get(key)
+}
+const textW = (t) => widthOf(t || '') + 14 + 16
+// The room the marks before a name take: its box, ↻ or the handed-in file, then the camera.
+const markW = (s) => (typeof s.ev.ext?.done === 'boolean' || s.ev.occ || s.p.key === 'submit' ? 16 : 0) + (s.ev.online && s.p.key !== 'submit' ? 16 : 0)
+const arranged = new Map()
+// The lines a name wraps to in that width, broken at its spaces, after its mark.
+const linesOf = (t, w, mark) => {
+  let lines = 1, x = mark
+  for (const word of (t || '').split(/(?<= )/)) {
+    const m = widthOf(word)
+    if (x + m > w) { lines += 1; x = 0 }
+    lines += Math.floor(m / w)
+    x += m % w
+  }
+  return lines
 }
 
 // Where each calendar was scrolled to, for as long as the page around it
@@ -86,10 +235,15 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   const cal = def.calendar
   const idk = def.item.id || 'id'
   const today = fmt(new Date())
-  const viewKey = projectKey(def.key, 'calat')
-  // { week, off }: the week at the top of the view and how far into it — or, the first time, today.
+  // A month's worth of weeks on screen, the same without weekends, or a week folded into two rows.
+  const [mode, setMode] = useState(() => load(projectKey(def.key, 'calmode'), 'month'))
+  const week = mode === 'week', mwd = mode === 'mwd'
+  const mondays = week || mwd
+  const startOf = mondays ? monday : sunday
+  const viewKey = projectKey(def.key, week ? 'calatw' : mwd ? 'calatd' : 'calat')
+  // { week, off }: the row at the top of the view and how far into it — or, the first time, today.
   const [was] = useState(() => (reloaded() ? null : kept()[viewKey] || null))
-  const [month, setMonth] = useState(() => monthOf(was ? addDays(was.week, 4) : today))     // the month on screen
+  const [month, setMonth] = useState(() => monthOf(was ? thursdayOf(was.week, mondays) : today))     // the month on screen
   const [hidden, setHidden] = useState(() => new Set(load(projectKey(def.key, 'calhide'), [])))
   useEffect(() => { save(projectKey(def.key, 'calhide'), [...hidden]) }, [def.key, hidden])
   // The lines from a handed-in day to its talk: drawn, or not.
@@ -104,26 +258,51 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   const tagsOf = (r) => (Array.isArray(r?.[tagF]) ? r[tagF] : String(r?.[tagF] || '').split(/[\s,]+/)).filter(Boolean)
   const projects = useProjects()
   const projOf = (k) => projects.find((p) => `+${tagKey(p.name)}` === k)
-  const tagged = (ts) => !tagSel.size || [...tagSel].some((k) => (k.startsWith('+')
-    ? !!projOf(k) && projectWears(projOf(k), ts) : ts.some((t) => tagKey(t) === k)))
+  // The people a record links to (`calendar.people`: the field that does —
+  // 책임자). A person is one chip whichever of their names it was written from,
+  // because a name is a person's key here (tags.js nameKey).
+  const people = useAuthors()
+  const whoOf = useCallback((r) => (!cal.people ? [] : [].concat(r?.[cal.people] || [])
+    .map((l) => (l?.id ? people.find((x) => x.id === l.id) : null)).filter(Boolean)),
+    [cal.people, people])
+  const whoIs = (k) => people.find((x) => x.keys.includes(k.slice(1)))
+  const tagged = (ts, r) => !tagSel.size || [...tagSel].some((k) => (k.startsWith('+')
+    ? !!projOf(k) && projectWears(projOf(k), ts)
+    : k.startsWith('@') ? whoOf(r).some((x) => x.keys.includes(k.slice(1)))
+      : ts.some((t) => tagWithin(t, k))))
   // Every tag the records wear, most worn first, spelt as most often written.
   const allTags = useMemo(() => {
     const n = new Map()
     for (const r of items) for (const t of tagsOf(r)) { const k = tagKey(t); const x = n.get(k) || { t, n: 0 }; x.n++; n.set(k, x) }
     return [...n.entries()].sort((a, b) => b[1].n - a[1].n).map(([k, x]) => ({ k, t: x.t, n: x.n }))
   }, [items])   // eslint-disable-line react-hooks/exhaustive-deps
+  // Only the people these records actually name: a hundred who lead nothing is
+  // not a list to pick from.
+  const allPeople = useMemo(() => {
+    const n = new Map()
+    for (const r of items) for (const x of whoOf(r)) { const e = n.get(x.id) || { x, n: 0 }; e.n++; n.set(x.id, e) }
+    return [...n.values()].sort((a, b) => b.n - a.n)
+  }, [items, whoOf])
   const [tagIn, setTagIn] = useState('')
   const addTag = (v) => {
     const raw = String(v).trim()
-    // #tag, +project: the sign says which.
-    const k = raw.startsWith('+') ? `+${tagKey(raw.slice(1))}` : raw.startsWith('#') ? tagKey(raw.slice(1)) : ''
-    if (!k || !(k.startsWith('+') ? projOf(k) : allTags.some((x) => x.k === k))) return false
+    // #tag, +project, @person: the sign says which.
+    const k = raw.startsWith('+') ? `+${tagKey(raw.slice(1))}`
+      : raw.startsWith('@') ? `@${nameKey(raw.slice(1))}`
+        : raw.startsWith('#') ? tagKey(raw.slice(1)) : ''
+    if (!k || k === '@' || !(k.startsWith('+') ? projOf(k)
+      : k.startsWith('@') ? whoIs(k) : allTags.some((x) => x.k === k))) return false
     setTagSel((s) => new Set([...s, k])); setTagIn(''); return true
   }
 
   // The weeks drawn: [first, count]. Grows at either end as you scroll there.
-  const [span, setSpan] = useState(() => [addDays(was ? was.week : sunday(today), -7 * BEFORE), BEFORE + AFTER])
+  const [span, setSpan] = useState(() => [addDays(startOf(was ? was.week : today), -7 * BEFORE), BEFORE + AFTER])
   const weeks = useMemo(() => Array.from({ length: span[1] }, (_, i) => addDays(span[0], 7 * i)), [span])
+  // What is drawn, one under another: a week, or its two rows (the first with
+  // the week's own cell before its days).
+  const rows = useMemo(() => (week
+    ? weeks.flatMap((ws) => [{ ws, n: 3, lead: 1 }, { ws: addDays(ws, 3), n: 4, lead: 0 }])
+    : weeks.map((ws) => ({ ws, n: mwd ? 5 : 7, lead: 0 }))), [weeks, week, mwd])
 
   const textOf = (r, k) => {
     const f = def.item.fields.find((x) => x.k === k)
@@ -157,8 +336,8 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     if (te < ts) te = ts
     const mk = at(cal.mark ? day(r[cal.mark]) : '')
     const g = groupOf(r)
-    if (hidden.has(g) || !tagged(tagsOf(r))) return null
-    const ev = { r, id: occ ? `${id}@${occ}` : shift ? `${id}:copy` : id, copy: !!shift && !occ, occ, base: id, s, e, ts, te, mk, sb, to: mk || s, color: g >= 0 ? cal.groups[g].color : GRAY, paper: g >= 0 && !!cal.groups[g].paper, g, low: (g >= 0 && Number(cal.groups[g].bottom)) || 0, hatch: !!cal.hatch?.(r), online,
+    if (hidden.has(g) || !tagged(tagsOf(r), r)) return null
+    const ev = { r, id: occ ? `${id}@${occ}` : shift ? `${id}:copy` : id, copy: !!shift && !occ, occ, base: id, s, e, ts, te, mk, sb, to: mk || s, color: g >= 0 ? cal.groups[g].color : GRAY, paper: g >= 0 && !!cal.groups[g].paper, framed: g >= 0 && !!cal.groups[g].framed, g, low: (g >= 0 && Number(cal.groups[g].bottom)) || 0, hatch: !!cal.hatch?.(r), online,
       // Its time of day ('HH:MM', calendar.time: a field or (rec) => …): the
       // order records of one group take on one day.
       time: String((typeof cal.time === 'function' ? cal.time(r) : r[cal.time]) || ''),
@@ -236,7 +415,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     const c = r && build(r, copying.days)
     if (c) out.push(c)
     return out
-  }, [items, over, hidden, tagSel, projects, doc, copying, ext, carried, query, weeks])   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [items, over, hidden, tagSel, projects, people, doc, copying, ext, carried, query, weeks])   // eslint-disable-line react-hooks/exhaustive-deps
   // The days a carried copy would land on, lit.
   const drop = events.find((ev) => ev.copy)?.pieces[0]
   const inDrop = (d) => drop && d >= drop.from && d <= drop.to
@@ -251,11 +430,12 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   // ── scrolling ───────────────────────────────────────────────────────────
   const body = useRef(null)
   // A day's width, and a name's in the bars' type: how far a name runs on.
-  const [dayW, setDayW] = useState(0)
+  const [bodyW, setBodyW] = useState(0)
+  const dayW = bodyW / (week ? 4 : mwd ? 5 : 7)
   useLayoutEffect(() => {
     const el = body.current
     if (!el) return undefined
-    const fit = () => setDayW(el.clientWidth / 7)
+    const fit = () => setBodyW(el.clientWidth)
     fit()                                       // now, before the first paint
     const ro = new ResizeObserver(fit)
     ro.observe(el)
@@ -263,7 +443,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   }, [])
   // The week to bring into view after the next draw: at the top or in the
   // middle, scrolled to or (the first time, or from far away) simply shown.
-  const goal = useRef(was ? { w: was.week, off: was.off, smooth: false } : { w: sunday(today), center: true, smooth: false })
+  const goal = useRef(was ? { w: was.week, off: was.off, smooth: false } : { w: startOf(today), center: true, smooth: false })
   const keep = useRef(null)                     // weeks added above: keep what is on screen still
   // Where it opened (today's week in the middle, or where it was left), held
   // there while the records come in — however many times, and however late
@@ -282,10 +462,12 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   // The month a goTo is scrolling to: the title says it all the way there,
   // not the months the scroll passes through on the way.
   const heading = useRef(null)
+  // A week's height: in the week mode, its two rows.
+  const tallOf = (w) => w.offsetHeight + (week ? w.nextElementSibling?.offsetHeight || 0 : 0)
   const place = (el, g) => {
     const w = el.querySelector(`[data-week="${g.w}"]`)
     if (!w) return
-    const top = g.center ? w.offsetTop + w.offsetHeight / 2 - el.clientHeight / 2 : w.offsetTop + (g.off || 0)
+    const top = g.center ? w.offsetTop + tallOf(w) / 2 - el.clientHeight / 2 : w.offsetTop + (g.off || 0)
     if (g.smooth) el.scrollTo({ top, behavior: 'smooth' })
     else el.scrollTop = top
   }
@@ -293,7 +475,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   // weeks between are drawn first, so the way there is scrolled through;
   // further than FAR weeks it is a jump instead.
   const goTo = useCallback((ym, at = `${ym}-01`, center = false) => {
-    const w = sunday(at)
+    const w = startOf(at)
     opened.current = null
     goal.current = { w, center, smooth: true }
     heading.current = ym
@@ -312,7 +494,22 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
       return [a, diff(a, w) / 7 + 1 + BEFORE]
     })
     setMonth(ym)
-  }, [])
+  }, [startOf])
+  // The other mode: at the week in the middle of the screen, in the middle.
+  const switchMode = (m) => {
+    if (m === mode) return
+    const el = body.current
+    const y = el ? el.scrollTop + el.clientHeight / 2 : 0
+    const row = el && [...el.querySelectorAll('[data-week]')].find((w) => w.offsetTop + w.offsetHeight > y)
+    const thu = row ? thursdayOf(row.dataset.week, mondays) : today
+    const w = (m === 'month' ? sunday : monday)(thu)
+    save(projectKey(def.key, 'calmode'), m)
+    setMode(m)
+    heading.current = monthOf(thu)
+    setMonth(monthOf(thu))
+    goal.current = opened.current = { w, center: true, smooth: false }
+    setSpan([addDays(w, -7 * BEFORE), BEFORE + AFTER])
+  }
   useLayoutEffect(() => {
     const el = body.current
     if (!el) return
@@ -363,7 +560,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     let anchor = null, at = 0
     if (opened.current && now.weeks.has(opened.current.w)) {
       anchor = { w: opened.current.w }
-      at = opened.current.center ? Math.max(0, (el.clientHeight - now.weeks.get(anchor.w).h) / 2) : -opened.current.off
+      at = opened.current.center ? Math.max(0, (el.clientHeight - tallOf(now.weeks.get(anchor.w).el)) / 2) : -opened.current.off
     }
     // Scrolling for more weeks, a new width, a drag under way, or asked for
     // no motion: simply drawn (the week opened to still where it belongs).
@@ -442,7 +639,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     const y = el.scrollTop + el.clientHeight / 3
     const ws = [...el.querySelectorAll('[data-week]')].find((w) => w.offsetTop + w.offsetHeight > y)
     // A week belongs to the month its Thursday is in.
-    if (ws && !heading.current) { const m = monthOf(addDays(ws.dataset.week, 4)); if (m !== month) setMonth(m) }
+    if (ws && !heading.current) { const m = monthOf(thursdayOf(ws.dataset.week, mondays)); if (m !== month) setMonth(m) }
     // Where it is, to come back to (kept).
     const top = [...el.querySelectorAll('[data-week]')].find((w) => w.offsetTop + w.offsetHeight > el.scrollTop)
     if (top) kept()[viewKey] = { week: top.dataset.week, off: el.scrollTop - top.offsetTop }
@@ -457,12 +654,13 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     }
   }
 
-  // The day under the pointer, from the week it is over and how far across.
+  // The day under the pointer, from the row it is over and how far across.
   const dayAt = (e) => {
     const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-week]')
     if (!el) return null
     const rect = el.getBoundingClientRect()
-    const col = Math.max(0, Math.min(6, Math.floor(((e.clientX - rect.left) / rect.width) * 7)))
+    const n = Number(el.dataset.n), lead = Number(el.dataset.lead)
+    const col = Math.max(0, Math.min(n - 1, Math.floor(((e.clientX - rect.left) / rect.width) * (n + lead)) - lead))
     return addDays(el.dataset.week, col)
   }
 
@@ -525,6 +723,16 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     // a settled animation (laid), an end being dragged (over). Not on every
     // render — a hover or a lit day moves nothing, and this measures every bar.
   }, [events, showLinks, span, dayW, laid, over])
+
+  // A name that really goes on past its bar leaves the frame open on that side
+  // (measured: the widths the lanes are worked out by err on the wide side).
+  useLayoutEffect(() => {
+    const r = document.createRange()
+    for (const b of body.current?.querySelectorAll('.rl-cal-bar.spill') || []) {
+      r.selectNodeContents(b.querySelector('.rl-cal-label'))
+      b.classList.toggle('runs', r.getBoundingClientRect().right > b.getBoundingClientRect().right)
+    }
+  })
 
   // ── one occurrence of a repeating record, right-clicked: for which of them ──
   const [ask, setAsk] = useState(null)          // { x, y, ev }
@@ -679,9 +887,9 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   })
 
   return (
-    <div className="rl-cal">
+    <div className={`rl-cal${week ? ' week' : ''}`}>
       <div className="rl-cal-head">
-        <h2 className="rl-cal-title">{tr('rk_year_month', ty, tm)}</h2>
+        <h2 className="rl-cal-title">{tr('rk_month_long', tm)}<span>{tr('rk_year', ty)}</span></h2>
         <div className="rl-cal-legend">
           {(() => {
             // Every group and feed at once: all shown → all hidden, else all shown.
@@ -718,14 +926,15 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
               <i className="rl-cal-key-line" /><span className="rl-cal-key-t">{tr("rk_links_lines")}</span></button>
           )}
         </div>
-        {allTags.length > 0 && (
+        {(allTags.length > 0 || allPeople.length > 0) && (
           <div className="rl-cal-tags">
             <span className="rl-hint">{tr("rk_cal_tags")}</span>
             {[...tagSel].map((k) => (
               <button key={k} type="button" className="rl-cal-key on" title={tr("rk_cal_tag_off")}
                 onClick={() => setTagSel((s) => { const n = new Set(s); n.delete(k); return n })}>
                 {k.startsWith('+') ? <span className="rl-proj">{projOf(k)?.name || k.slice(1)}</span>
-                  : <span className="rl-cal-key-t">#{allTags.find((x) => x.k === k)?.t || k}</span>}<b>×</b>
+                  : k.startsWith('@') ? <span className="rl-auth">{whoIs(k)?.kor || whoIs(k)?.eng || k.slice(1)}</span>
+                    : <span className="rl-cal-key-t">#{allTags.find((x) => x.k === k)?.t || k}</span>}<b>×</b>
               </button>
             ))}
             <input className="rl-cal-tag-in" list={`rl-cal-tags-${def.key}`} value={tagIn} placeholder={tr("rk_cal_tag_add")}
@@ -735,6 +944,15 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
               {projects.filter((p) => !tagSel.has(`+${tagKey(p.name)}`)).map((p) => (
                 <option key={`+${p.id}`} value={`+${p.name}`}>{(p.tags || []).map((t) => `#${t}`).join(p.match === 'and' ? ' & ' : ' ')}</option>))}
               {allTags.filter((x) => !tagSel.has(x.k)).map((x) => <option key={x.k} value={`#${x.t}`}>{`${x.n}`}</option>)}
+              {/* A person by either name, shown with the other one and their
+                  address — the same three things `@` offers in a note. */}
+              {allPeople.filter(({ x }) => !x.keys.some((k) => tagSel.has(`@${k}`)))
+                .map(({ x, n }) => (
+                  <option key={`@${x.id}`} value={`@${x.kor || x.eng}`}>
+                    {/* the value is their Korean name when they have one, so
+                        the other name to show is the English one */}
+                    {[x.kor ? x.eng : '', x.email, `${n}`].filter(Boolean).join(' · ')}
+                  </option>))}
             </datalist>
           </div>
         )}
@@ -753,22 +971,31 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
           <button type="button" className="rl-btn" title={tr("rk_next_month")} onClick={() => goTo(shiftMonth(month, 1))}>{monthName(shiftMonth(month, 1))} ›</button>
         </span>
         <button type="button" className="rl-btn rl-cal-today" onClick={toToday}>{tr("rk_today")}</button>
+        <select className="rl-btn rl-pick rl-cal-mode" value={mode} onChange={(e) => switchMode(e.target.value)}>
+          <option value="month">{tr("rk_cal_mode_month")}</option>
+          <option value="week">{tr("rk_cal_mode_week")}</option>
+          <option value="mwd">{tr("rk_cal_mode_mwd")}</option>
+        </select>
       </div>
-      <div className="rl-cal-days">
-        {DAYS.map((_, d) => <span key={d}>{dow(d)}</span>)}
-      </div>
+      {!week && (
+        <div className="rl-cal-days" style={{ '--cols': mwd ? 5 : 7 }}>
+          {DAYS.map((_, d) => !(mwd && [0, 6].includes(d)) && <span key={d}>{dow(d)}</span>)}
+        </div>
+      )}
       <div className="rl-cal-body" ref={body} onScroll={onScroll}
         // The wheel pressed down: back to today (and no autoscroll).
         onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); toToday() } }}>
         <svg ref={links} className="rl-cal-links" />
-        {weeks.map((ws) => {
+        {rows.map(({ ws, n: count, lead }) => {
           // Where a name starts: at the record's first day, if two days or more
           // are left from it to the bar's end here (the trip's end); else at the bar's beginning.
           const skipOf = (ev, a, b) => (ev.s > addDays(ws, a) && ev.s <= addDays(ws, b) && b - diff(ws, ev.s) >= 1 ? diff(ws, ev.s) - a : 0)
-          const numClass = (d) => `rl-cal-num${d === today ? ' today' : d === shown ? ' shown' : ''}${d.slice(8) === '01' ? ' first' : ''}`
-          const numText = (d) => (d.slice(8) === '01' ? tr('rk_month_first', Number(d.slice(5, 7))) : tr('rk_day_num', Number(d.slice(8))))
-          const we = addDays(ws, 6)
-          const days = Array.from({ length: 7 }, (_, i) => addDays(ws, i))
+          const first = (d) => opensMonth(d, mwd)
+          const dayNum = (d) => tr('rk_day_num', Number(d.slice(8)))
+          const numClass = (d) => `rl-cal-num${d === today ? ' today' : d === shown ? ' shown' : ''}${first(d) ? ' first' : ''}`
+          const numText = (d) => (first(d) ? `${tr('rk_month_short', Number(d.slice(5, 7)))} ${dayNum(d)}` : dayNum(d))
+          const we = addDays(ws, count - 1)
+          const days = Array.from({ length: count }, (_, i) => addDays(ws, i))
           const col = (d) => diff(ws, d)
           // This week's records, group by group in the order the groups are
           // declared, longest first in each, each in the first lane it fits —
@@ -789,8 +1016,10 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
           }
           // The bottom groups stack up from the bottom on their own (k = 0 the
           // lowest lane), then sit as close under the top groups as they fit.
+          // In a group a bar over several days goes in first, so that a one-day one
+          // does not push it up between the next group's bars.
           // (They stack upwards, so the later time goes in first: the earlier sits above it.)
-          const lows = placed.filter((x) => x.ev.low).sort((x, y) => x.ev.low - y.ev.low || byTime(y, x))
+          const lows = placed.filter((x) => x.ev.low).sort((x, y) => x.ev.low - y.ev.low || (y.b > y.a) - (x.b > x.a) || byTime(y, x))
           const stack = []
           for (const s of lows) {
             s.k = stack.findIndex((used) => fits(used, s.a, s.b))
@@ -803,33 +1032,33 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
           while (lanes.length < T) lanes.push([])
           stack.forEach((used, k) => lanes[T - 1 - k].push(...used))
           for (const s of lows) s.lane = T - 1 - s.k
-          // A bar with nothing under it takes the lanes below too — first come,
-          // first served, top lanes first — so a lone one-day record has room
-          // for its whole name.
           const total = Math.max(lanes.length, LANES)
           // A week a line leaves from has room between its lanes for it.
           const gap = shownEvents.some((ev) => ev.sb && ev.sb !== ev.to
             && ((ev.sb >= ws && ev.sb <= we) || (ev.to >= ws && ev.to <= we))) ? GAP.wide : GAP.base
-          const taken = Array.from({ length: total }, (_, i) => (lanes[i] || []).slice())
-          for (const s of [...placed].sort((x, y) => x.lane - y.lane)) {
-            s.rows = 1
-            while (s.lane + s.rows < total && taken[s.lane + s.rows].every(([x, y]) => s.b < x || s.a > y)) {
-              taken[s.lane + s.rows].push([s.a, s.b])
-              s.rows += 1
-            }
+          // The lines of a name that so many lanes hold.
+          const linesIn = (rows) => Math.floor((rows * 22 + (rows - 1) * gap - 4) / 15)
+          const fitsOver = (s, free) => {
+            if (!dayW) return true
+            const w = (s.b - s.a + 1 + free) * dayW - 18      // less the bar's margin and the name's padding
+            const mark = markW(s)
+            return s.rows === 1 ? textW(s.ev.label) - 30 + mark <= w : linesOf(s.ev.label, w, mark) <= linesIn(s.rows)
           }
-          // The days right of a bar that nothing takes, in all its lanes, to the
-          // week's end: its name may run on over them.
-          for (const s of placed) {
-            s.free = 0
-            if (s.p.to > we) continue
-            while (s.b + s.free < 6 && taken.slice(s.lane, s.lane + s.rows).every((used) => fits(used, s.b + s.free + 1, s.b + s.free + 1))) s.free += 1
+          for (const s of placed) s.ends = s.p.to <= we
+          // Worked out once for as long as nothing it hangs on changes: a render is
+          // often a hover, and the weeks are many.
+          const key = JSON.stringify([dayW, gap, total, count, week, document.fonts.status, placed.map((s) => [s.ev.label, s.p.key, s.a, s.b, s.lane, s.ev.low, markW(s), typeof s.ev.ext?.done])])
+          if (!arranged.has(key)) {
+            if (arranged.size > 2000) arranged.clear()
+            arrange(placed, total, count, fitsOver, (s) => !week && typeof s.ev.ext?.done !== 'boolean', !!dayW)
+            arranged.set(key, placed.map((s) => [s.lane, s.rows, s.free]))
           }
+          arranged.get(key).forEach(([lane, rows, free], i) => Object.assign(placed[i], { lane, rows, free }))
           // A day whose top two lanes are free (no bar, no name running over
           // them): its number large, in the middle of those two.
           // How far a name really runs on is measured; until the days have a
           // width, it is taken to run as far as it may.
-          const used = Array.from({ length: 7 }, () => new Array(total).fill(false))
+          const used = Array.from({ length: count }, () => new Array(total).fill(false))
           for (const s of placed) {
             const at = s.a + skipOf(s.ev, s.a, s.b)
             const over = dayW ? Math.min(s.free, Math.max(0, at + Math.ceil(textW(s.ev.label) / s.rows / dayW) - 1 - s.b)) : s.free
@@ -837,10 +1066,12 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
           }
           const open = used.map((lanes) => !lanes[0] && !lanes[1])
           return (
-            <div key={ws} className="rl-cal-week" data-week={ws}>
+            <div key={ws} className={`rl-cal-week${week ? (lead ? ' wk-top' : ' wk-bot') : ''}`} data-week={ws} data-n={count} data-lead={lead} style={{ '--cols': count + lead }}>
+              {lead > 0 && <WeekInfo ws={ws} events={shownEvents} groups={cal.groups} />}
               <div className="rl-cal-cells">
+                {lead > 0 && <span />}
                 {days.map((d) => (
-                  <div key={d} className={`rl-cal-cell${monthOf(d) !== month ? ' out' : ''}${inSweep(d) ? ' sweep' : ''}${inDrop(d) ? ' drop' : ''}${monthOf(addDays(d, -7)) !== monthOf(d) ? ' m-top' : ''}${open[col(d)] && d.slice(8) !== '01' ? ' big' : ''}`}
+                  <div key={d} className={`rl-cal-cell${[0, 6].includes(parse(d).getDay()) ? ' rest' : ''}${inSweep(d) ? ' sweep' : ''}${inDrop(d) ? ' drop' : ''}${!week && monthOf(addDays(d, -7)) !== monthOf(d) ? ' m-top' : ''}${open[col(d)] && !first(d) ? ' big' : ''}`}
                     onMouseDown={(e) => {
                       // The left button lights days: one, or as many as it drags across.
                       if (e.button !== 0) return
@@ -858,15 +1089,16 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
                       } else onNew({ [cal.start]: d })
                       setSweep(null)
                     }}>
-                    <span className={numClass(d)}>{open[col(d)] && d.slice(8) === '01' ? tr('rk_day_num', 1) : numText(d)}</span>
+                    {week && <span className="rl-cal-dow">{dow(parse(d).getDay())}</span>}
+                    <span className={numClass(d)}>{open[col(d)] && first(d) ? dayNum(d) : numText(d)}</span>
                   </div>
                 ))}
               </div>
               <div className="rl-cal-events" style={{ gridTemplateRows: `repeat(${total}, 22px)`, rowGap: gap }}>
                 {days.map((d) => open[col(d)] && (
                   // On the 1st the month is large and the day stays small in its corner.
-                  <span key={d} data-big={d} className={`${d.slice(8) === '01' ? 'rl-cal-num first' : numClass(d)} big${monthOf(d) !== month ? ' out' : ''}${inSweep(d) ? ' sweep' : ''}`}
-                    style={{ gridColumn: col(d) + 1, gridRow: '1 / span 2' }}>{d.slice(8) === '01' ? tr('rk_month_short', Number(d.slice(5, 7))) : numText(d)}</span>
+                  <span key={d} data-big={d} className={`${first(d) ? 'rl-cal-num first' : numClass(d)} big${inSweep(d) ? ' sweep' : ''}`}
+                    style={{ gridColumn: col(d) + 1 + lead, gridRow: '1 / span 2' }}>{first(d) ? tr('rk_month_short', Number(d.slice(5, 7))) : numText(d)}</span>
                 ))}
                 {placed.map(({ ev, p, a, b, lane, rows, free }) => {
                   const bottom = lane > 0 && lane + rows >= total     // in the bottom lane (and not the top): a line leaves from below
@@ -883,14 +1115,15 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
                   const sIn = own && ev.s >= ws && ev.s <= we, eIn = own && ev.e >= ws && ev.e <= we
                   const skip = skipOf(ev, a, b)
                   return (
-                    <div key={`${ev.id}:${p.key}`} data-ev={ev.id} data-piece={p.key} data-bottom={bottom ? '1' : undefined} className={`rl-cal-bar${ev.paper ? ' paper' : ''}${ev.hatch ? ' hatch' : ''}${ev.online ? ' online' : ''}${ev.ext ? ' ext' : ''}${ev.ext?.done ? ' done' : ''}${ev.ext?.urgent && !ev.ext.done ? ' urgent' : ''}${ev.copy ? ' copy' : ''}${free ? ' spill' : ''}${ev.occ ? ' occ' : ''}${picked?.has(ev.base || ev.id) ? ' on' : ''}${p.from < ws ? ' cont-l' : ''}${p.to > we ? ' cont-r' : ''}${rows > 1 ? ' tall' : ''}`}
-                      style={{ '--c': ev.color, gridRow: `${lane + 1} / span ${rows}`, gridColumn: `${a + 1} / ${b + 2}`, '--lines': Math.floor((rows * 22 + (rows - 1) * gap - 4) / 15) }} {...barProps(ev)}>
+                    <div key={`${ev.id}:${p.key}`} data-ev={ev.id} data-piece={p.key} data-bottom={bottom ? '1' : undefined} className={`rl-cal-bar${ev.paper ? ' paper' : ''}${ev.framed ? ' framed' : ''}${ev.hatch ? ' hatch' : ''}${ev.online ? ' online' : ''}${ev.ext ? ' ext' : ''}${typeof ev.ext?.done === 'boolean' ? ' todo' : ''}${ev.ext?.done ? ' done' : ''}${ev.ext?.urgent && !ev.ext.done ? ' urgent' : ''}${ev.copy ? ' copy' : ''}${free ? ' spill' : ''}${ev.occ ? ' occ' : ''}${picked?.has(ev.base || ev.id) ? ' on' : ''}${p.from < ws ? ' cont-l' : ''}${p.to > we ? ' cont-r' : ''}${rows > 1 ? ' tall' : ''}`}
+                      style={{ '--c': ev.color, gridRow: `${lane + 1} / span ${rows}`, gridColumn: `${a + 1 + lead} / ${b + 2 + lead}`, '--lines': linesIn(rows) }} {...barProps(ev)}>
                       <span className="rl-cal-fill">
                         {Array.from({ length: n }, (_, i) => { const d = addDays(ws, a + i); return <i key={i} data-day={d} className={`lv${level(d)}${miss(d) ? ' miss' : ''}`} /> })}
                       </span>
                       <span className="rl-cal-label" data-submit={p.key === 'submit' ? '' : undefined} style={{ marginLeft: skip ? `${(skip / n) * 100}%` : undefined,
                         width: free ? `${((n - skip + free) / n) * 100}%` : undefined }}>
                         {typeof ev.ext?.done === 'boolean' && <i className={`rl-cal-box${ev.ext.done ? '' : ' open'}`} title={tr("rk_todo_tick")}>{ev.ext.done ? '☑' : ''}</i>}
+                        {ev.online && p.key !== 'submit' && <i className="rl-cal-online" />}
                         {ev.label}</span>
                       {sIn && (
                         <b className="rl-cal-grip" style={{ left: `${((col(ev.s) - a) / n) * 100}%` }} title={tr("rk_move_start")}
@@ -919,6 +1152,35 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
           <button type="button" className="rl-danger-t" onClick={() => answer('delete')}>{tr("rk_delete_this_only")}</button>
         </div>
       )}
+    </div>
+  )
+}
+
+/** The week mode's first cell: which week it is, and how many of each kind are
+ *  on it — of what is shown, each once however many weeks it runs over. */
+function WeekInfo({ ws, events, groups }) {
+  const we = addDays(ws, 6)
+  const on = events.filter((ev) => !ev.copy && ev.pieces.some((p) => p.from <= we && p.to >= ws))
+  const feeds = [...new Set(on.filter((ev) => ev.ext).map((ev) => ev.ext.feed))]
+  const counts = [
+    ...(groups || []).map((g, i) => ({ k: g.label, c: g.color, n: on.filter((ev) => ev.g === i).length })),
+    ...feeds.map((f) => {
+      const of = on.filter((ev) => ev.ext?.feed === f)
+      // A feed with boxes (a note's todos): how many are left, of how many.
+      const boxed = of.some((ev) => typeof ev.ext.done === 'boolean')
+      return { k: f, c: of[0].color, feed: true, n: of.length, left: boxed ? of.filter((ev) => !ev.ext.done).length : null }
+    }),
+  ].filter((x) => x.n)
+  const [m, nth] = weekOfMonth(ws)
+  return (
+    <div className="rl-cal-info">
+      <b>{tr('rk_cal_week_of', m, nth)}</b>
+      <small>{shortDay(ws)} – {shortDay(we)}</small>
+      <span className="rl-cal-counts">
+        {counts.map((x) => (
+          <span key={x.k}><i className={x.feed ? 'feed' : ''} style={x.feed ? { borderColor: x.c } : { background: x.c }} />{x.k} {x.left != null ? `${x.left}/${x.n}` : x.n}</span>
+        ))}
+      </span>
     </div>
   )
 }

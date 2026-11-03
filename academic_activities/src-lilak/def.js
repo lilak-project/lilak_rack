@@ -56,17 +56,17 @@ const noteTodos = async () => {
 const ROLES = ['oral', 'poster', 'contribution', 'corresponding author', 'attend', 'online', 'absence', 'chair',
   'spokesperson', 'co-spokesperson', 'core', 'setup', 'shift', 'software']
 const COMMON = ['kind', 'name', 'start', 'startTime', 'end', 'endTime', 'repeat', 'series', 'seriesDate', 'link', 'key', 'folder', 'note', 'comment']
-const TALK = ['place', 'online', 'role', 'title', 'talkDate', 'talkTime', 'host', 'tripKind', 'tripStart', 'tripEnd']
+const TALK = ['place', 'online', 'onlineLink', 'role', 'title', 'talkDate', 'talkTime', 'host', 'tripKind', 'tripStart', 'tripEnd']
 const GROUPS = [
   { label: tr('aa_g_academic'), color: '#2f6fde', fields: [...TALK, 'papers', 'submitDate'],
     roles: ['oral', 'poster', 'contribution', 'corresponding author', 'attend', 'online', 'absence', 'chair', 'setup', 'software'],
     kinds: [['학회', 'Academic'], ['워크샵', 'Academic'], ['학술미팅', 'Academic'], ['연구출장', 'BusinessTrip']] },
   // A meeting of an hour or so; one lasting days, with talks, is a 학술미팅.
-  { label: tr('aa_g_meeting'), color: '#e6b000', bottom: 2, fields: ['place', 'online', 'role'],
+  { label: tr('aa_g_meeting'), color: '#e6b000', bottom: 2, framed: true, fields: ['place', 'online', 'onlineLink', 'role'],
     roles: ['oral', 'attend', 'online', 'absence', 'chair'],
     kinds: [['미팅', 'Meeting']] },
   // A talk you are asked to give, or go to hear.
-  { label: 'Talk', color: '#4cb3e6', bottom: 3, fields: [...TALK, 'myTalk'],
+  { label: 'Talk', color: '#4cb3e6', bottom: 3, framed: true, fields: [...TALK, 'myTalk'],
     roles: ['oral', 'attend', 'online'],
     kinds: [['세미나', 'Seminar'], ['강연', 'Lecture'], ['교육', 'Education']] },
   { label: tr('aa_g_experiment'), color: '#13a06e', fields: ['place', 'role', 'title', 'equipment', 'leads', 'proposal', 'tripKind', 'tripStart', 'tripEnd', 'submitDate'],
@@ -153,6 +153,7 @@ export default {
       { k: 'tripKind', label: tr("aa_trip_kind"), type: 'select', col: 68, disabled: noTrip,
         options: [['근거리', tr("aa_trip_near")], ['국내', tr("aa_trip_domestic")], ['국외', tr("aa_trip_abroad")]] },
       { k: 'online', label: tr("aa_online"), type: 'check', hint: tr("aa_online_hint") },
+      { k: 'onlineLink', label: tr("aa_online_link"), type: 'url', when: isOnline },
       // What its group allows (with no group — 기타, none chosen — all of them), a to z.
       { k: 'role', label: tr("aa_role"), type: 'class', col: 92, pick: true,
         options: (r) => [...(groupOf(r.kind)?.roles || ROLES)].sort() },
@@ -187,6 +188,10 @@ export default {
     ],
   },
   classes: [
+    // 책임자 as a tab, the way tags are one: a row per person these activities
+    // name, and opening one lists what they lead. Nothing is stored for it —
+    // the links on the activities are the only copy (racklist classRows).
+    { k: 'leads', label: tr("aa_leads"), field: 'leads', countLabel: 'activities' },
     { k: 'places', label: tr("aa_place"), fields: [
       { k: 'name', label: tr("aa_name"), type: 'text', col: 160, required: true },
       { k: 'city', label: tr("aa_city"), type: 'text', col: 120 },
@@ -213,6 +218,9 @@ export default {
   calendar: {
     start: 'start', end: 'end', mark: 'talkDate', submit: 'submitDate',
     repeat: 'repeat', series: 'series', seriesDate: 'seriesDate',
+    // Whose activity it is: the field that links people, so the calendar can
+    // be shown for one person (`@이정우`) the way it is for one tag.
+    people: 'leads',
     // A day's records of one group in time order: the start's time, else the talk's.
     time: (r) => r.startTime || r.talkTime,
     // Google calendars shown read-only (구글 캘린더 tab → backend/gcal.py),
@@ -224,9 +232,9 @@ export default {
     outline: { start: 'tripStart', end: 'tripEnd' },
     // Registered, not gone: struck through.
     hatch: (r) => r.role === 'absence',
-    // Joined online: no trip drawn, and the days but the talk dotted.
+    // Joined online: no trip drawn, and a camera before the name.
     online: isOnline,
-    groups: GROUPS.map((g) => ({ label: g.label, color: g.color, paper: g.paper, bottom: g.bottom,
+    groups: GROUPS.map((g) => ({ label: g.label, color: g.color, paper: g.paper, framed: g.framed, bottom: g.bottom,
       match: (r) => g.kinds.some(([k]) => k === r.kind) })),
     // 이름 (시간) @ 위치 - 참여형태: the talk's time, else the start's; what
     // is missing is left out.

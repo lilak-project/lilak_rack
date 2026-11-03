@@ -14,6 +14,7 @@ export default {
   aa_place: "위치",
   aa_online: "온라인",
   aa_online_hint: "zoom 등으로 참석",
+  aa_online_link: "온라인 링크",
   aa_role: "참여 형태",
   aa_trip_start: "출장 시작",
   aa_trip_end: "출장 끝",
