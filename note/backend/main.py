@@ -532,6 +532,8 @@ def todos(_: dict = Depends(signed_in)) -> dict:
                 # told apart.
                 out.append({"id": n["id"], "title": n["title"], "date": n["date"],
                             "tags": [t.group(1) for t in TAG_RE.finditer(text)],
+                            # and the people it names, for the same reason
+                            "authors": [a.group(1) for a in AUTH_RE.finditer(text)],
                             "line": i, "done": m.group(2) != " ",
                             "due": due, "doneAt": at, "text": text,
                             "urgent": bool(URGENT_RE.search(_no_code(text)))})

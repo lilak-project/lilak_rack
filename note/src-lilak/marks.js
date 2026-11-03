@@ -70,6 +70,17 @@ export const replaceOutsideCode = (text, rule, repl) => {
   return out + src.slice(last)
 }
 
+/** A line without what has a column of its own — its tags and the people it
+ *  names. A list of a hundred todos reads better when the sentence is the
+ *  sentence, and the note keeps every word either way: this is what a table
+ *  shows, never what is saved. A `@word` naming nobody has no column to go to,
+ *  so it stays in the sentence. */
+export const untagged = (text) => replaceOutsideCode(
+  replaceOutsideCode(text, TAG_RE, (m, lead) => lead),
+  AUTH_RE, (m, lead, name) => (isAuthor(name) ? lead : m))
+  .replace(/\s{2,}/g, ' ')
+  .trim()
+
 /** `![[name.png]]` — Obsidian's embed, which is not markdown. */
 export const EMBED_RE = /!\[\[([^\]]+)\]\]/g
 
