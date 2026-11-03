@@ -878,12 +878,16 @@ button.rl-auth { cursor: pointer; }
 
 /* A photo field (type: 'image'): a thumbnail, and the picture at its own size
    over everything until it is pressed again. */
+/* Nothing to spread: faint, number and all. On what is inside, so the button's edge stays in the strip's line. */
+.rl-btn.rl-pane-btn:disabled > * { opacity: .35; }
 .rl-shot { display: inline-flex; flex-direction: column; gap: 4px; margin-right: 12px; }
 .rl-shot-img {
   display: grid; place-items: center; width: 132px; height: 92px; padding: 0;
   border: 1px solid var(--rk-edge); background: var(--rk-gut); cursor: pointer; overflow: hidden;
 }
 .rl-shot-img.is-empty { color: var(--rk-mute); cursor: default; }
+/* All the tabs shown: filled, pointer on it or not, so it can't pass for the ◧ ▣ ◨ beside it. */
+.rl-btn.rl-pane-btn.rl-pane-all.on, .rl-btn.rl-pane-btn.rl-pane-all.on:hover:not(:disabled) { background: var(--rk-ink); color: var(--rk-panel); }
 .rl-shot-img img { width: 100%; height: 100%; object-fit: cover; }
 .rl-shot-line { display: flex; align-items: center; gap: 5px; }
 .rl-lightbox {
@@ -931,6 +935,8 @@ button.rl-auth { cursor: pointer; }
 .rl-cal-head { grid-row: 1 / span 2; min-width: 0; overflow: hidden auto; display: flex; flex-direction: column; align-items: stretch; gap: 10px;
   margin: -4px 0 0 -10px; padding: 10px 6px 8px 8px; background: color-mix(in srgb, var(--rk-edge) 35%, #fff); border-right: 1px solid var(--rk-edge); }
 .rl-cal-head > :not(.rl-sp) { flex: none; }
+/* All the tabs shown: a filled sheet in the bar's own ink, like the tab that is open. */
+.rl-bar-count.on { border-radius: 3px; background: var(--rk-brand-t, var(--rk-ink)); color: var(--rk-brand, #fff); }
 .rl-cal-head > .rl-sp { display: none; }
 /* As wide as the legend under them: the two arrows half each, today the whole. */
 .rl-cal-head > .rl-cal-nav { order: 1; }
