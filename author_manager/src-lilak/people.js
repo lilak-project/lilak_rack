@@ -1,5 +1,5 @@
 import './strings.js'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 /**
  * What makes an author an AUTHOR — the parts of author_manager that are about
  * people rather than lists: a name in three scripts, where someone is now, the

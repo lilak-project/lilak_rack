@@ -15,7 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   registerType, RackActions, RackField as Fld, fill as fillTpl, newId,
 } from 'racklist'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 import {
   anyName, engName, citeShort, currentAffs, isCurrent, inGrp, TOKENS, PRESETS, nameIn, recOf, choices,
 } from './people.js'

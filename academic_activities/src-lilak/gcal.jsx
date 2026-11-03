@@ -2,7 +2,7 @@ import './strings.js'
 import { useCallback, useEffect, useState } from 'react'
 import { PORTAL_BASE, authHeaders } from 'racklist'
 import './gcal.css'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /**
  * 구글 캘린더 — step 1, read only (backend/gcal.py). Connect, say which

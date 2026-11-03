@@ -1,5 +1,5 @@
-// node lilak_ui/src/racklist/rrule.check.mjs — the repeating rules against
-// days worked out by hand (and Google's own rules from the 비정우 calendar).
+// Repeating rules against days worked out by hand (and Google's own rules from the
+// 비정우 calendar). Run: npx vitest run tests/rrule.test.js (plain node cannot resolve `lilak-ui`).
 import assert from 'node:assert/strict'
 import { occurrences, describe, parseRule, withUntil, withCount } from './rrule.js'
 

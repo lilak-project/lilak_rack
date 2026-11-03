@@ -5,7 +5,7 @@
  * everywhere and shows what wears it in each service, opening here.
  */
 import './strings.js'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 import { isManager, linkProject, showFilteredInCalendar, tagKey } from 'racklist'
 import { InboxActions, MailField, MakesField, MatchName } from './inbox.jsx'
 

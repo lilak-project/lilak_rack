@@ -19,7 +19,7 @@ import {
   authorRows, autRoles, handleFor, refLabel, linkedCites, citesOf, mainTag, tagsOf,
   ruleFor, citeKeyFor, parseCitation, splitAuthors, authorList, ROLE_LABEL,
 } from './paper.js'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 const D = '·'
 const list = (v) => (Array.isArray(v) ? v : (v ? [v] : []))

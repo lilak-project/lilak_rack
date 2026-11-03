@@ -1,5 +1,5 @@
 import './strings.js'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 /**
  * asset manager — the declaration. The table, the tabs, the editors, the
  * selection and the lists are the kit's <RackService>; what is here is what

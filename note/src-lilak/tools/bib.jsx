@@ -1,7 +1,7 @@
 import '../strings.js'
 import { openInService } from 'racklist'
 import { press } from './press.js'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /** `\cite{a,b}`, `\citep[see][]{c}` — the keys a body calls for. */
 const CITE_IN_TEXT = /\\[a-zA-Z]*cite[a-zA-Z]*(?:\[[^\]]*\])*\{([^}]*)\}/g

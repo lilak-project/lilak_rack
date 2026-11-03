@@ -15,7 +15,7 @@ import {
   TOKENS, PRESETS, TYPES,
 } from './paper.js'
 import { citedBy, papersOf, authorStats, NameWith } from './widgets.jsx'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 import { tagKey } from 'racklist'
 
 /** Every paper wearing one of `gone` wears `to` instead — once — and its main

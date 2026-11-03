@@ -72,6 +72,31 @@ export async function fetchDoc() {
   if (!r.ok) throw new Error(`GET /api/data → ${r.status}`)
   return r.json()
 }
+/** Another service's whole document, kept in this tab (sessionStorage) and
+ *  asked again only when its version moved. reference_manager's 0.85 MB was
+ *  downloaded on every opening of every page that links to a paper; now the
+ *  question is a few bytes (`/api/data/version`) and the answer is the copy
+ *  from last time. `{ denied: true }` when the caller may not read it, null
+ *  when it cannot be reached. A tab's storage holds a few MB: a document that
+ *  does not fit is simply fetched each time, as before. */
+export async function remoteDocOf(svc, proj) {
+  const url = `/pp/${svc}/${proj}/api/data`
+  const key = `rk:doc:${svc}/${proj}`
+  const store = typeof sessionStorage === 'undefined' ? null : sessionStorage
+  let kept = null
+  try { kept = JSON.parse(store?.getItem(key) || 'null') } catch { kept = null }
+  if (kept?.doc && kept.version != null) {
+    const v = await fetch(`${url}/version`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null)
+    if (v && String(v.version) === String(kept.version)) return kept.doc
+  }
+  const r = await fetch(url, { headers: authHeaders() }).catch(() => null)
+  if (!r?.ok) return r?.status === 403 ? { denied: true } : null
+  const doc = await r.json()
+  try { store?.setItem(key, JSON.stringify({ version: doc.version, doc })) } catch { /* too big for the tab: fetched each time */ }
+  return doc
+}
+
 /** Whole-document save, version-guarded: 409 means someone else got there first. */
 export async function putDoc(baseVersion, body) {
   const r = await fetch(`${BASE}/api/data`, {

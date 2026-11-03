@@ -2,7 +2,7 @@ import '../strings.js'
 import { useState } from 'react'
 import { RackField } from 'racklist'
 import { press } from './press.js'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /** 서식 — the marks markdown is made of, put round what is selected.
  *

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { RackField } from 'racklist'
 import { comments } from '../comments.js'
 import { press } from './press.js'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /** 공용 — what every note has, whatever it is written in.
  *

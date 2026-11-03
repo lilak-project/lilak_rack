@@ -1,5 +1,5 @@
 import './strings.js'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 import { FAV, tagKey, tagWithin, bibAuthors, bibOrder, jAbbrev, journalRec, nameParts } from 'racklist'
 /**
  * What makes a reference a REFERENCE — the parts of reference_manager that are

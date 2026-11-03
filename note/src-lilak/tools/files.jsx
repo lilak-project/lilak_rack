@@ -4,7 +4,7 @@ import { fileSrc, kb } from '../api.js'
 import { press } from './press.js'
 import { dropped } from '../liveedit.js'
 import { EMBED_RE, embedSpec, isImage } from '../marks.js'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /** 그림·파일 — what is in the note's folder, and what the note says about it.
  *

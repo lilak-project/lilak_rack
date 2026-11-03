@@ -31,7 +31,7 @@ import { clearPins, lastEdit, marksOf, pinned, sawEdit, togglePin } from './pins
 import 'katex/dist/katex.min.css'
 import 'racklist/rack.css'
 import './note.css'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 const VIEW_KEY = projectKey('nt', 'view')
 /** Where a file a note embeds is served from. `note` is the tex note whose

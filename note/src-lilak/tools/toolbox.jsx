@@ -2,7 +2,7 @@ import '../strings.js'
 import { useEffect, useRef, useState } from 'react'
 import { load, save } from 'racklist'
 import { press } from './press.js'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /** 도구함 — a note's tools, hanging off the side of ITS editor tab.
  *

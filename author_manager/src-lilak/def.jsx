@@ -15,7 +15,7 @@ import {
   coreOf, coreIn, spanOf, byPaperOrder, foldClass, GROUP_TYPES,
 } from './people.js'
 import { ListOut } from './widgets.jsx'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 // On a group's tab, that group's core is the one that counts — it is the only
 // core that means anything there.

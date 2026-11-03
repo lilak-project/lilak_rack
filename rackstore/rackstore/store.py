@@ -1092,15 +1092,28 @@ class Bin:
             return out
 
 
+class _Immutable(StaticFiles):
+    """The build's files carry a hash in their name (`index-DzqmCpAY.js`): one
+    that exists never changes, so the browser may keep it for good instead of
+    asking about every file on every opening. A new build is new names, and
+    the page that names them is never cached (below)."""
+
+    def file_response(self, *args, **kwargs):
+        r = super().file_response(*args, **kwargs)
+        r.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return r
+
+
 def mount_spa(app: FastAPI, dist: Path, name: str = "service") -> None:
     """Serve the built app. Must be mounted LAST: its catch-all would shadow
     every /api route registered after it."""
     dist = Path(dist)
     assets = dist / "assets"
     if assets.is_dir():
-        app.mount("/assets", StaticFiles(directory=str(assets)), name="assets")
+        app.mount("/assets", _Immutable(directory=str(assets)), name="assets")
 
-    @app.get("/{path:path}")
+    # HEAD too: a health check asks that way, and a GET-only route said 405.
+    @app.api_route("/{path:path}", methods=["GET", "HEAD"])
     def spa(path: str):
         candidate = (dist / path).resolve()
         if path and candidate.is_file() and candidate.is_relative_to(dist.resolve()):

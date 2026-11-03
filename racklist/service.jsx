@@ -109,17 +109,20 @@ function RackSolo({ def: declared, id }) {
   const remote = useRemoteDocs(def)
   const [folders, reloadFolders] = useFolders(def)
   useEffect(() => { fetchDoc().then(setDoc).catch((e) => setNote(String(e.message || e))) }, [])
+  // One channel for this page, closed with it — not a new one left open per save.
+  const told = useMemo(() => savedHere(def.key), [def.key])
+  useEffect(() => () => told?.close(), [told])
   const commit = useCallback(async (patch, said) => {
     if (!doc) return false
     try {
-      const r = await putDoc(doc.version, Object.fromEntries(def.docKeys.map((k) => [k, patch[k] ?? doc[k]])))
+      const r = await putDoc(doc.version, Object.fromEntries(def.docKeys.filter((k) => patch[k] !== undefined).map((k) => [k, patch[k]])))
       if (r.conflict) { if (r.doc) setDoc(r.doc); setNote(tr("rk_changed_meanwhile")); return false }
       setDoc(r.doc)
       setNote(said || tr("rk_saved"))
-      savedHere(def.key)?.postMessage(r.doc.version)
+      told?.postMessage({ version: r.doc.version, doc: r.doc })
       return true
     } catch (e) { setNote(String(e.message || e)); return false }
-  }, [doc, def])
+  }, [doc, def, told])
   const [, of, who] = /^class:([^:]+):(.+)$/.exec(id) || []
   const c = of && def.classes.find((x) => x.k === of && x.stored)
   const rec = c ? (doc?.[of] || []).find((r) => String(r.id) === who)
@@ -244,7 +247,9 @@ function RackList({ def: declared, slots = {} }) {
   const said = useMemo(() => savedHere(def.key), [def.key])
   useEffect(() => {
     if (!said) return undefined
-    said.onmessage = () => loadDoc().then(setDoc).catch(() => {})
+    // The saver sends the document it got back; a message from before that
+    // (a version alone) means read again.
+    said.onmessage = (e) => { if (e.data?.doc) setDoc(e.data.doc); else loadDoc().then(setDoc).catch(() => {}) }
     return () => said.close()
   }, [said])
   // Sent here from another service (#open=<id>): open that record once the
@@ -283,7 +288,11 @@ function RackList({ def: declared, slots = {} }) {
   const commit = useCallback(async (patch, saidAs) => {
     if (!doc) return false
     try {
-      const body = Object.fromEntries(def.docKeys.map((k) => [k, patch[k] ?? doc[k]]))
+      // Only the keys this edit touched: the store keeps the rest as they are
+      // (merge), and a paper's save no longer carries 2,000 authors with it.
+      // A source of the service's own (note) still gets the whole document.
+      const touched = Object.fromEntries(def.docKeys.filter((k) => patch[k] !== undefined).map((k) => [k, patch[k]]))
+      const body = def.source?.save ? Object.fromEntries(def.docKeys.map((k) => [k, patch[k] ?? doc[k]])) : touched
       const r = def.source?.save ? await def.source.save(body, doc) : await putDoc(doc.version, body)
       if (r.conflict) {
         if (r.doc) setDoc(r.doc)
@@ -292,7 +301,7 @@ function RackList({ def: declared, slots = {} }) {
       }
       setDoc(r.doc)
       setNote(saidAs || tr("rk_saved"))
-      said?.postMessage(r.doc.version)
+      said?.postMessage({ version: r.doc.version, doc: r.doc })
       return true
     } catch (e) { setNote(String(e.message || e)); return false }
   }, [doc, def, setNote, said])
@@ -437,7 +446,10 @@ function RackList({ def: declared, slots = {} }) {
   // A column may belong to some tabs only (a group's core on that group's tab).
   const cols = useMemo(() => L.colsOf('').filter((c) => !c.when || c.when(tab)), [L.colsOf, tab])   // eslint-disable-line react-hooks/exhaustive-deps
   const [tagAgain, setTagAgain] = useState(0)
-  const tagSources = useTagSources(tagAgain)
+  // The other services' tags are for the tags tab (its columns, its rows, a
+  // merge's names); an editor's suggestions ask on their own (useSharedTags).
+  // Asked when that tab is open, not five requests on every opening of a page.
+  const tagSources = useTagSources(tagAgain, !!cls)
   const { isFavTag, toggleFavTag } = useFavTags()
   // A tags tab: after this service's count, a column per other service that
   // shares tags (and per record kind here that wears them too: an author

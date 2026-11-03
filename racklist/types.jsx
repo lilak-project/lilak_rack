@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import './strings.js'
 import { tr, currentLang } from 'lilak-ui/i18n.jsx'
 import { RackTextRows } from './fields.jsx'
-import { authHeaders, linkProject, openInService, serviceColor } from './portal.js'
+import { authHeaders, linkProject, openInService, serviceColor, remoteDocOf } from './portal.js'
 import { useSharedTags, spellTag, tagKey, uniqueTags } from './tags.js'
 import { parseRule, describe, withUntil, withCount, withoutEnd, DAYS, dow, nth } from './rrule.js'
 
@@ -505,9 +505,8 @@ const REMOTE = new Map()        // `${svc}/${proj}` → Promise<doc>
 export function remoteDoc(svc, proj) {
   const k = `${svc}/${proj}`
   if (!REMOTE.has(k)) {
-    REMOTE.set(k, fetch(`/pp/${svc}/${proj}/api/data`, { headers: authHeaders() })
-      // Refused is not empty: the field says so (RefEdit) rather than offer nothing.
-      .then((r) => (r.ok ? r.json() : r.status === 403 ? { denied: true } : null)).catch(() => null))
+    // Refused is not empty: the field says so (RefEdit) rather than offer nothing.
+    REMOTE.set(k, remoteDocOf(svc, proj))
   }
   return REMOTE.get(k)
 }

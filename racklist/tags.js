@@ -16,7 +16,7 @@
  * and stored by its whole name.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { PORTAL_BASE, authHeaders, linkProject, newId } from './portal.js'
+import { PORTAL_BASE, authHeaders, linkProject, newId, remoteDocOf } from './portal.js'
 
 export const tagKey = (t) => String(t ?? '').trim().toLowerCase()
 /** Is `t` the tag `parent`, or inside it? */
@@ -181,13 +181,14 @@ export function sharedTagRows(sources, own) {
 
 /** The sharing services' answers ([] until they come); asked again when
  *  `again` changes (after a rename). */
-export function useTagSources(again) {
+export function useTagSources(again, wanted = true) {
   const [src, setSrc] = useState([])
   useEffect(() => {
+    if (!wanted) return undefined          // not asked until something shows them
     let on = true
     loadTagSources().then((x) => { if (on) setSrc(x) })
     return () => { on = false }
-  }, [again])
+  }, [again, wanted])
   return src
 }
 
@@ -246,9 +247,8 @@ let projAsk = null
 /** Every project: [{ id, name, tags, match, svc, proj }] ([] without project_manager). */
 export function loadProjects() {
   const proj = linkProject(PM)
-  projAsk ||= (!proj ? Promise.resolve([]) : fetch(`/pp/${PM}/${proj}/api/data`, { headers: authHeaders() })
-    .then((r) => (r.ok ? r.json() : {}))
-    .then((d) => (d.projects || []).filter((p) => p?.name)
+  projAsk ||= (!proj ? Promise.resolve([]) : remoteDocOf(PM, proj)
+    .then((d) => (d?.projects || []).filter((p) => p?.name)
       .map((p) => ({ id: p.id, name: p.name, tags: p.tags || [], match: p.match || 'or', svc: PM, proj })))
     .catch(() => []))
   return projAsk
@@ -269,9 +269,8 @@ let refAsk = null
 /** Every reference: [{ id, citeKey, title, svc, proj }] ([] without reference_manager). */
 export function loadReferences() {
   const proj = linkProject(RM)
-  refAsk ||= (!proj ? Promise.resolve([]) : fetch(`/pp/${RM}/${proj}/api/data`, { headers: authHeaders() })
-    .then((r) => (r.ok ? r.json() : {}))
-    .then((d) => (d.references || []).filter((r) => String(r?.citeKey || '').trim())
+  refAsk ||= (!proj ? Promise.resolve([]) : remoteDocOf(RM, proj)
+    .then((d) => (d?.references || []).filter((r) => String(r?.citeKey || '').trim())
       .map((r) => ({ id: r.id, citeKey: String(r.citeKey).trim(), title: r.title || '', svc: RM, proj })))
     .catch(() => []))
   return refAsk

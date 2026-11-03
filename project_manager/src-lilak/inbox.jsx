@@ -1,6 +1,6 @@
 import './strings.js'
 import { useEffect, useState } from 'react'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 import { authHeaders, linkProject, PORTAL_BASE } from 'racklist'
 
 /**

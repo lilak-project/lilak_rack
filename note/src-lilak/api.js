@@ -1,6 +1,6 @@
 import './strings.js'
 import { PORTAL_BASE, authHeaders } from 'racklist'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /** The note service's own API — not rackstore's. The editor, the tools and
  *  the print page all talk to it through here. */

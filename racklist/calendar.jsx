@@ -475,7 +475,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
   // over the same weeks runs from A into a dot at the edge, and on from a dot
   // beside B's gap. Drawn after layout, from where the days landed in the bars.
   const links = useRef(null)
-  const [, relayout] = useState(0)
+  const [laid, relayout] = useState(0)
   useEffect(() => {
     const f = () => relayout((n) => n + 1)
     window.addEventListener('resize', f)
@@ -521,7 +521,10 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
     }
     svg.setAttribute('height', String(el.scrollHeight))
     svg.innerHTML = out
-  })
+    // When a bar can have moved: the events, the weeks shown, a column's width,
+    // a settled animation (laid), an end being dragged (over). Not on every
+    // render — a hover or a lit day moves nothing, and this measures every bar.
+  }, [events, showLinks, span, dayW, laid, over])
 
   // ── one occurrence of a repeating record, right-clicked: for which of them ──
   const [ask, setAsk] = useState(null)          // { x, y, ev }

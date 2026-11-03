@@ -1,7 +1,7 @@
 import './strings.js'
 import { Decoration, EditorView, WidgetType } from '@codemirror/view'
 import { StateEffect, StateField } from '@codemirror/state'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /** `%` lines, folded away.
  *

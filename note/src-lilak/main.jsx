@@ -1,7 +1,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import App, { PrintView, SoloNote } from './App.jsx'
-import { tr } from 'lilak-ui'
+import { tr } from 'lilak-ui/i18n.jsx'
 
 /** Something threw while drawing. Without this the page is simply BLANK —
  *  and inside another service's frame (`?solo=`) a blank frame looks like a
