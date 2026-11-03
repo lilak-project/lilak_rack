@@ -492,7 +492,9 @@ def set_todo(body: TodoBody, _: dict = Depends(signed_in)):
 
 @app.get("/api/search")
 def search(q: str = "", _: dict = Depends(signed_in)) -> dict:
-    """Body search, which the list cannot do — it only carries a first line."""
+    """Body search, which the list cannot do — it only carries a first line.
+    A title counts too: a caller with only this search (the MCP tool) would
+    otherwise miss the note it is about to write a second time."""
     needle = q.strip().lower()
     if not needle:
         return {"hits": []}
@@ -503,6 +505,9 @@ def search(q: str = "", _: dict = Depends(signed_in)) -> dict:
                 hits.append({"id": n["id"], "title": n["title"], "line": i,
                              "text": ln.strip()[:160]})
                 break
+        else:
+            if needle in n["title"].lower():
+                hits.append({"id": n["id"], "title": n["title"], "text": ""})
     return {"hits": hits}
 
 

@@ -121,4 +121,12 @@ assert f.read_text(encoding="utf-8") == raw
 BIN.drop("notes", "bin-check")
 f.unlink()
 
+# ── search finds a note by its title, and a body line still wins ──
+from backend.main import search   # noqa: E402
+_f = NOTES / "search-check.md"
+_f.write_text("---\ntitle: 제목만 있는 낱말\ndate: 2026-11-03\n---\n\n본문 줄\n", encoding="utf-8")
+assert [(h["id"], h["text"]) for h in search("제목만 있는", {})["hits"]] == [("search-check", "")]
+assert search("본문 줄", {})["hits"][0]["text"] == "본문 줄"
+_f.unlink()
+
 print("note: ok")
