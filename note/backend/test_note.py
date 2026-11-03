@@ -129,4 +129,9 @@ assert [(h["id"], h["text"]) for h in search("제목만 있는", {})["hits"]] ==
 assert search("본문 줄", {})["hits"][0]["text"] == "본문 줄"
 _f.unlink()
 
+# ── a save adds one final newline at most: reading and saving back changes nothing
+from backend.main import _join, _split                                          # noqa: E402
+_once = _join({"title": "t"}, "본문")
+assert _once.endswith("본문\n") and _join(*_split(_once)) == _once, _once
+
 print("note: ok")

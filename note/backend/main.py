@@ -197,7 +197,10 @@ def _join(meta: dict, body: str) -> str:
             v = date.fromisoformat(v)
         clean[k] = v
     head = yaml.safe_dump(clean, allow_unicode=True, sort_keys=False).strip()
-    return f"---\n{head}\n---\n\n{body.lstrip()}\n" if head else body.lstrip() + "\n"
+    # One final newline, not one more each save: a read body already ends in it.
+    body = body.lstrip()
+    body += "" if body.endswith("\n") else "\n"
+    return f"---\n{head}\n---\n\n{body}" if head else body
 
 
 def _as_tags(v: Any) -> list:
