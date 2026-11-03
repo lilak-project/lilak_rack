@@ -1,4 +1,7 @@
 export default {
+  am_tab_authors: "authors",
+  am_tab_groups: "groups",
+  am_tab_affiliation: "affiliation",
   am_name_taken: "That name already exists.",
   am_cannot_undo: (a0) => `${a0} This cannot be undone.`,
   am_author: "Authors",

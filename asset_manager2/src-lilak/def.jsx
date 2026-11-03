@@ -74,7 +74,7 @@ function ListActions({ f, setF, ctx }) {
 export default {
   name: 'asset_manager2', title: tr("as_title"), unit: tr("as_unit"), key: 'am2',
   item: {
-    key: 'assets', id: 'assetId', noun: tr("as_asset"), allLabel: 'assets', tabId: 'assets',
+    key: 'assets', id: 'assetId', noun: tr("as_asset"), allLabel: tr('as_tab_assets'), tabId: 'assets',
     label: (a) => a.assetId || a.name || tr("as_asset"),
     order: { k: 'assetId', dir: 1 },
     findHint: tr("as_find_hint"),
@@ -112,7 +112,7 @@ export default {
   // The lists, newest first.
   classSort: { k: 'at', dir: -1 },
   classes: [
-    { k: 'records', label: 'lists', noun: tr("as_list"), countLabel: tr("as_count"),
+    { k: 'records', label: tr('as_tab_lists'), noun: tr("as_list"), countLabel: tr("as_count"),
       list: { ids: 'assetIds', owner: 'user', show: (a) => [a.name, a.location].filter(Boolean).join(' · ') },
       rowLabel: (r) => r.name || tr("as_list"),
       actions: (f, setF, ctx) => <ListActions f={f} setF={setF} ctx={ctx} />,

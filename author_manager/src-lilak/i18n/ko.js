@@ -1,4 +1,7 @@
 export default {
+  am_tab_authors: "저자",
+  am_tab_groups: "그룹",
+  am_tab_affiliation: "소속",
   am_name_taken: "같은 이름이 이미 있습니다.",
   am_cannot_undo: (a0) => `${a0} 되돌릴 수 없습니다.`,
   am_author: "저자",

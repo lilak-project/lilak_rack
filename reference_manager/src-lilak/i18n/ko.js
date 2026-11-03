@@ -1,4 +1,8 @@
 export default {
+  rm_tab_references: "레퍼런스",
+  rm_tab_authors: "저자",
+  rm_tab_journals: "저널",
+  rm_tab_tags: "태그",
   rm_title: "레퍼런스",
   rm_unit: "편",
   rm_paper: "논문",

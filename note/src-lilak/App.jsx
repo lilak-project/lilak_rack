@@ -263,7 +263,7 @@ const NOTE_DEF = {
   name: 'note', key: 'note', title: tr("nt_notes"), unit: tr("nt_unit"),
   source: { load: loadNotes, save: saveNotes },
   item: {
-    key: 'notes', noun: tr("nt_noun"), label: 'title', tabId: 'notes', allLabel: 'notes',
+    key: 'notes', noun: tr("nt_noun"), label: 'title', tabId: 'notes', allLabel: tr('nt_tab_notes'),
     // ★ is the file's own property (`favorite:` in the front matter), carried
     // on a field of its own so the kit's star never edits the body's tags.
     favorite: 'star',
@@ -305,7 +305,7 @@ const NOTE_DEF = {
         col: { w: 360, min: 120, drop: 1180 }, tone: 'dim' },
     ],
   },
-  classes: [{ k: 'tags', label: 'tags', field: 'tags' }],
+  classes: [{ k: 'tags', label: tr('nt_tab_tags'), field: 'tags' }],
 }
 /** The compiled PDF, in a pane of this app.
  *
@@ -409,8 +409,8 @@ export default function App() {
       </button>
     ),
     tabs: [
-      { id: 'todos', label: 'todos', render: (a) => <Todos a={a} tscope={tscope} who={who} /> },
-      { id: 'system', label: 'system todo', render: (a) => <Todos a={a} tscope={tscope} who={who} system /> },
+      { id: 'todos', label: tr('nt_tab_todos'), render: (a) => <Todos a={a} tscope={tscope} who={who} /> },
+      { id: 'system', label: tr('nt_tab_system'), render: (a) => <Todos a={a} tscope={tscope} who={who} system /> },
     ],
     editors: {
       item: (t, a) => (

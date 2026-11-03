@@ -1,4 +1,8 @@
 export default {
+  nt_tab_notes: "노트",
+  nt_tab_todos: "할 일",
+  nt_tab_system: "시스템 할 일",
+  nt_tab_tags: "태그",
   nt_upload_failed: (a0) => `올리지 못했습니다 (${a0}).`,
   nt_people: "사람",
   nt_todo: "할 일",

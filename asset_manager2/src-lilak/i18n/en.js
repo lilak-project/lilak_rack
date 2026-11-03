@@ -1,4 +1,6 @@
 export default {
+  as_tab_assets: "assets",
+  as_tab_lists: "lists",
   as_lt_save: "List",
   as_lt_update: "Move",
   as_lt_checkout: "Check out",

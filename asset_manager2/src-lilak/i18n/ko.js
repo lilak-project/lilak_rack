@@ -1,4 +1,6 @@
 export default {
+  as_tab_assets: "자산",
+  as_tab_lists: "목록",
   as_lt_save: "목록",
   as_lt_update: "위치 변경",
   as_lt_checkout: "반출",

@@ -1,4 +1,8 @@
 export default {
+  nt_tab_notes: "notes",
+  nt_tab_todos: "todos",
+  nt_tab_system: "system todo",
+  nt_tab_tags: "tags",
   nt_upload_failed: (a0) => `Could not upload (${a0}).`,
   nt_people: "people",
   nt_todo: "To-do",

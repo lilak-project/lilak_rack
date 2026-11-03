@@ -46,7 +46,7 @@ const classHooks = (list, key, what) => ({
 export default {
   name: 'author_manager', title: tr("am_author"), unit: tr("am_unit"), key: 'am',
   item: {
-    key: 'authors', noun: tr("am_author_noun"), allLabel: 'authors', tabId: 'total',
+    key: 'authors', noun: tr("am_author_noun"), allLabel: tr('am_tab_authors'), tabId: 'total',
     label: anyName,
     findHint: tr("am_find_hint"),
     // No column pressed: the order an author list is written in — core first,
@@ -113,7 +113,7 @@ export default {
   },
   classSort: { k: 'name', dir: 1 },
   classes: [
-    { k: 'groups', label: 'groups', noun: tr("am_group"), ...classHooks('groups', { rows: 'groups', by: 'group' }, 'group'),
+    { k: 'groups', label: tr('am_tab_groups'), noun: tr("am_group"), ...classHooks('groups', { rows: 'groups', by: 'group' }, 'group'),
       fields: [
         { k: 'name', label: tr("am_name"), type: 'text', required: true, width: 220, col: { w: 200, min: 80, label: 'name' },
           hint: tr("am_rename_keeps_links") },
@@ -132,7 +132,7 @@ export default {
         // which project it belongs to.
         { k: 'tags', label: tr('rk_tags'), type: 'tags', col: { w: 160, min: 60, label: 'tags' } },
       ] },
-    { k: 'affiliations', label: 'affiliation', noun: tr("am_affiliation"), ...classHooks('affiliations', { rows: 'affiliations', by: 'tag' }, 'affiliation'),
+    { k: 'affiliations', label: tr('am_tab_affiliation'), noun: tr("am_affiliation"), ...classHooks('affiliations', { rows: 'affiliations', by: 'tag' }, 'affiliation'),
       fields: [
         { k: 'name', label: tr("am_name"), type: 'text', required: true, width: 220, col: { w: 200, min: 80, label: 'name' },
           hint: tr("am_rename_keeps_links") },

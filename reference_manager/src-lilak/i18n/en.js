@@ -1,4 +1,8 @@
 export default {
+  rm_tab_references: "references",
+  rm_tab_authors: "authors",
+  rm_tab_journals: "journals",
+  rm_tab_tags: "tags",
   rm_title: "References",
   rm_unit: " papers",
   rm_paper: "paper",

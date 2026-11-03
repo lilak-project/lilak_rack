@@ -53,7 +53,7 @@ const roleCol = (k, label) => ({
 export default {
   name: 'reference_manager', title: tr("rm_title"), unit: tr("rm_unit"), key: 'rm',
   item: {
-    key: 'references', noun: tr("rm_paper"), allLabel: 'references', tabId: 'total',
+    key: 'references', noun: tr("rm_paper"), allLabel: tr('rm_tab_references'), tabId: 'total',
     label: refLabel,
     order: { k: 'citeKey', dir: 1 },
     findHint: tr("rm_find_hint"),
@@ -115,7 +115,7 @@ export default {
   },
   classSort: { k: 'name', dir: 1 },
   classes: [
-    { k: 'authors', label: 'authors', keyBy: 'id', countLabel: 'papers',
+    { k: 'authors', label: tr('rm_tab_authors'), keyBy: 'id', countLabel: 'papers',
       rowLabel: (a) => a.tag || a.name,
       fill: (a) => ({ ...a, name: String(a.name || '').trim(), tag: String(a.tag || '').trim() || handleFor(a.name),
         aliases: (a.aliases || []).map((x) => String(x).trim()).filter(Boolean) }),
@@ -152,7 +152,7 @@ export default {
         { k: 'note', label: tr("rm_note"), type: 'longtext', rows: 2 },
         { k: 'papers', label: tr("rm_paper"), type: 'authorpapers', get: () => null, when: (a, { draft }) => !draft },
       ] },
-    { k: 'journals', label: 'journals', countLabel: 'papers',
+    { k: 'journals', label: tr('rm_tab_journals'), countLabel: 'papers',
       fill: (j) => ({ ...j, name: String(j.name || '').trim(), shortName: String(j.shortName || j.name || '').trim() }),
       check: (j, doc, prev) => ((doc.journals || []).some((x) => x.name === j.name && x !== prev) ? tr("rm_journal_taken") : ''),
       deleteWarn: () => tr("rm_journal_delete_warn"),
@@ -166,7 +166,7 @@ export default {
         { k: 'issn', label: 'issn', type: 'text', mono: true, width: 140 },
         { k: 'url', label: 'url', type: 'url' },
       ] },
-    { k: 'tags', label: 'tags', field: 'tags', countLabel: 'papers' },
+    { k: 'tags', label: tr('rm_tab_tags'), field: 'tags', countLabel: 'papers' },
   ],
   listing: { tokens: (doc) => TOKENS(doc), presets: PRESETS },
 }
