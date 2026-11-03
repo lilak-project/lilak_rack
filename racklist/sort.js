@@ -1,4 +1,5 @@
 /** Sorting, filling a template, and the values a column offers. */
+import { tagKey, tagWithin } from './tags.js'
 
 /** Blanks last whichever way the arrow points: an empty cell is not a value.
  *  A missing getter leaves the order alone: a service whose tabs sort by
@@ -29,6 +30,26 @@ export const fill = (tpl, rec, tokens) => String(tpl).replace(/\{([^{}]+)\}/g, (
 export function facetOf(recs, get) {
   if (!get) return []
   const n = new Map()
+  // A column of tags (`get.many`) offers each tag, and each parent of one, not
+  // the whole list a record wears. A record counts once under a parent.
+  if (get.many) {
+    const spelt = new Map()
+    for (const r of recs) {
+      const seen = new Set()
+      for (const t of get.many(r)) {
+        const parts = String(t).trim().split('/')
+        parts.forEach((_, i) => {
+          const v = parts.slice(0, i + 1).join('/'), k = tagKey(v)
+          if (!k || seen.has(k)) return
+          seen.add(k)
+          n.set(k, (n.get(k) || 0) + 1)
+          if (!spelt.has(k)) spelt.set(k, v)
+        })
+      }
+    }
+    return [...n.entries()].map(([k, count]) => ({ v: spelt.get(k), count }))
+      .sort((x, y) => y.count - x.count || x.v.localeCompare(y.v, 'ko'))
+  }
   for (const r of recs) {
     const v = String(get(r) ?? '')
     if (v) n.set(v, (n.get(v) || 0) + 1)
@@ -37,10 +58,19 @@ export function facetOf(recs, get) {
     .sort((x, y) => y.count - x.count || x.v.localeCompare(y.v, 'ko'))
 }
 
+/** The key a column's excluded values are kept under, beside its chosen ones. */
+export const NOT = (k) => `${k}!`
+const isNot = (k) => k.endsWith('!')
+const matches = (rec, v, get) => (get?.many ? get.many(rec).some((t) => tagWithin(t, v)) : String(get?.(rec) ?? '') === v)
+
 /** Every selected value must match, column by column: AND across columns,
- *  OR inside one. An empty column is not a constraint. */
-export const passesFilter = (rec, fsel, sorters) => Object.entries(fsel).every(([k, vals]) =>
-  !vals.length || vals.includes(String(sorters[k]?.(rec) ?? '')))
+ *  OR inside one. An excluded value must not match. An empty column is not a
+ *  constraint. A tag chosen or excluded takes what is inside it along. */
+export const passesFilter = (rec, fsel, sorters) => Object.entries(fsel).every(([k, vals]) => {
+  if (!vals.length) return true
+  if (isNot(k)) return !vals.some((v) => matches(rec, v, sorters[k.slice(0, -1)]))
+  return vals.some((v) => matches(rec, v, sorters[k]))
+})
 
 /** The sort STACK. Clicking a column sorts by it and keeps what you sorted by
  *  before as the tiebreaker, so name → affiliation → core comes out ordered by

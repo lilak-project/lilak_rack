@@ -175,6 +175,9 @@ export function usePaneSplit(key, initial = 50, { edge = 'left', min = 20, max =
 
   return {
     pct,
+    /** For a pane that opens at a width worked out from the room it has —
+     *  note's tools take exactly what the pane gains by going full width. */
+    setPct: (v) => setPct(Math.min(max, Math.max(min, v))),
     reset: () => setPct(initial),
     /** on the pane that comes first */
     leftStyle: { flex: `0 0 ${pct}%`, maxWidth: `${pct}%` },

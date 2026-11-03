@@ -3,6 +3,7 @@ one (or merging several) in every record, whatever the case.
 
     service_manager/.venv/bin/python lilak_rack/tests/test_store_tags.py
 """
+import copy
 import os
 import tempfile
 import time
@@ -37,6 +38,14 @@ class Tags(unittest.TestCase):
         app = FastAPI()
         self.doc.mount(app)
         self.c = TestClient(app)
+
+    def test_tagged_finds_what_is_inside(self):
+        d = copy.deepcopy(self.doc.read())
+        d["items"] += [{"id": "in", "tags": ["Agent/rack"]}, {"id": "no", "tags": ["agents"]}]
+        self.doc.write(d)
+        got = [x["rec"]["id"] for x in self.c.get("/api/tagged?tag=agent", headers=H).json()["items"]]
+        self.assertIn("in", got)
+        self.assertNotIn("no", got)
 
     def test_counts_and_tagged(self):
         self.assertEqual(self.c.get("/api/tags", headers=H).json()["tags"]["SpiRIT"], 1)

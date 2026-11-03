@@ -31,6 +31,11 @@ export function RackActions({
   // Changed and about to save on its own: the close button's border runs
   // round it — a word saying so would push the bar about each time.
   pending, onClose, closeDisabled,
+  // Leaving is on the left — except where `extra` is a row this editor is
+  // chiefly driven from (note's mode and its tools), and close then reads as
+  // dropped in the middle of it. Opt in, because the place of a button is a
+  // thing every editor should agree about by default.
+  closeLast,
   onCancel, onRevert, revertTitle, onDelete, deleteWarn = tr("rk_cannot_undo"), onClone,
   // Anything this one editor can do that the others cannot — a preview, a
   // paste, a re-scan. It rides with save and cancel, which are also about
@@ -38,6 +43,10 @@ export function RackActions({
   extra,
 }) {
   const [sure, setSure] = useState(false)
+  const close = () => (
+    <button type="button" className={`rl-btn${pending ? ' rl-pending' : ''}`} disabled={closeDisabled}
+      title={pending ? tr("rk_saving_soon") : tr("rk_close_saves")} onClick={onClose}>close</button>
+  )
   if (draft) {
     return (
       <div className="rl-acts">
@@ -54,12 +63,11 @@ export function RackActions({
       {onSave && (
         <button type="button" className="rl-btn rl-go" disabled={saveDisabled} onClick={onSave}>{saveLabel}</button>
       )}
-      {onClose ? (
-        <button type="button" className={`rl-btn${pending ? ' rl-pending' : ''}`} disabled={closeDisabled}
-          title={pending ? tr("rk_saving_soon") : tr("rk_close_saves")} onClick={onClose}>close</button>
-      ) : onCancel && <button type="button" className="rl-btn" onClick={onCancel}>cancel</button>}
+      {onClose && !closeLast ? close() : null}
+      {!onClose && onCancel ? <button type="button" className="rl-btn" onClick={onCancel}>cancel</button> : null}
       {onClone && <button type="button" className="rl-btn" title={tr("rk_clone_hint")} onClick={onClone}>clone</button>}
       {extra}
+      {onClose && closeLast ? close() : null}
       {hint && <span className="rl-hint">{hint}</span>}
       <span className="rl-sp" />
       {onRevert && (

@@ -3,6 +3,7 @@ import './strings.js'
 import { tr, currentLang } from 'lilak-ui/i18n.jsx'
 import { RackActions } from './actions.jsx'
 import { RackField } from './fields.jsx'
+import { spellTag, tagKey, tagMoves, tagNameOk, tagWithin, uniqueTags } from './tags.js'
 
 /**
  * Folding several names into one.
@@ -69,6 +70,52 @@ export function RackMergeButtons({ merge, noun = tr("rk_tag"), onOpen }) {
           onClick={() => onOpen(merge.names)}>{tr("rk_merge_n", merge.size)}</button>
       )}
     </>
+  )
+}
+
+/** Picked tags, put under another tag (typing a new name makes one) or back at
+ *  the top. `all` is every tag in use. */
+export function RackMoveTags({ names = [], all = [], scope, onMove, onCancel }) {
+  const [dest, setDest] = useState('')
+  const [busy, setBusy] = useState(false)
+  // Any tag can be a parent, and so can a parent nothing wears.
+  const parents = useMemo(() => uniqueTags(all.flatMap((t) => t.split('/').map((_, i, p) => p.slice(0, i + 1).join('/')))), [all])
+  const typed = dest.trim().replace(/^\/+|\/+$/g, '')
+  const to = typed && spellTag(typed, parents)
+  const moves = useMemo(() => tagMoves(all, names, to), [all, names, to])
+  const inside = names.some((n) => tagWithin(to, n))
+  const bad = (to && !tagNameOk(to)) || moves.some((m) => /^[0-9]+$/.test(m.to))
+  const used = new Set(all.map(tagKey))
+  return (
+    <div className="rl-edit">
+      <RackActions saveLabel={tr("rk_move")} hint={scope}
+        onSave={async () => {
+          if (busy) return
+          setBusy(true)
+          try { await onMove(moves) } finally { setBusy(false) }
+        }}
+        saveDisabled={busy || !moves.length || inside || bad} onCancel={onCancel} />
+      <div className="rl-rec">
+        <RackField label={tr("rk_move_dest")}>
+          <input className="rl-in" style={{ width: 260 }} list="rl-move-dest" value={dest} autoFocus
+            placeholder={tr("rk_move_top")} onChange={(e) => setDest(e.target.value)} />
+          <datalist id="rl-move-dest">{parents.map((t) => <option key={t} value={t} />)}</datalist>
+          {inside && <span className="rl-hint">{tr("rk_move_inside")}</span>}
+          {bad && !inside && <span className="rl-hint">{tr("rk_move_bad")}</span>}
+        </RackField>
+        <RackField label={tr("rk_move_preview")}>
+          <div className="rl-rows">
+            {moves.length === 0 && <span className="rl-hint">{tr("rk_none")}</span>}
+            {moves.map((m) => (
+              <span key={m.from} className="rl-rrow">
+                <span className="rl-gone">{m.from}</span> → {m.to}
+                {used.has(tagKey(m.to)) && <span className="rl-hint">{tr("rk_move_merges")}</span>}
+              </span>
+            ))}
+          </div>
+        </RackField>
+      </div>
+    </div>
   )
 }
 

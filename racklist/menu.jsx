@@ -38,8 +38,9 @@ export function MenuRow({ children }) {
  *  `count`: a number on it (what is picked). `lit`: something tucked in it
  *  is on (a filter). `onToggle` stands in for the button's own (another page's
  *  menu opened from here). `bare`: no button — the menu is a strip at the top
- *  of the page, opened from the page around it. */
-export function RackMenu({ m, label = '⋯', count = 0, lit = false, bare = false, onToggle, children }) {
+ *  of the page, opened from the page around it. `beside`: what stands right of
+ *  the button, open or shut. */
+export function RackMenu({ m, label = '⋯', count = 0, lit = false, bare = false, onToggle, beside = null, children }) {
   const box = m.open && (
     <div className="rl-menu" onClick={(e) => { if (e.target.closest('button') && !e.target.closest('[data-keep]')) m.setOpen(false) }}>
       {children}
@@ -53,6 +54,7 @@ export function RackMenu({ m, label = '⋯', count = 0, lit = false, bare = fals
         <span className="rl-more-l">{label}</span>
         {count > 0 && <span className="rl-more-n">{count}</span>}
         <span className="rl-more-c">{m.open ? '▸' : '▾'}</span></button>
+      {beside}
       {box}
     </>
   )

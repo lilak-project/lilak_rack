@@ -3,7 +3,7 @@ import { asSorts, byKeys } from './sort.js'
 import { useEffect, useMemo, useState } from 'react'
 import { typeOf, refTarget, remoteDoc, refLabelOf, backlinksOf } from './types.jsx'
 import { linkProject, portalUser } from './portal.js'
-import { tagKey } from './tags.js'
+import { tagKey, tagWithin } from './tags.js'
 import { tr } from 'lilak-ui/i18n.jsx'
 
 /**
@@ -229,6 +229,15 @@ export function itemSorters(def, doc, extra = {}) {
     const c = ctxFor(def, doc, f, extra)
     const by = f.sort ? (v) => f.sort(v, c) : (v) => T.sort(v, c)
     out[f.k] = (r) => by(valueOf(f, r, c))
+    // A record wears several tags, and is filtered by each of them. The same
+    // holds for a column of LINKS (책임자, 저자): the filter offers each person
+    // rather than the list of them as one string. A field with values of its
+    // own idea (note's `@people`, written one way and shown another) says so
+    // itself and the rest is the same.
+    if (f.many) out[f.k].many = (r) => [f.many(r, c)].flat().filter(Boolean)
+    else if (caseFree(f)) out[f.k].many = (r) => [valueOf(f, r, c)].flat().filter(Boolean)
+    else if (isRef(f)) out[f.k].many = (r) => [valueOf(f, r, c)].flat()
+      .map((l) => refLabelOf(l, f, c)).filter(Boolean)
   }
   return out
 }
@@ -326,7 +335,8 @@ function worn(rec, field) {
   const vs = (Array.isArray(v) ? v : (v ? [v] : [])).filter(Boolean)
   return isRef(field) ? vs.map(linkKey) : caseFree(field) ? vs.map(tagKey) : vs.map(String)
 }
-export const wears = (rec, field, key) => worn(rec, field).includes(caseFree(field) ? tagKey(key) : key)
+export const wears = (rec, field, key) => (caseFree(field)
+  ? worn(rec, field).some((t) => tagWithin(t, key)) : worn(rec, field).includes(key))
 
 /** A class tab's rows: the class records (or the names in use), each with how
  *  many items wear it. A row's `key` is what an item wears; `name` is what is

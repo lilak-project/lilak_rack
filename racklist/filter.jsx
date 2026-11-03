@@ -1,6 +1,6 @@
 import './strings.js'
 import { useCallback, useMemo, useState } from 'react'
-import { facetOf, passesFilter } from './sort.js'
+import { NOT, facetOf, passesFilter } from './sort.js'
 import { tr } from 'lilak-ui/i18n.jsx'
 
 /**
@@ -9,7 +9,8 @@ import { tr } from 'lilak-ui/i18n.jsx'
  * It has a MODE. In it the column labels stop sorting and start choosing which
  * column you are picking values from; the values arrive as rows of the same
  * table, with how many each would keep, and the picks pile up across columns
- * until they are applied. AND across columns, OR inside one.
+ * until they are applied. AND across columns, OR inside one. Pressing a value
+ * again turns it into an exclusion (-), and once more takes it off.
  *
  * The one search box searches the values on offer while the mode is on — a
  * column with two thousand values is not a list you scroll.
@@ -37,9 +38,12 @@ export function useFacetFilter(scope, sorters, initial = {}) {
     return q ? all.filter((x) => x.v.toLowerCase().includes(q)) : all
   }, [all, find])
 
+  const excluded = useCallback((k) => sel[NOT(k)] || [], [sel])
   const toggle = useCallback((v) => setSel((s) => {
-    const cur = s[col] || []
-    return { ...s, [col]: cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v] }
+    const yes = s[col] || [], no = s[NOT(col)] || []
+    if (yes.includes(v)) return { ...s, [col]: yes.filter((x) => x !== v), [NOT(col)]: [...no, v] }
+    if (no.includes(v)) return { ...s, [NOT(col)]: no.filter((x) => x !== v) }
+    return { ...s, [col]: [...yes, v] }
   }), [col])
 
   const start = useCallback(() => { setMode(true); setFind('') }, [])
@@ -51,9 +55,9 @@ export function useFacetFilter(scope, sorters, initial = {}) {
   /** Does this record pass what has been applied? */
   const passes = useCallback((r) => passesFilter(r, sel, sorters), [sel, sorters])
   /** What RackTable needs to turn its labels into value pickers. */
-  const tableFacet = mode ? { col, count: (k) => chosen(k).length, onPick: pick } : null
+  const tableFacet = mode ? { col, count: (k) => chosen(k).length + excluded(k).length, onPick: pick } : null
 
-  return { mode, col, sel, on, find, setFind, setSel, setOn, facet, total, chosen,
+  return { mode, col, sel, on, find, setFind, setSel, setOn, facet, total, chosen, excluded,
            toggle, start, pick, apply, cancel, clear, passes, tableFacet }
 }
 
@@ -101,14 +105,17 @@ export function FacetRows({ f, labels = {} }) {
   }
   return f.facet.map(({ v, count }, i) => {
     const on = f.chosen(f.col).includes(v)
+    const no = f.excluded(f.col).includes(v)
     return (
-      <div key={v} className={`rl-row rl-frow rl-hit${on ? ' on' : ''}`}
-        onClick={() => f.toggle(v)}>
+      <div key={v} className={`rl-row rl-frow rl-hit${on ? ' on' : ''}${no ? ' no' : ''}`}
+        title={tr("rk_filter_cycle")} onClick={() => f.toggle(v)}>
         <span className="rl-chk">
-          <input type="checkbox" checked={on} tabIndex={-1} readOnly aria-label={tr("rk_pick_value", v)} />
+          {/* `indeterminate` is the box's own -, and is only ever set from script. */}
+          <input type="checkbox" checked={on} tabIndex={-1} readOnly aria-label={tr("rk_pick_value", v)}
+            ref={(el) => { if (el) el.indeterminate = no }} />
         </span>
         <span className="rl-gut">{i + 1}</span>
-        <span className="rl-c rl-ink">{v}</span>
+        <span className={`rl-c rl-ink${no ? ' rl-gone' : ''}`}>{v}</span>
         <span className="rl-c rl-num">{count}</span>
       </div>
     )

@@ -1,6 +1,6 @@
 import './strings.js'
 import { tr } from 'lilak-ui'
-import { FAV, tagKey, bibAuthors, bibOrder, jAbbrev, journalRec, nameParts } from 'racklist'
+import { FAV, tagKey, tagWithin, bibAuthors, bibOrder, jAbbrev, journalRec, nameParts } from 'racklist'
 /**
  * What makes a reference a REFERENCE — the parts of reference_manager that are
  * about papers rather than about lists: how a name is spelled three ways, the
@@ -111,7 +111,7 @@ export const shortRef = (doc, r) => [
 // at first, but nothing distinguished them from a tag: same many-to-many, no
 // fields of their own, nothing to edit. They are tags.
 export const tagsOf = (r) => (r.tags || []).filter(Boolean)
-export const inTag = (r, t) => tagsOf(r).some((x) => tagKey(x) === tagKey(t))
+export const inTag = (r, t) => tagsOf(r).some((x) => tagWithin(x, t))
 
 /** Papers this one lists, and papers that list it — one is stored, the other
  *  is counted, because storing both is two places to disagree. */

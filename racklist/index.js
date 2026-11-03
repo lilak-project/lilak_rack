@@ -8,6 +8,7 @@ export { RackItemEditor, dropItems } from './editor.jsx'
 export { RackBulkEditor, bulkFields } from './bulk.jsx'
 export { RackListing } from './listing.jsx'
 export { bibText, bibEntry, bibAuthors, bibOrder, nameParts, jAbbrev, journalRec } from './bib.js'
+export { RackFrame } from './frame.jsx'
 export { RackFolder, RackFilePane, RackSettings, useFolders, fileSrc, fileUrl, scanFiles, onDesktop, copyText } from './files.jsx'
 export { registerType, typeOf, remoteDoc, forgetRemote, useRefOptions } from './types.jsx'
 export {
@@ -15,7 +16,7 @@ export {
   classRows, fixedTabs, itemTabId, itemScope, labelOf, useRemoteDocs, valueOf,
 } from './schema.js'
 export { RackTable, RackRow, RackTabs } from './table.jsx'
-export { tagKey, mergeTags, loadSharedTags, loadTagSources, loadTagged, forgetTagSources, renameTagEverywhere, sharedTagRows, useTagSources, useSharedTags, useFavTags, spellTag, uniqueTags, loadProjects, forgetProjects, projectWears, useProjects, loadReferences, forgetReferences, useReferences, referenceDoc, addReference } from './tags.js'
+export { tagKey, tagWithin, tagTree, tagMoves, tagRenames, tagNameOk, renameTagHere, mergeTags, loadSharedTags, loadTagSources, loadTagged, forgetTagSources, renameTagEverywhere, sharedTagRows, useTagSources, useSharedTags, useFavTags, spellTag, uniqueTags, loadProjects, forgetProjects, projectWears, useProjects, loadReferences, forgetReferences, useReferences, referenceDoc, addReference, nameText, nameKey, authorKeys, loadAuthors, forgetAuthors, authorFor, authorsNamed, useAuthors } from './tags.js'
 export { useEditorPanes, RackPaneStrip, RackPaneTools, paneLayout, paneStyles, LEFT, RIGHT, FULL } from './panes.jsx'
 export { RackActions } from './actions.jsx'
 export { RackField, RackTextRows } from './fields.jsx'

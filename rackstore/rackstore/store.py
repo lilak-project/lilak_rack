@@ -694,7 +694,8 @@ class Document:
 
         @app.get("/api/tagged")
         def get_tagged(tag: str = "", project: str = "", _: dict = Depends(signed_in)) -> dict:
-            """The records wearing `tag` (any case), each with the list it is
+            """The records wearing `tag` (any case) or a tag inside it (`tag/x`),
+            each with the list it is
             in — what project_manager gathers from every service. A record
             here names no project (`project`: only note's text does)."""
             want = tag.strip().lower()
@@ -706,7 +707,7 @@ class Document:
                     continue
                 for r in cur.get(k) or []:
                     tags = r.get("tags") if isinstance(r, dict) else None
-                    if isinstance(tags, list) and any(isinstance(t, str) and t.strip().lower() == want for t in tags):
+                    if isinstance(tags, list) and any(isinstance(t, str) and f"{t.strip().lower()}/".startswith(f"{want}/") for t in tags):
                         out.append({"key": k, "rec": r})
             return {"items": out}
 

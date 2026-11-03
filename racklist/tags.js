@@ -10,11 +10,84 @@
  * shown for it is the spelling used most, and a tag typed is stored in that
  * spelling when one is already in use. Each service keeps its own records;
  * this only ever reads the others.
+ *
+ * `/` makes a tag a child: `agent/rack` is inside `agent`. The parent is not
+ * stored anywhere, it exists because a child does, and a tag is always shown
+ * and stored by its whole name.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { authHeaders, linkProject, newId } from './portal.js'
+import { PORTAL_BASE, authHeaders, linkProject, newId } from './portal.js'
 
 export const tagKey = (t) => String(t ?? '').trim().toLowerCase()
+/** Is `t` the tag `parent`, or inside it? */
+export const tagWithin = (t, parent) => {
+  const k = tagKey(t), p = tagKey(parent)
+  return !!p && (k === p || k.startsWith(`${p}/`))
+}
+
+/** Flat rows ({ key, name, count, per }) as an outline: a row for every parent,
+ *  worn or not, counting what is inside it. Returns the rows to draw, each with
+ *  `depth`, `kids` and `open`. `order` sorts each level.
+ *  ponytail: a record wearing two children counts twice in the parent; exact
+ *  numbers need /api/tags to count parents itself. */
+export function tagTree(rows, isOpen, order) {
+  const nodes = new Map()
+  const top = []
+  const node = (name) => {
+    const key = tagKey(name)
+    if (nodes.has(key)) return nodes.get(key)
+    const n = { key, name, count: 0, per: {}, group: true, under: [] }
+    nodes.set(key, n)
+    const i = name.lastIndexOf('/')
+    ;(i > 0 ? node(name.slice(0, i)).under : top).push(n)
+    return n
+  }
+  for (const r of rows) Object.assign(node(r.name), r, { group: false })
+  const total = (n) => {
+    for (const c of n.under) {
+      total(c)
+      n.count += c.count
+      for (const [k, v] of Object.entries(c.per)) n.per[k] = (n.per[k] || 0) + v
+    }
+  }
+  top.forEach(total)
+  const out = []
+  const walk = (list, depth) => {
+    for (const n of order ? [...list].sort(order) : list) {
+      const open = n.under.length > 0 && isOpen(n.key)
+      out.push({ ...n, depth, kids: n.under.length, open })
+      if (open) walk(n.under, depth + 1)
+    }
+  }
+  walk(top, 0)
+  return out
+}
+
+/** Picked tags moved under `dest` ('' = the top), what is inside each going
+ *  along: `a/b` under `x` is `x/b`, and `a/b/c` is `x/b/c`. A pick inside
+ *  another pick follows the outer one. `names` are the tags in use. */
+export function tagMoves(names, picked, dest) {
+  const tops = picked.filter((p) => !picked.some((q) => tagKey(q) !== tagKey(p) && tagWithin(p, q)))
+  const out = []
+  for (const p of tops) {
+    const leaf = p.slice(p.lastIndexOf('/') + 1)
+    const head = dest ? `${dest}/${leaf}` : leaf
+    for (const n of names) {
+      if (!tagWithin(n, p)) continue
+      const to = head + n.slice(p.length)
+      if (tagKey(to) !== tagKey(n)) out.push({ from: n, to })
+    }
+  }
+  return out
+}
+
+/** A rename of `gone` to `to`, with what is inside each following it. */
+export const tagRenames = (names, gone, to) => uniqueTags([...gone, ...names.filter((n) => gone.some((g) => tagWithin(n, g)))])
+  .map((from) => ({ from, to: to + from.slice(gone.find((g) => tagWithin(from, g)).length) }))
+  .filter((m) => m.from !== m.to)
+
+/** A name another service's text can hold: note's tag rule. */
+export const tagNameOk = (t) => /^(?![0-9]+$)[^\s#.,;:!?()[\]{}'"]+$/.test(t)
 
 /** { name: count, … } from several places → [{ name, count }], one per tag
  *  whatever its case, named by its commonest spelling, most worn first. */
@@ -71,13 +144,18 @@ export const forgetTagSources = () => { asked = null }
  *  (but `skip`, which renames its own): each one's POST /api/tags/rename, in
  *  turn. [{ svc, label, changed } | { svc, label, error }]; the answers are
  *  forgotten after. */
-export const renameTagEverywhere = (from, to, { skip } = {}) => loadTagSources().then((src) => Promise.all(src.filter((s) => s.svc !== skip).map((s) =>
+export const renameTagEverywhere = (from, to, { skip, wearing } = {}) => loadTagSources().then((src) => Promise.all(src
+  .filter((s) => s.svc !== skip && (!wearing || Object.keys(s.tags).some((t) => from.some((f) => tagKey(f) === tagKey(t))))).map((s) =>
   fetch(`/pp/${s.svc}/${s.proj}/api/tags/rename`, {
     method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to }),
   }).then(async (r) => (r.ok ? { svc: s.svc, label: s.label, changed: (await r.json()).changed }
     : { svc: s.svc, label: s.label, error: (await r.json().catch(() => ({}))).detail || r.status }))
     .catch((e) => ({ svc: s.svc, label: s.label, error: String(e.message || e) }))))
   .finally(forgetTagSources))
+/** The same, in this project of this service only. */
+export const renameTagHere = (from, to) => fetch(`${PORTAL_BASE}/api/tags/rename`, {
+  method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to }),
+}).then(async (r) => (r.ok ? null : (await r.json().catch(() => ({}))).detail || r.status)).catch((e) => String(e.message || e))
 export const loadSharedTags = () => loadTagSources().then((src) => mergeTags(src.map((x) => x.tags)))
 
 /** One row per tag across the services: { key, name, count, by: [{ svc,
@@ -178,9 +256,9 @@ export function loadProjects() {
 export const forgetProjects = () => { projAsk = null }
 /** Does a record wearing `tags` belong to project `p`? All its tags or any (`p.match`). */
 export function projectWears(p, tags) {
-  const have = new Set((tags || []).map(tagKey))
   const want = (p.tags || []).map(tagKey).filter(Boolean)
-  return want.length > 0 && (p.match === 'and' ? want.every((k) => have.has(k)) : want.some((k) => have.has(k)))
+  const has = (k) => (tags || []).some((t) => tagWithin(t, k))
+  return want.length > 0 && (p.match === 'and' ? want.every(has) : want.some(has))
 }
 // ─── references ────────────────────────────────────────────────────────────
 // A reference (reference_manager's record) is one paper, known by its cite
@@ -259,6 +337,73 @@ export function useProjects() {
   useEffect(() => {
     let on = true
     loadProjects().then((x) => { if (on) setList(x) })
+    return () => { on = false }
+  }, [])
+  return list
+}
+
+// ─── people ────────────────────────────────────────────────────────────────
+// A person (author_manager's record) is written `@이정우` or `@JungWooLee`, as
+// a tag is `#name` and a project `+name`. There is no handle to keep in step:
+// the NAME is the key. It is run together — a mention cannot hold a space —
+// and read without case or script, so the same person is reached by their
+// Korean name, their English one or their nick. This only ever reads the list.
+const AM = 'author_manager'
+/** A name as a mention writes it: spaces, dots, hyphens and apostrophes out.
+ *  "Jung Woo Lee" is `@JungWooLee`; 이정우 is already one word. */
+export const nameText = (n) => String(n ?? '').replace(/[\s.·'’\-]+/g, '')
+/** The same, compared: `@jungwoolee` is `@JungWooLee`. */
+export const nameKey = (n) => nameText(n).toLowerCase()
+/** The spellings that reach one person — their Korean name, their English name
+ *  and their nick, whichever they have. */
+export const authorKeys = (p) => [...new Set([p.kor, p.eng, p.nick].map(nameKey).filter(Boolean))]
+
+let authAsk = null
+/** Every person: [{ id, kor, eng, nick, email, keys, svc, proj }] ([] without
+ *  author_manager). `keys` is what `@` matches; the names are what is shown. */
+export function loadAuthors() {
+  const proj = linkProject(AM)
+  authAsk ||= (!proj ? Promise.resolve([]) : fetch(`/pp/${AM}/${proj}/api/data`, { headers: authHeaders() })
+    .then((r) => (r.ok ? r.json() : {}))
+    .then((d) => (d.authors || []).map((a) => {
+      const p = {
+        id: a.id,
+        kor: `${(a.korFamily || '').trim()}${(a.korGiven || '').trim()}`,
+        eng: [a.engFirst, a.engMiddle, a.engLast].filter(Boolean).join(' '),
+        nick: String(a.nick || '').trim(),
+        email: String(a.repEmail || '').trim() || (a.emails || [])[0] || '',
+        svc: AM, proj,
+      }
+      return { ...p, keys: authorKeys(p) }
+    }).filter((p) => p.keys.length))
+    .catch(() => []))
+  return authAsk
+}
+export const forgetAuthors = () => { authAsk = null }
+
+/** The ONE person a `@word` names, or null — null for a word nobody answers to
+ *  AND for a word two people answer to. Two 김민주 are not one person, so a
+ *  name they share links to neither: it stays text until something tells them
+ *  apart (a nick does, and is a name of its own here). */
+export function authorFor(list, word) {
+  const k = nameKey(word)
+  if (!k) return null
+  const hit = (list || []).filter((p) => p.keys.includes(k))
+  return hit.length === 1 ? hit[0] : null
+}
+/** Who a `@word` names, however many — so a screen can say that a name is
+ *  shared rather than quietly showing nothing. */
+export const authorsNamed = (list, word) => {
+  const k = nameKey(word)
+  return k ? (list || []).filter((p) => p.keys.includes(k)) : []
+}
+
+/** The people ([] until they come). */
+export function useAuthors() {
+  const [list, setList] = useState([])
+  useEffect(() => {
+    let on = true
+    loadAuthors().then((x) => { if (on) setList(x) })
     return () => { on = false }
   }, [])
   return list
