@@ -100,7 +100,7 @@ export function useTaggedRows(names, match = 'or', skip, mention = '') {
           for (const x of s.items) {
             const id = idOf(x.key, x.rec)
             m.set(`${s.svc}|${x.key}|${x.rec.id ?? x.rec.assetId}|${x.rec.line ?? ''}`, {
-              svc: s.label, kind: KINDS.includes(x.key) ? tr(`rk_tk_${x.key}`) : x.key,
+              svc: s.label, from: s.svc, kind: KINDS.includes(x.key) ? tr(`rk_tk_${x.key}`) : x.key,
               date: String(dateOf(x.key, x.rec)), what: labelOf(x.key, x.rec), sub: subOf(x.key, x.rec),
               // A group opens as that service's list of it (left) or its editor (right).
               open: x.key === 'groups' ? { svc: s.svc, proj: s.proj, id: `class:groups:${x.rec.id}`, label: labelOf(x.key, x.rec) }
@@ -131,7 +131,7 @@ export function RackTaggedTab({ rows, cols, onDrag, onOpen, onList, sort, onSort
     <RackTable cols={cols} onDrag={onDrag} sort={sort} onSort={onSort} facet={filter.tableFacet}>
       <FacetRows f={filter} labels={{ empty: tr('rk_column_empty') }} />
       {!filter.mode && rows.map((r, i) => (
-        <RackRow key={i} cols={cols} tone={{ what: 'ink', sub: 'dim', svc: 'dim', date: 'dim' }} className="rl-hit" mark={mark}
+        <RackRow key={i} cols={cols} tone={{ what: 'ink', sub: 'dim', svc: 'dim', date: 'dim' }} paint={{ svc: r.from }} className="rl-hit" mark={mark}
           onClick={() => { if (r.list && onList) onList(r.list) }}
           onContextMenu={(e) => { e.preventDefault(); if (r.open) onOpen(r.open) }}
           cell={{ num: i + 1, svc: r.svc, kind: r.kind, date: r.date || '·', what: r.what, sub: r.sub || '·' }} />

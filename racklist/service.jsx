@@ -123,7 +123,12 @@ function RackSolo({ def: declared, id }) {
   // A day here is shown on this service's own calendar, in the portal's panel:
   // the date labels, and one button for the record's first day.
   const showDate = def.calendar ? (d) => d && showInCalendar(id, d) : undefined
-  const ctx = { remote, folders, reloadFolders, say: setNote, commit, isAdmin: isManager(), showDate }
+  // Framed in another service's pane, what this editor opens goes in that
+  // page's editors: it has none of its own.
+  const inPane = window.parent !== window
+  const toPage = (m) => window.parent.postMessage(m, window.location.origin)
+  const ctx = { remote, folders, reloadFolders, say: setNote, commit, isAdmin: isManager(), showDate,
+    ...(inPane ? { openFrame: (rackFrame) => toPage({ rackFrame }), openRecord: (rackOpen) => toPage({ rackOpen }) } : {}) }
   return (
     <div className="rl rl-solo" style={brandStyle()}>
       {!doc ? <p className="rl-msg">{note || tr("rk_loading")}</p>
@@ -349,11 +354,15 @@ function RackList({ def: declared, slots = {} }) {
   const openRecord = useCallback(({ svc, proj, id, label }) => serviceColor(svc).then((color) =>
     openEdit({ id: `rec:${svc}:${id}`, kind: 'frame', label, color,
       src: `/pp/${svc}/${proj}/?solo=${encodeURIComponent(id)}` })), [openEdit])
-  useEffect(() => {                                     // …and what a bare list in a tab here asks for
-    const take = (e) => { if (e.origin === window.location.origin && e.data?.rackOpen) openRecord(e.data.rackOpen) }
+  useEffect(() => {                                     // …and what a bare list or a solo editor framed here asks for
+    const take = (e) => {
+      if (e.origin !== window.location.origin) return
+      if (e.data?.rackOpen) openRecord(e.data.rackOpen)
+      if (e.data?.rackFrame) openEdit({ ...e.data.rackFrame, kind: 'frame' })
+    }
     window.addEventListener('message', take)
     return () => window.removeEventListener('message', take)
-  }, [openRecord])
+  }, [openRecord, openEdit])
 
   /** Open a stored class record by what items call it — what a chip in the
    *  editor does, so a class without a tab of its own (tab: false) is still
@@ -468,9 +477,11 @@ function RackList({ def: declared, slots = {} }) {
     const get = clsSort.k === 'count' ? (r) => r.count
       : clsSort.k.includes(':') ? (r) => r.per?.[clsSort.k] ?? null
         : f?.get ? (r) => f.get(r, c) : (r) => r[clsSort.k]
-    all.sort(bySome(get, clsSort.dir))
+    // The one sort is shared by the class tabs: one this tab has no column for
+    // (the tags tab's name, in the inbox) leaves it in the order it is kept.
+    if (clsSort.k === 'count' || clsCols.some((x) => x.k === clsSort.k)) all.sort(bySome(get, clsSort.dir))
     return !cls.stored && caseFree(clsField) ? [...all.filter((r) => isFavTag(r.name)), ...all.filter((r) => !isFavTag(r.name))] : all
-  }, [cls, clsField, def, doc, query, clsSort, extra, tagSources, isFavTag])
+  }, [cls, clsCols, clsField, def, doc, query, clsSort, extra, tagSources, isFavTag])
   // A class tab (the tags) filters as the items tab does: by its columns' values.
   const clsSorters = useMemo(() => {
     if (!cls) return {}
@@ -688,7 +699,12 @@ function RackList({ def: declared, slots = {} }) {
         return (
           <RackItemEditor key={etab.id} def={def} doc={doc} rec={rec} fields={c.fields} listKey={c.k} noun={c.noun} cls={c}
             ctx={ctx} onSave={commit} onCancel={() => panes.close(etab.id)} guard={(fn) => panes.guard(etab.id, fn)}
-            actions={c.actions ? (f, setF) => c.actions(f, setF, { ...ctx, doc, rec }) : undefined}
+            actions={c.actions ? (f, setF) => c.actions(f, setF, { ...ctx, doc, rec, close: (then) => {
+              // `then`: the editor to show instead, if it is open too.
+              panes.close(etab.id)
+              const t = panes.tabs.find((x) => x.id === then)
+              if (t) panes.open(t)
+            } }) : undefined}
             // A list is its maker's to delete, or a manager's.
             canDelete={IS_ADMIN || (!!c.list?.owner && !!rec && rec[c.list.owner] === ME)}
             onCreated={(r) => { panes.close(etab.id); openClass(c, r) }}

@@ -7,7 +7,7 @@
 import './strings.js'
 import { tr } from 'lilak-ui'
 import { isManager, linkProject, showFilteredInCalendar, tagKey } from 'racklist'
-import { InboxActions, MakesField, MatchName } from './inbox.jsx'
+import { InboxActions, MailField, MakesField, MatchName } from './inbox.jsx'
 
 // The kinds an activity is stored with (Korean in the data) — as academic_activities/src-lilak/def.js GROUPS has them.
 const KINDS = ['학회', '워크샵', '학술미팅', '연구출장', '미팅', '세미나', '강연', '교육', '실험', '보고서', '제안서', '기타', '행사']
@@ -66,12 +66,12 @@ export default {
     // buttons in its last column (inbox.jsx).
     { k: 'inbox', label: tr('pm_inbox'), noun: tr('pm_ib_noun'), count: false, tab: isManager() ? undefined : false,
       rowLabel: (r) => (isNote(r) ? r.title : r.name),
-      actions: (f, setF, ctx) => <InboxActions r={f} ctx={ctx} after={(ch) => setF((s) => ({ ...s, ...ch }))} />,
+      actions: (f, setF, ctx) => <InboxActions r={f} ctx={ctx} after={(ch) => setF((s) => ({ ...s, ...ch }))} close={ctx.close} />,
       fields: [
         { k: 'target', label: tr('pm_ib_kind'), type: 'select', col: 56, disabled: fromMail,
           options: [['activity', tr('pm_ib_activity')], ['note', tr('pm_ib_note')]] },
         { k: 'what', label: tr('pm_ib_title'), col: 280, get: (r) => (isNote(r) ? r.title : r.name) || '',
-          cell: (r) => (isNote(r) ? r.title : r.name) || (r.match?.id ? <MatchName r={r} /> : '·') },
+          cell: (r) => <>{r.attachments?.length ? '📎 ' : ''}{(isNote(r) ? r.title : r.name) || (r.match?.id ? <MatchName r={r} /> : '·')}</> },
         { k: 'status', label: tr('pm_ib_status'), type: 'select', col: 80, disabled: fromMail,
           options: [['waiting', tr('pm_ib_waiting_s')], ['approved', tr('pm_ib_approved_s')], ['checked', tr('pm_ib_checked_s')], ['discarded', tr('pm_ib_discarded_s')]] },
         // new, or about a record that exists (`match`): update it, or seen — nothing new
@@ -81,6 +81,7 @@ export default {
         { k: 'from', label: tr('pm_ib_from'), type: 'text', col: 180, tone: 'dim', disabled: fromMail },
         { k: 'date', label: tr('pm_ib_date'), type: 'text', col: 92, tone: 'dim', disabled: fromMail },
         { k: 'subject', label: tr('pm_ib_mail'), type: 'text', disabled: fromMail },
+        { k: 'mailView', label: tr('pm_ib_mail_src'), type: 'text', store: false, when: (r) => !!(r.subject || r.threadId), edit: (p) => <MailField {...p} /> },
         { k: 'remark', label: tr('pm_ib_remark'), type: 'text', col: 220, tone: 'dim', disabled: fromMail },
         // an activity's
         { k: 'name', label: 'name', type: 'text', when: isAct },
@@ -99,6 +100,8 @@ export default {
         // where it goes, and what it will be
         { k: 'project', label: tr('pm_ib_project'), type: 'ref', to: 'projects', col: 120, hint: tr('pm_ib_project_hint') },
         { k: 'makes', label: tr('pm_ib_makes'), type: 'text', when: (r) => r.status === 'waiting' && r.mode !== 'checked', edit: (p) => <MakesField {...p} /> },
+        // What this should have been, in the owner's words: the mail task learns from it.
+        { k: 'feedback', label: tr('pm_ib_feedback'), type: 'longtext', hint: tr('pm_ib_feedback_hint') },
       ] },
   ],
 }

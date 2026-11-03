@@ -837,7 +837,15 @@ function NoteEdit({ value, onChange, field, rec, ctx }) {
       const had = (await notesOf(svc, proj, true)).find((n) => n.title === title)
       const r = had ? null : await noteApi(svc, proj, '/notes', { method: 'POST', body: JSON.stringify({ title }) })
       if (r && !r.ok) throw new Error(tr("rk_note_create_failed", r.status))
-      const n = had || await r.json()
+      let n = had || await r.json()
+      // A new note wears the record's tags, in its text, where a note's tags live.
+      const tags = (rec?.tags || []).map((t) => `#${String(t).trim().replace(/\s+/g, '_')}`).join(' ')
+      if (!had && tags) {
+        const put = await noteApi(svc, proj, `/notes/${encodeURIComponent(n.id)}`,
+          { method: 'PUT', body: JSON.stringify({ baseVersion: n.version, body: `${tags}\n\n` }) })
+        if (put.ok) n = await put.json()
+        else setErr(tr("rk_note_create_failed", put.status))
+      }
       onChange({ id: n.id, title: n.title })
       setNotes(await notesOf(svc, proj, true))
     } catch (e) { setErr(String(e.message || e)) } finally { setBusy(false) }

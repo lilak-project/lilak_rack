@@ -1,7 +1,7 @@
 import './strings.js'
 import { useEffect, useState } from 'react'
 import { tr } from 'lilak-ui'
-import { authHeaders, linkProject } from 'racklist'
+import { authHeaders, linkProject, PORTAL_BASE } from 'racklist'
 
 /**
  * The inbox class's moving parts (def.jsx declares its fields): what approving
@@ -20,7 +20,10 @@ const ACTIVITY = ['name', 'kind', 'start', 'startTime', 'end', 'endTime', 'place
 // an update may also touch the trip/talk side of an existing activity
 const UPDATABLE = [...ACTIVITY, 'tripKind', 'tripStart', 'tripEnd', 'role', 'title', 'host', 'talkDate', 'talkTime']
 const SVC = { activity: 'academic_activities', note: 'note' }
-const RANK = { waiting: 0, approved: 1, checked: 1, discarded: 2 }
+// As the backend keeps it (_order): what is still to be decided, then the newest mail.
+const when = (c) => `${String(c.date || c.createdAt || '').slice(0, 10)}|${c.createdAt || ''}|${c.id}`
+const decided = (c) => (c.status || 'waiting') !== 'waiting'
+const inboxOrder = (a, b) => decided(a) - decided(b) || (when(a) < when(b) ? 1 : when(a) > when(b) ? -1 : 0)
 const now = () => new Date().toISOString()
 const words = (v) => String(v || '').split(/\s+/).map((t) => t.replace(/^#/, '')).filter(Boolean)
 
@@ -38,7 +41,10 @@ const projOf = async (svc) => linkProject(svc)
 const projectTags = (r, doc) => (doc?.projects || []).find((p) => p.id === (r.project?.id ?? r.project))?.tags || []
 
 const today = () => new Date().toLocaleDateString('sv')   // YYYY-MM-DD
+const GMAIL = 'https://mail.google.com/mail/u/0/'
+const mailLink = (r) => (/^[0-9a-f]+$/.test(r.threadId || '') ? `${GMAIL}#all/${r.threadId}` : '')
 const fromLine = (r) => [r.from, r.date].filter(Boolean).join(', ') + (r.subject ? `, 「${r.subject}」` : '')
+  + (mailLink(r) ? ` ${mailLink(r)}` : '')
 
 /** What an update lays over: the activity's filled fields, or the note's added part. */
 function changes(r) {
@@ -101,6 +107,29 @@ export function MatchName({ r }) {
   return <span className="rl-dim">{name ?? '…'}</span>
 }
 
+/** The mail behind a candidate: a link to it, what it carries, and its text as the
+ *  task copied it, asked for when opened (plain text; nothing in it runs). */
+export function MailField({ rec: r }) {
+  const [text, setText] = useState(null)
+  const ask = (e) => {
+    if (!e.target.open || text !== null) return
+    call(`${PORTAL_BASE}/api/inbox/${encodeURIComponent(r.id)}/mail`)
+      .then((d) => setText(d.text || tr('pm_ib_mail_none')), (err) => setText(String(err.message || err)))
+  }
+  const link = mailLink(r)
+  const find = `${GMAIL}#search/${encodeURIComponent(`subject:"${r.subject || ''}"`)}`
+  return (
+    <div>
+      <a className="rl-lnk" href={link || find} target="_blank" rel="noreferrer">{tr(link ? 'pm_ib_mail_open' : 'pm_ib_mail_find')}</a>
+      {r.attachments?.length > 0 && <span className="rl-dim"> · 📎 {tr('pm_ib_attach', r.attachments.join(', '))}</span>}
+      <details onToggle={ask}>
+        <summary>{tr('pm_ib_mail_text')}</summary>
+        <div className="rl-mono" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 360, overflow: 'auto' }}>{text ?? '…'}</div>
+      </details>
+    </div>
+  )
+}
+
 /** An update's preview: each field old → new, or the note's added part. */
 function UpdateField({ r }) {
   const [cur, setCur] = useState(null)
@@ -133,7 +162,7 @@ function UpdateField({ r }) {
 /** The candidate saved with what changed, the inbox kept waiting first. */
 const save = (ctx, r, change, said) => ctx.commit({
   inbox: (ctx.doc?.inbox || []).map((x) => (x.id === r.id ? { ...r, ...change } : x))
-    .sort((a, b) => (RANK[a.status] ?? 0) - (RANK[b.status] ?? 0) || String(a.createdAt || '').localeCompare(String(b.createdAt || ''))),
+    .sort(inboxOrder),
 }, said)
 
 async function approve(r, ctx) {
@@ -166,17 +195,44 @@ const openMade = async (r, ctx) => ctx.openRecord?.({
   ...(r.made || { svc: SVC[r.target], proj: await projOf(SVC[r.target]), id: r.match?.id }),
   label: r.target === 'note' ? r.title : r.name })
 
+/** In the inbox's menu: every candidate still to be decided, each in an editor
+ *  (the first in front, as the list has them), so they can be gone through
+ *  without a right click on each. */
+const editorId = (r) => `class:inbox:${r.id}`
+export function OpenWaiting({ api: { doc, tab, openEdit } }) {
+  if (tab?.of !== 'inbox') return null
+  const waiting = (doc?.inbox || []).filter((r) => !decided(r))
+  if (!waiting.length) return null
+  const edit = (r) => openEdit({ id: editorId(r), kind: 'class', of: 'inbox', stored: true, who: r.id,
+    label: (r.target === 'note' ? r.title : r.name) || r.subject || r.id })
+  return (
+    <button type="button" className="rl-btn" onClick={() => { waiting.forEach(edit); edit(waiting[0]) }}>
+      {tr('pm_ib_open_waiting', waiting.length)}</button>
+  )
+}
+
 /** The buttons a candidate has where it stands: waiting [승인][버림],
  *  approved [열기], discarded [되살리기]. `after` hears what changed (the
- *  editor keeps its form in step). A waiting update's [열기] (the record it
+ *  editor keeps its form in step); a decision made in the editor closes it
+ *  (`close`) and shows the next waiting one if that is open too; one that
+ *  failed leaves it open with what it said. A waiting update's [열기] (the record it
  *  would change) is the editor's only: its row has no room, and the editor
  *  shows the change beside it. */
-export function InboxActions({ r, ctx, after, row }) {
+export function InboxActions({ r, ctx, after, row, close }) {
   if (!r?.id) return null
   const stop = (e) => e.stopPropagation()
-  const run = (fn) => async (e) => {
+  const run = (fn, decides) => async (e) => {
     stop(e)
-    try { const ch = await fn(); if (ch) after?.(ch) } catch (err) { ctx.say?.(String(err.message || err)) }
+    try {
+      const ch = await fn()
+      if (ch) after?.(ch)
+      if (decides && close) {
+        const waiting = (ctx.doc?.inbox || []).filter((x) => !decided(x))
+        const at = waiting.findIndex((x) => x.id === r.id)
+        const next = waiting[at + 1] || waiting[at - 1]
+        close(next && editorId(next))
+      }
+    } catch (err) { ctx.say?.(String(err.message || err)) }
   }
   const out = makes(r, ctx.doc)
   const bad = missing(r, out)
@@ -199,14 +255,14 @@ export function InboxActions({ r, ctx, after, row }) {
             const ch = { status: 'checked', decidedAt: now() }
             await save(ctx, r, ch, tr('pm_ib_checked'))
             return ch
-          })}>{tr('pm_ib_check')}</button>
+          }, true)}>{tr('pm_ib_check')}</button>
         : <button type="button" className="rl-btn rl-go" disabled={!!bad} title={bad || undefined}
-            onClick={run(() => approve(r, ctx))}>{tr(r.mode === 'update' ? 'pm_ib_update' : 'pm_ib_approve')}</button>}
+            onClick={run(() => approve(r, ctx), true)}>{tr(r.mode === 'update' ? 'pm_ib_update' : 'pm_ib_approve')}</button>}
       <button type="button" className="rl-btn rl-danger" onClick={run(async () => {
         const ch = { status: 'discarded', decidedAt: now() }
         await save(ctx, r, ch, tr('pm_ib_discarded'))
         return ch
-      })}>{tr('pm_ib_discard')}</button>
+      }, true)}>{tr('pm_ib_discard')}</button>
       {r.match?.id && !row && open}
     </span>
   )

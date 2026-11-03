@@ -124,6 +124,14 @@ body.rl-page {
   white-space: nowrap;
 }
 .rl-dim { color: var(--rk-dim); }
+/* The service cell of a tag's or a project's list (`paint`), lighter and further
+   apart than the services' own dark colours. Activity has most of the rows and
+   stays unpainted. */
+.rl-paint-note { background: #e8f7ea; color: #22632c; }
+.rl-paint-author_manager { background: #e8f2fd; color: #1c4f85; }
+.rl-paint-reference_manager { background: #fef7e0; color: #7a5a06; }
+.rl-paint-asset_manager2 { background: #f2edfc; color: #50329a; }
+.rl-paint-project_manager { background: #e6f5f2; color: #0f5f58; }
 .rl-ink { color: var(--rk-ink); }
 .rl-mono { font-family: var(--rk-mono); }
 .rl-num { text-align: right; color: var(--rk-dim); }

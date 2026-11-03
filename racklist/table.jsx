@@ -130,7 +130,7 @@ function lit(text, q) {
 /** One line. `mark` lights the search's words in the cells that show them.
  *  `tone` marks a column's colour class by key, e.g.
  *  { name: 'ink', journal: 'dim' } — the service says which, not this file. */
-export function RackRow({ cols, cell, tone = {}, className, onClick, onContextMenu, mark }) {
+export function RackRow({ cols, cell, tone = {}, paint = {}, className, onClick, onContextMenu, mark }) {
   const tmpl = `${cols.map((c) => `${c.w}px`).join(' ')} 1fr`
   const show = (v) => (mark && typeof v === 'string' ? lit(v, mark) : v)
   return (
@@ -140,7 +140,7 @@ export function RackRow({ cols, cell, tone = {}, className, onClick, onContextMe
         <span key={c.k}
           className={`${c.k === 'num' ? 'rl-gut' : 'rl-c'}`
             + `${c.k === 'chk' ? ' rl-chk' : ''}${c.num ? ' rl-num' : ''}`
-            + `${tone[c.k] ? ` rl-${tone[c.k]}` : ''}`}>
+            + `${tone[c.k] ? ` rl-${tone[c.k]}` : ''}${paint[c.k] ? ` rl-paint-${paint[c.k]}` : ''}`}>
           {show(cell[c.k])}
         </span>
       ))}
