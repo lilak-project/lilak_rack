@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unicodedata
 import zipfile
 from datetime import date, datetime, timezone
@@ -153,7 +154,10 @@ def _now() -> str:
 
 def _atomic_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
+    # One `.tmp` PER WRITER: two saves of the same note at once (the editor's
+    # pause-save and its closing save, two "+new" presses) each wrote the same
+    # `name.tmp`, and the second rename found it already moved away.
+    tmp = path.with_name(f"{path.name}.{os.getpid()}-{threading.get_ident()}.tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(text)
         f.flush()
@@ -325,11 +329,17 @@ def new_note(body: NewBody, _: dict = Depends(signed_in)) -> dict:
             # The template's own #tags come along in its body, where they live.
             meta = {**{"title": title, "date": date.today().isoformat()}, **tmeta}
     stem = f"{meta['date']}-{_slug(title)}"
-    p = _path(stem)
-    n = 2
-    while p.exists():                       # two notes may share a title on a day
-        p = _path(f"{stem}-{n}")
-        n += 1
+    # Two notes may share a title on a day. The name is CLAIMED (exclusive
+    # create), not looked for: two presses at once both saw no file and made
+    # the same one.
+    p, n = _path(stem), 2
+    while True:
+        try:
+            os.close(os.open(p, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644))
+            break
+        except FileExistsError:
+            p = _path(f"{stem}-{n}")
+            n += 1
     _atomic_write(p, _join(meta, text))
     return _read(p)
 

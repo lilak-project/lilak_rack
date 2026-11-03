@@ -134,4 +134,15 @@ from backend.main import _join, _split                                          
 _once = _join({"title": "t"}, "본문")
 assert _once.endswith("본문\n") and _join(*_split(_once)) == _once, _once
 
+# Two "+new" at once: both notes are made, under different names, and both
+# saves land (each writer its own .tmp).
+from concurrent.futures import ThreadPoolExecutor  # noqa: E402
+from backend.main import NOTES as _N, NewBody, new_note  # noqa: E402
+with ThreadPoolExecutor(4) as ex:
+    _made = list(ex.map(lambda _: new_note(NewBody(title="같이"), {})["id"], range(4)))
+assert len(set(_made)) == 4, _made
+for _i in _made:
+    assert (_N / f"{_i}.md").read_text(encoding="utf-8").startswith("---"), _i
+    (_N / f"{_i}.md").unlink()
+
 print("note: ok")
