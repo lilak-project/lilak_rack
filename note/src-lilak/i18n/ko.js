@@ -53,6 +53,8 @@ export default {
   nt_select_x: (a0) => `${a0} 선택`,
   nt_no_match: "해당하는 노트가 없습니다.",
   nt_todo_hint: "눌러서 끝냄 · 오른쪽 클릭으로 그 노트",
+  nt_todos_who: (a0, a1) => `할 일 ${a0}개가 바의 "누구의 노트" 필터에 가려져 있습니다 (${a1}). 그 아이콘을 눌러 전부로 돌리세요.`,
+  nt_todos_find: (a0) => `할 일 ${a0}개가 찾는 말에 걸러졌습니다.`,
   nt_no_todos: "할 일이 없습니다 — 노트에 `- [ ] 할 일`을 적으면 여기 모입니다.",
   nt_no_system_todos: "system todo가 없습니다 — 노트에 `- [ ] #system 할 일`을 적으면 여기 모입니다.",
   nt_no_tags: "아직 태그가 없습니다.",

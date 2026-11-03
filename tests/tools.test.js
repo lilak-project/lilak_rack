@@ -4,6 +4,7 @@ import { leading, table } from '../note/src-lilak/tools/format.jsx'
 import { headings, refMap } from '../note/src-lilak/tools/outline.jsx'
 import { citeMap, citedIn } from '../note/src-lilak/tools/bib.jsx'
 import { comments } from '../note/src-lilak/comments.js'
+import { wonPair } from '../note/src-lilak/liveedit.js'
 
 // 목차 — `#` and `\section` are one tool's two spellings.
 describe('headings', () => {
@@ -159,5 +160,25 @@ describe('comments', () => {
   })
   it('keeps an empty comment as an empty line, not as nothing', () => {
     expect(comments('%\n%  \n')).toEqual([{ n: 1, text: '' }, { n: 2, text: '' }])
+  })
+})
+
+// ₩코드₩ — the easy key on a Korean keyboard, written to the file as `code`.
+describe('wonPair', () => {
+  it('finds the ₩ that opens the chip', () => {
+    expect(wonPair('짜 ₩npm run build')).toBe(2)
+  })
+  it('leaves a price alone', () => {
+    expect(wonPair('값은 ₩5,000 이고 ')).toBe(-1)
+  })
+  it('wants something between the two', () => {
+    expect(wonPair('아 ₩')).toBe(-1)
+    expect(wonPair('아 ₩  ')).toBe(-1)
+  })
+  it('takes the nearest one, so the first pair closes first', () => {
+    expect(wonPair('₩a` 그리고 ₩b')).toBe(8)
+  })
+  it('says no when there is none', () => {
+    expect(wonPair('그냥 글')).toBe(-1)
   })
 })

@@ -53,6 +53,8 @@ export default {
   nt_select_x: (a0) => `Select ${a0}`,
   nt_no_match: "No matching note.",
   nt_todo_hint: "Click to finish · right-click for its note",
+  nt_todos_who: (a0, a1) => `${a0} to-dos are behind the bar's whose-notes filter (${a1}). Press that icon to go back to all.`,
+  nt_todos_find: (a0) => `${a0} to-dos are filtered out by what is being looked for.`,
   nt_no_todos: "No to-dos — write `- [ ] to-do` in a note and it gathers here.",
   nt_no_system_todos: "No system to-dos — write `- [ ] #system to-do` in a note and it gathers here.",
   nt_no_tags: "No tags yet.",

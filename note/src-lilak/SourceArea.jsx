@@ -15,7 +15,7 @@ import { yaml } from '@codemirror/legacy-modes/mode/yaml'
 import { livePreview, liveLook } from './livemd.js'
 import { commentFold, setFoldComments } from './comments.js'
 import { placeBack, placeSave } from './scrolled.js'
-import { tagComplete, citeComplete, dueKeys, markKeys, quotePaste, takeFiles, tableKeys, tableInput } from './liveedit.js'
+import { tagComplete, citeComplete, dueKeys, markKeys, quotePaste, takeFiles, tableKeys, tableInput, wonCode } from './liveedit.js'
 
 /** The note as the file has it, in a real text editor — plain (`원문`) or with
  *  the markdown drawn over it (`라이브`).
@@ -181,6 +181,7 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
             tagComplete,
             ...dueKeys,
             tableInput,
+            wonCode,
             quotePaste,
           ]),
           ...(onFiles ? [takeFiles(onFiles, tex)] : []),

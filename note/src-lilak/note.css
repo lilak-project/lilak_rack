@@ -118,6 +118,8 @@
   border-color: var(--rk-danger, #b91c1c);
   color: var(--rk-danger, #b91c1c);
 }
+/* `!!`: an urgent todo, in the colour its bar has on the calendar. */
+.nt-urgent { color: #c2410c; font-weight: 400; margin-right: 4px; }
 /* The day it was finished: the same label, said quietly — it is a record. */
 .nt-done-in {
   display: inline-block;
@@ -129,19 +131,41 @@
 
 /* Every chip stands a touch shorter than the line it sits on — one rule, so
    they cannot drift apart again. */
-/* A person — `@JungWooLee` — reads as their name with the spaces back in, on
-   author_manager's navy: a plain pill, because a person is not a label you
-   file something under. The text holds the name run together; this is what a
-   reader sees. */
-.nt-auth-in, .nt-auth {
-  display: inline-block;
-  padding: 0 .45em; border-radius: 999px;
-  border: 1px solid var(--rk-auth, #3d5a80);
-  background: color-mix(in srgb, var(--rk-auth, #3d5a80) 10%, var(--rk-panel, #fff));
-  color: var(--rk-auth, #3d5a80); font-weight: 600; font-size: .92em;
-}
-
 .nt-tag-in, .nt-tag, .nt-proj-in, .nt-proj, .nt-auth-in, .nt-auth, .nt-due-in, .nt-done-in { line-height: 1.6; }
+
+/* A person — `@JungWooLee` — reads as their name with the spaces back in,
+   behind a face. Every other chip in a note says what it is by the shape of
+   its left end (a tag's point, a project's slanted head, a calendar's thick
+   band); a person's is a face.
+
+   The face is a MASK, not a picture: it is painted in the chip's own colour,
+   so it follows the service rather than carrying a colour of its own. And it
+   is one custom property — `--face` — so giving one person a different face
+   later is that one line, and it works the same in the editor (where the chip
+   is a decoration over the text and no markup can be added) and where the
+   note is read.
+
+   Phosphor's User, FILLED weight: an outline figure is a few hairlines at
+   this size and disappears beside a tag's solid fill. It carries more empty
+   space inside its own square than a face does, so it is set larger to read
+   at the same weight. The box is the date label's, to the pixel — same
+   padding, so the two stand at one height — and the figure rides on a
+   pseudo-element, so growing it cannot push the box taller. */
+.nt-auth-in, .nt-auth {
+  --face: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath d='M230.93,220a8,8,0,0,1-6.93,4H32a8,8,0,0,1-6.92-12c15.23-26.33,38.7-45.21,66.09-54.16a72,72,0,1,1,73.66,0c27.39,8.95,50.86,27.83,66.09,54.16A8,8,0,0,1,230.93,220Z'/%3E%3C/svg%3E");
+  display: inline-block; position: relative;
+  padding: 0 7px 0 26px;
+  border: 1px solid var(--rk-auth, #3d5a80); border-radius: 0;
+  background: color-mix(in srgb, var(--rk-auth, #3d5a80) 9%, var(--rk-panel, #fff));
+  color: var(--rk-auth, #3d5a80); font-size: .92em;
+}
+.nt-auth-in::before, .nt-auth::before {
+  content: ''; position: absolute; left: 4px; top: 50%;
+  width: 19px; height: 19px; margin-top: -9.5px;
+  background: currentColor;
+  -webkit-mask: var(--face) no-repeat center / 19px 19px;
+  mask: var(--face) no-repeat center / 19px 19px;
+}
 
 /* The calendar `>> ` opens: it stands in the line, in the field's own clothes.
    Picking a day writes the 📅 mark and the field goes away. */
@@ -284,7 +308,10 @@ body.nt-paper #root { height: auto; min-height: 100%; }
   font-family: var(--rk-mono); font-size: .95em;
   background: var(--rk-gut, #f1f5f9); border: 1px solid var(--rk-mute, #94a3b8);
   color: var(--rk-ink, #0f172a);
-  padding: 2px 6px; margin: 0 3px; border-radius: 2px;
+  /* Square, so it is tall enough to look deliberate rather than clipped, and
+     held off the words on both sides — a letter against its edge reads as
+     being inside the chip. */
+  padding: 2px 5px; margin: 0 3px;
 }
 .nt-sheet pre code { background: none; border: 0; padding: 0; margin: 0; font-size: 1em; color: inherit; }
 
@@ -594,7 +621,7 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 .nt-code {
   font-family: var(--rk-mono); font-size: .95em;
   background: var(--rk-gut); border: 1px solid var(--rk-mute); color: var(--rk-ink);
-  padding: 2px 6px; border-radius: 2px;
+  padding: 2px 5px; margin: 0 3px;
 }
 /* A table's row: the pipes only line up in a fixed-width face, and the file is
    not touched to make them. */

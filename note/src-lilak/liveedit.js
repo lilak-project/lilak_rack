@@ -171,6 +171,42 @@ const dueInput = EditorView.inputHandler.of((view, from, to, text) => {
 
 export const dueKeys = [calendar, dueInput]
 
+// ── `₩코드₩` is `코드` ────────────────────────────────────────────────────
+/** Where the ₩ that opens a code chip stands in the text before the caret,
+ *  or -1 if this ₩ opens nothing.
+ *
+ *  On a Korean keyboard ₩ sits where the backslash is, and it is the easy key
+ *  to reach; the backtick is not. So a pair of them becomes the pair of
+ *  backticks the FILE keeps — nothing here invents a second spelling of
+ *  markdown, the text is converted as it is typed and what is saved is
+ *  ordinary `code`.
+ *
+ *  Money is the one thing a lone ₩ is for, so ₩5,000 never opens a chip. */
+export const wonPair = (before) => {
+  const i = before.lastIndexOf('₩')
+  if (i < 0) return -1
+  const inner = before.slice(i + 1)
+  if (!inner.trim()) return -1            // `₩₩` has nothing in it
+  if (/^[\d,.]/.test(inner)) return -1   // ₩5,000 — a price, not a chip
+  return i
+}
+
+/** The second ₩ turns both into backticks, in ONE change so one undo is one
+ *  undo (and a second undo gives the ₩ back). */
+export const wonCode = EditorView.inputHandler.of((view, from, to, text) => {
+  if (text !== '₩') return false
+  const line = view.state.doc.lineAt(from)
+  const i = wonPair(line.text.slice(0, from - line.from))
+  if (i < 0) return false
+  const at = line.from + i
+  view.dispatch({
+    changes: [{ from: at, to: at + 1, insert: '`' }, { from, to, insert: '`' }],
+    selection: { anchor: from + 1 },
+    userEvent: 'input.type',
+  })
+  return true
+})
+
 // ── a file dropped or pasted lands in the text ──────────────────────────────
 const filesOf = (dt) => (dt ? [...(dt.files || [])] : [])
 
