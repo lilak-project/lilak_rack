@@ -99,7 +99,7 @@ export function RackTable({ cols, onDrag, head, sort, onSort, facet, children })
               </button>
             ) : c.label}
             {!c.fix && <i className="rl-grip" onMouseDown={(e) => {
-              e.preventDefault(); e.stopPropagation(); onDrag(c.k, e.clientX, c.w)
+              e.preventDefault(); e.stopPropagation(); onDrag(c.k, e.clientX, c.w, c.min)
             }} />}
           </span>
         ))}

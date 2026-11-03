@@ -441,7 +441,11 @@ function RackList({ def: declared, slots = {} }) {
     // the list and them is. An editor of a service's own may open something
     // beside itself and has to know what room there is — note's tools widen
     // the pane by their own width rather than squeezing the text.
-    panes, split }
+    panes, split,
+    // A tab of the service's own draws its own table; hand it the columns
+    // machinery the kit's tables use so its columns drag and are remembered
+    // too. Its own width prefix keeps it apart from the records' table.
+    colsOf: L.colsOf, drag: L.drag, vw: L.vw }
 
   // A column may belong to some tabs only (a group's core on that group's tab).
   const cols = useMemo(() => L.colsOf('').filter((c) => !c.when || c.when(tab)), [L.colsOf, tab])   // eslint-disable-line react-hooks/exhaustive-deps

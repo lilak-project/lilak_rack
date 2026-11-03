@@ -8,10 +8,12 @@ import { tr } from 'lilak-ui/i18n.jsx'
 export function useColumnWidths(key, allCols) {
   const [widths, setWidths] = useState(() => load(key, {}))
   useEffect(() => { save(key, widths) }, [key, widths])
-  const drag = useCallback((prefix) => (k, startX, startW) => {
+  // `min` comes from the table, which holds the column being dragged: a tab of
+  // a service's own has columns this hook was never given.
+  const drag = useCallback((prefix) => (k, startX, startW, min) => {
     const move = (e) => {
       const col = allCols.find((c) => c.k === k)
-      const w = Math.max(col?.min ?? 34, Math.round(startW + (e.clientX - startX)))
+      const w = Math.max(min ?? col?.min ?? 34, Math.round(startW + (e.clientX - startX)))
       setWidths((s) => ({ ...s, [prefix + k]: w }))
     }
     const up = () => {
