@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import Body, Depends, FastAPI, HTTPException
+from fastapi import Body, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -944,6 +944,60 @@ def mount_folders(app: FastAPI, doc: Document, setting: str = "folderRoots") -> 
 
     def root_has(root: Path, p: Path) -> bool:
         return p != root and root in p.parents
+
+
+def mount_uploads(app: FastAPI, root: Path, cap_mb: int = 50) -> None:
+    """Files a record carries, kept beside the document rather than inside it.
+
+        POST /api/uploads?name=          the request body is the file; answers
+                                         {id, name, size, type, at, by}
+        GET  /api/uploads/{id}/{name}    the file, inline (download=1: as a file)
+
+    A record stores the answer, never the bytes, so a document stays small
+    however many pictures a log holds. Each file sits in uploads/<id>/<name>
+    inside the project, where the portal's sync carries it like any other file.
+    A body rather than a form keeps python-multipart out of the dependencies.
+    ponytail: a file whose record entry is removed stays on disk; sweep
+    uploads/ against the document if the folder grows."""
+    root = Path(root)
+    cap = cap_mb * 1024 * 1024
+
+    def where(uid: str, name: str) -> Path:
+        if not (len(uid) == 12 and all(c in "0123456789abcdef" for c in uid)):
+            raise HTTPException(400, "파일 id가 올바르지 않습니다.")
+        p = (root / uid / name).resolve()
+        if not p.is_relative_to(root.resolve()) or p.parent.name != uid:
+            raise HTTPException(400, "올바르지 않은 경로입니다.")
+        return p
+
+    @app.post("/api/uploads")
+    async def upload(request: Request, name: str, me: dict = Depends(signed_in)) -> dict:
+        import mimetypes
+        import uuid
+        body = await request.body()
+        if not body:
+            raise HTTPException(400, "빈 파일입니다.")
+        if len(body) > cap:
+            raise HTTPException(413, f"파일은 {cap_mb}MB까지입니다.")
+        clean = unicodedata.normalize("NFC", Path(str(name)).name).strip().lstrip(".")
+        clean = "".join(c for c in clean if c not in '\\/:*?"<>|\x00')[:180] or "file"
+        uid = uuid.uuid4().hex[:12]
+        p = where(uid, clean)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_name(f".{clean}.tmp")
+        tmp.write_bytes(body)
+        os.replace(tmp, p)
+        kind = mimetypes.guess_type(clean)[0] or request.headers.get("content-type") or "application/octet-stream"
+        return {"id": uid, "name": clean, "size": len(body), "type": kind, "at": _now(),
+                "by": me.get("email") or me.get("username") or ""}
+
+    @app.get("/api/uploads/{uid}/{name}")
+    def get_upload(uid: str, name: str, download: int = 0, _: dict = Depends(signed_in)):
+        p = where(uid, name)
+        if not p.is_file():
+            raise HTTPException(404, "파일이 없습니다.")
+        return FileResponse(p, filename=p.name,
+                            content_disposition_type="attachment" if download else "inline")
 
 
 def mount_files(app: FastAPI, doc: Document, setting: str = "fileRoots", exts: tuple = (".pdf",)) -> None:

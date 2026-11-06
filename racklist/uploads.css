@@ -1,0 +1,26 @@
+/* Uploaded files (uploads.jsx): the field's rows and the files tab. */
+.rl-up { display: flex; flex-direction: column; gap: 4px; }
+.rl-up-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rl-up-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rk-ink); }
+.rl-up-thumb { width: 28px; height: 28px; object-fit: cover; flex: 0 0 auto; border: 1px solid var(--rk-line); }
+.rl-up-kind { width: 28px; flex: 0 0 auto; text-align: center; font-family: var(--font-mono); font-size: var(--fs-micro); color: var(--rk-mute); text-transform: uppercase; }
+
+.rl-files { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; min-width: 0; }
+.rl-files-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rl-files-find { flex: 1 1 220px; min-width: 0; font: inherit; padding: 4px 8px; border: 1px solid var(--rk-line); background: transparent; color: var(--rk-ink); }
+.rl-files-views { display: inline-flex; gap: 4px; }
+.rl-linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--rk-ink); text-decoration: underline; text-decoration-color: var(--rk-line); cursor: pointer; text-align: left; }
+
+.rl-files-table { width: 100%; border-collapse: collapse; }
+.rl-files-table th { text-align: left; font-weight: inherit; color: var(--rk-mute); border-bottom: 1px solid var(--rk-line); padding: 4px 8px; }
+.rl-files-table td { border-bottom: 1px solid var(--rk-line); padding: 4px 8px; vertical-align: middle; }
+.rl-files-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rl-files-name a:first-of-type { color: var(--rk-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.rl-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+.rl-gallery-cell { margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rl-gallery-cell > button { padding: 0; border: 1px solid var(--rk-line); background: var(--rk-gut); cursor: zoom-in; aspect-ratio: 4 / 3; overflow: hidden; }
+.rl-gallery-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.rl-gallery-cell figcaption { display: flex; flex-direction: column; font-size: var(--fs-small); min-width: 0; }
+.rl-gallery-cell figcaption > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rk-mute); }
+@media (max-width: 640px) { .rl-gallery { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); } }

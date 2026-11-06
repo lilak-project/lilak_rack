@@ -1,0 +1,30 @@
+{
+  "kind": "rack",
+  "mode": "managed",
+  "label": "로그",
+  "start": {
+    "cmd": "sh /app/lilak_rack/logbook/portal-serve.sh {port}",
+    "cwd": "/app/lilak_rack/logbook",
+    "env": {}
+  },
+  "health": "/",
+  "entry": "/",
+  "url": null,
+  "token": null,
+  "identity": {
+    "accepts_portal_token": true,
+    "link_by": "email"
+  },
+  "capabilities": {
+    "multi_project": true,
+    "import_export": true,
+    "tags": true
+  },
+  "entry_project": "logs",
+  "autostart": [
+    "logs"
+  ],
+  "icon": "notebook",
+  "color": "#2563eb",
+  "open": "panel"
+}

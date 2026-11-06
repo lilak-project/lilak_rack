@@ -32,3 +32,4 @@ export {
   PORTAL_BASE, PORTAL_PROJECT, PORTAL_SERVICE, PROJECT_LINKED, linkProject, brandStyle, onColor, projectKey, load, save,
   portalToken, portalUser, isManager, authHeaders, newId, fetchDoc, putDoc, openInService, takeOpenRequest, serviceColor, showFilteredInCalendar,
 } from './portal.js'
+export { uploadUrl, uploadFile, filesOf, RackFiles, filesTab } from './uploads.jsx'
