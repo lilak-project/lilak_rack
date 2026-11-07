@@ -16,6 +16,9 @@ kept as dense tables (racks) that share one set of tags.
 | `seed/` | each service's portal manifest |
 | `scripts/new-rack-service.mjs` | a new rack service from a declaration |
 
+The log bundle ([`lilak_log`](https://github.com/lilak-project/lilak_log): logbook, parameters) is drawn
+with the same `racklist`/`rackstore` but installs, builds and shares its tags on its own.
+
 They install **together** — from the portal's Service Manager ("rack services"), which clones this
 checkout into the portal's stack (`web_service/lilak_rack`), builds each service and registers all
 of them. A service is a `def.js` declaration fed to `<RackService>` (`racklist/service.jsx`), plus a

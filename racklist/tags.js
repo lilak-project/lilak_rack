@@ -16,7 +16,7 @@
  * and stored by its whole name.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { PORTAL_BASE, authHeaders, linkProject, newId, remoteDocOf } from './portal.js'
+import { PORTAL_BASE, PORTAL_SERVICE, authHeaders, linkProject, newId, remoteDocOf } from './portal.js'
 
 export const tagKey = (t) => String(t ?? '').trim().toLowerCase()
 /** Is `t` the tag `parent`, or inside it? */
@@ -109,14 +109,23 @@ export function mergeTags(counts) {
   })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ko'))
 }
 
+/** A service's tag group: its manifest's `capabilities.tags` — true is the
+ *  manager bundle's ('rack'), a name another bundle's own (lilak_log: 'log'). */
+export const tagGroup = (t) => (t === true ? 'rack' : t || '')
+
 let asked = null
 /** Every sharing service's tags, asked once per page: [{ svc, label, color,
- *  tags: { name: count } }]. */
+ *  tags: { name: count } }] — only the services of this one's tag group. */
 export function loadTagSources() {
   asked ||= fetch('/api/services', { headers: authHeaders() })
     .then((r) => (r.ok ? r.json() : []))
-    .then((list) => Promise.all((Array.isArray(list) ? list : [])
-      .filter((s) => s.tags && s.link_project)
+    .then((list) => (Array.isArray(list) ? list : []))
+    .then((list) => {
+      const me = list.find((s) => s.name === PORTAL_SERVICE.name)
+      const group = tagGroup(me ? me.tags : true)
+      return list.filter((s) => s.tags && s.link_project && tagGroup(s.tags) === group)
+    })
+    .then((list) => Promise.all(list
       .map((s) => fetch(`/pp/${s.name}/${s.link_project}/api/tags`, { headers: authHeaders() })
         .then((r) => (r.ok ? r.json() : { denied: r.status === 403 })).catch(() => null)
         // Named short where tags are counted: "activity", not "activity manager".
