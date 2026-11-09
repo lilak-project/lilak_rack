@@ -21,7 +21,10 @@
   },
   "icon": "calendar",
   "color": "#3f4651",
-  "label": "activity manager",
+  "label": "activities",
+  "labels": {
+    "ko": "행사"
+  },
   "open": "panel",
   "entry_project": "activities",
   "autostart": [

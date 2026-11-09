@@ -22,7 +22,10 @@
   "icon": "scroll",
   "color": "#8a5cf6",
   "open": "panel",
-  "label": "asset manager",
+  "label": "assets",
+  "labels": {
+    "ko": "자산"
+  },
   "entry_project": "assets",
   "autostart": [
     "assets"

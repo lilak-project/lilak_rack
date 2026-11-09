@@ -22,7 +22,10 @@
   "icon": "users",
   "color": "#3d5a80",
   "open": "panel",
-  "label": "author manager",
+  "label": "authors",
+  "labels": {
+    "ko": "저자"
+  },
   "entry_project": "authors",
   "autostart": [
     "authors"

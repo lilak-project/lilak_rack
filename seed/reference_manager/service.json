@@ -22,7 +22,10 @@
   "icon": "books",
   "color": "#7c5295",
   "open": "panel",
-  "label": "reference manager",
+  "label": "references",
+  "labels": {
+    "ko": "참고자료"
+  },
   "entry_project": "papers",
   "autostart": [
     "papers"

@@ -21,7 +21,10 @@
   },
   "icon": "folder",
   "color": "#0f766e",
-  "label": "프로젝트",
+  "label": "projects",
+  "labels": {
+    "ko": "프로젝트"
+  },
   "open": "panel",
   "entry_project": "projects",
   "autostart": [

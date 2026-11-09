@@ -21,7 +21,10 @@
   },
   "icon": "pencil-line",
   "color": "#365944",
-  "label": "note",
+  "label": "notes",
+  "labels": {
+    "ko": "노트"
+  },
   "open": "panel",
   "entry_project": "note",
   "autostart": [
