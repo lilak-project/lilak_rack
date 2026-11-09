@@ -137,6 +137,12 @@ if os.environ.get("PM_INBOX_TIMER", "1") != "0":
     threading.Thread(target=_ticker, daemon=True, name="inbox").start()
 
 
+@app.get("/api/badge")
+def badge(_: dict = Depends(manager)) -> dict:
+    """The number on this service's icon: the candidates still to be decided."""
+    return {"count": sum(1 for c in DOC.read().get("inbox") or [] if c.get("status", "waiting") == "waiting")}
+
+
 @app.get("/api/inbox/{cid}/mail")
 def inbox_mail(cid: str, _: dict = Depends(manager)) -> dict:
     """The mail a candidate came from, as the task copied it ('' from before it did)."""

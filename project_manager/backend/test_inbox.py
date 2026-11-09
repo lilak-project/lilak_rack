@@ -86,6 +86,16 @@ class Inbox(unittest.TestCase):
         main._log_feedback([row])
         self.assertEqual(len(lines()), before + 2)
 
+    def test_badge_counts_what_is_still_to_be_decided(self):
+        with main.DOC.lock:
+            d = main.DOC.read()
+            main.DOC.write({**d, "inbox": [{"id": "w1", "status": "waiting"}, {"id": "w2"}, {"id": "a", "status": "approved"},
+                                           {"id": "d", "status": "discarded"}]}, replaces=d)
+        self.assertEqual(main.badge({}), {"count": 2})
+        with main.DOC.lock:
+            d = main.DOC.read()
+            main.DOC.write({**d, "inbox": []}, replaces=d)
+
     def test_undecided_first_then_newest_mail(self):
         rows = [
             {"id": "done-new", "status": "approved", "date": "2026-11-03"},

@@ -212,6 +212,7 @@ export function OpenWaiting({ api: { doc, tab, openEdit } }) {
 }
 
 /** The buttons a candidate has where it stands: waiting [승인][버림],
+ *  (nothing new in the mail: only [확인], which changes no record either),
  *  approved [열기], discarded [되살리기]. `after` hears what changed (the
  *  editor keeps its form in step); a decision made in the editor closes it
  *  (`close`) and shows the next waiting one if that is open too; one that
@@ -258,11 +259,11 @@ export function InboxActions({ r, ctx, after, row, close }) {
           }, true)}>{tr('pm_ib_check')}</button>
         : <button type="button" className="rl-btn rl-go" disabled={!!bad} title={bad || undefined}
             onClick={run(() => approve(r, ctx), true)}>{tr(r.mode === 'update' ? 'pm_ib_update' : 'pm_ib_approve')}</button>}
-      <button type="button" className="rl-btn rl-danger" onClick={run(async () => {
+      {r.mode !== 'checked' && <button type="button" className="rl-btn rl-danger" onClick={run(async () => {
         const ch = { status: 'discarded', decidedAt: now() }
         await save(ctx, r, ch, tr('pm_ib_discarded'))
         return ch
-      }, true)}>{tr('pm_ib_discard')}</button>
+      }, true)}>{tr('pm_ib_discard')}</button>}
       {r.match?.id && !row && open}
     </span>
   )

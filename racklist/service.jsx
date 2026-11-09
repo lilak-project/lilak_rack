@@ -306,6 +306,8 @@ function RackList({ def: declared, slots = {} }) {
       setDoc(r.doc)
       setNote(saidAs || tr("rk_saved"))
       said?.postMessage({ version: r.doc.version, doc: r.doc })
+      // A number on this service's icon may have changed: the portal asks again.
+      if (window.top !== window) window.top.postMessage({ type: 'lilak:saved' }, window.location.origin)
       return true
     } catch (e) { setNote(String(e.message || e)); return false }
   }, [doc, def, setNote, said])
