@@ -95,7 +95,7 @@ export default {
   rk_required: (a0) => `${a0} 이(가) 있어야 합니다.`,
   rk_created_x: (a0, a1) => `${a0} '${a1}' 등록됨`,
   rk_deleted_x: (a0, a1) => `${a0} '${a1}' 삭제됨`,
-  rk_show_in_calendar: "달력에서 보기",
+  rk_show_in_calendar: "달력",
   rk_cannot: "할 수 없습니다.",
   rk_revealed: (a0) => `폴더에서 보여줍니다 — ${a0}`,
   rk_opened: (a0) => `열었습니다 — ${a0}`,

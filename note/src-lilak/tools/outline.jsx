@@ -1,5 +1,5 @@
 import '../strings.js'
-import { outsideCode } from '../marks.js'
+import { headingNumbers, outsideCode } from '../marks.js'
 import { press } from './press.js'
 import { tr } from 'lilak-ui/i18n.jsx'
 
@@ -85,6 +85,7 @@ export function refMap(body) {
 
 function Body({ note, go, edit }) {
   const rows = headings(note.body, note.tex)
+  const nos = note.fields?.numbered && !note.tex ? headingNumbers(note.body) : null
   // The shallowest heading in THIS note is the left edge: a document whose
   // every heading is `\subsection` is not indented four steps for it.
   const top = rows.length ? Math.min(...rows.map((r) => r.depth)) : 1
@@ -97,7 +98,7 @@ function Body({ note, go, edit }) {
           <button key={`${r.n}`} type="button" className="nt-out" title={tr("nt_pin_go", r.n)}
             style={{ paddingLeft: `${8 + (r.depth - top) * 14}px` }}
             {...press(() => go(r.n))}>
-            <span className="nt-out-text">{r.text}</span>
+            <span className="nt-out-text">{nos?.has(r.n) ? `${nos.get(r.n)}\u2002` : ''}{r.text}</span>
             <span className="rl-hint nt-out-n">{r.n}</span>
           </button>
         ))}

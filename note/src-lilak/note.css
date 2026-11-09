@@ -25,10 +25,37 @@
   object-fit: contain;
 }
 .nt-embed {
-  margin: 6px 0;
+  margin: 0;
   border: 1px solid var(--rk-line);
   border-radius: 2px;
 }
+/* The picture, a block under its line, and its handle. `line-height: 0` so
+   no text-line room is left under the picture; `width: fit-content` so the
+   handle sits on the picture's corner and not the column's. The gap under
+   it is PADDING: CodeMirror measures a block by its border box, so a margin
+   there would push the line numbers 6px off for every picture above. */
+.nt-embed-box {
+  position: relative; display: block; width: fit-content; max-width: 100%;
+  margin: 0 0 0 6px; padding-bottom: 6px; line-height: 0;
+}
+/* The corner, out of the way until the pointer is on the picture. */
+.nt-embed-grip {
+  position: absolute; right: 0; bottom: 6px; width: 15px; height: 15px;
+  background: linear-gradient(135deg, transparent 48%, var(--rk-mute) 48% 62%, transparent 62%,
+    transparent 70%, var(--rk-mute) 70% 84%, transparent 84%);
+  cursor: nwse-resize; opacity: 0;
+}
+.nt-embed-auto {
+  position: absolute; right: 2px; top: 6px; height: 17px; padding: 0 5px;
+  border: 1px solid var(--rk-line); background: var(--rk-panel);
+  font: inherit; font-size: var(--fs-tiny); line-height: 15px; color: var(--rk-dim);
+  cursor: pointer; opacity: 0;
+}
+.nt-embed-box:hover .nt-embed-grip, .nt-embed-box:hover .nt-embed-auto { opacity: 1; }
+.nt-embed-auto:hover { color: var(--rk-ink); border-color: var(--rk-ink); }
+/* While a picture is being dragged wider, nothing else takes the pointer —
+   the text under it would otherwise be selected on the way past. */
+.nt-sizing, .nt-sizing * { cursor: nwse-resize !important; user-select: none !important; }
 .nt-sheet img { margin: 3mm 0; }
 
 /* A tag, drawn as a tag: a label with its point to the left and the hole it
@@ -169,13 +196,39 @@
 
 /* The calendar `>> ` opens: it stands in the line, in the field's own clothes.
    Picking a day writes the 📅 mark and the field goes away. */
-.nt-duepick {
-  height: 20px; margin: 0 2px; padding: 0 4px;
-  border: 1px solid var(--rk-cite-t); border-radius: 2px;
-  background: var(--rk-panel);
-  font: inherit; font-size: .9em; color: var(--rk-text);
-  vertical-align: baseline;
+/* The little month that `>>` opens, and that pressing a date re-opens. It
+   hangs off a spot in the line without taking any width there, so the text it
+   is about does not move under it. */
+.nt-cal-at { position: relative; display: inline-block; width: 0; }
+.nt-cal {
+  position: absolute; z-index: 30; top: 1.4em; left: 0;
+  padding: 4px; border: 1px solid var(--rk-cite-t); border-radius: 3px;
+  background: var(--rk-panel); box-shadow: 0 4px 14px rgba(0,0,0,.18);
+  font-family: var(--rk-sans); font-size: 12px; line-height: 1;
+  user-select: none;
 }
+.nt-cal:focus { outline: 1px solid var(--rk-accent, var(--rk-cite-t)); }
+.nt-cal-head { display: flex; align-items: center; gap: 2px; padding: 1px 2px 4px; }
+.nt-cal-head b { flex: 1; text-align: center; font-weight: 600; letter-spacing: .02em; }
+.nt-cal-step {
+  width: 18px; height: 18px; padding: 0;
+  border: 0; border-radius: 2px; background: none;
+  color: var(--rk-text); font: inherit; cursor: pointer;
+}
+.nt-cal-step:hover { background: var(--rk-hover, rgba(0,0,0,.07)); }
+.nt-cal-grid { display: grid; grid-template-columns: repeat(7, 22px); gap: 1px; }
+.nt-cal-wd {
+  height: 14px; display: grid; place-items: center;
+  font-style: normal; font-size: 10px; color: var(--rk-dim, #888);
+}
+.nt-cal-d {
+  height: 20px; padding: 0;
+  border: 0; border-radius: 2px; background: none;
+  color: var(--rk-text); font: inherit; cursor: pointer;
+}
+.nt-cal-d.off { color: var(--rk-dim, #aaa); }
+.nt-cal-d.now { font-weight: 700; text-decoration: underline; }
+.nt-cal-d.on { background: var(--rk-cite-t); color: var(--rk-panel); }
 
 /* The note read inside its own pane: the print sheet, scrolling. */
 .nt-read { flex: 1; min-height: 0; overflow: auto; background: #fff; color: #111; }
@@ -561,22 +614,26 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 /* 그림 모아 보기: the folder's pictures as pictures. Pressing one puts it in
    the note, which is the only thing one usually wants from a figure list. */
 .nt-gal {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  gap: 6px; padding: 8px 10px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--gal-w, 96px), 1fr));
+  gap: 4px; padding: 4px;
 }
-.nt-gal button {
-  display: flex; flex-direction: column; align-items: stretch; gap: 3px;
-  padding: 3px; border: 1px solid var(--rk-line); background: var(--rk-panel);
+.nt-gal-cell > button {
+  display: flex; flex-direction: column; align-items: stretch; gap: 2px;
+  padding: 2px; border: 1px solid var(--rk-line); background: var(--rk-panel);
   font: inherit; cursor: pointer;
 }
-.nt-gal button:hover { border-color: var(--rk-ink); background: var(--rk-gut); }
-.nt-gal img { width: 100%; height: 72px; object-fit: contain; background: var(--rk-gut); }
-/* Bigger, for looking rather than finding. */
-.nt-gal.big { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
-.nt-gal.big img { height: 150px; }
+.nt-gal-cell > button:hover { border-color: var(--rk-ink); background: var(--rk-gut); }
+/* − and + step the size (tools/files.jsx holds the steps). The height is a
+   CEILING, not a height: fixed, a wide picture sat in a tall box with its own
+   white space above and below it, which is the one thing a picture list has no
+   room for. */
+.nt-gal img {
+  width: 100%; height: auto; max-height: var(--gal-h, 72px);
+  object-fit: contain; background: var(--rk-gut);
+}
 /* What the list is divided into: pictures, and what the document is made of. */
 .nt-files-head { padding: 8px 10px 2px; }
-.nt-gal span {
+.nt-gal .rl-mono {
   font-size: var(--fs-small); color: var(--rk-dim);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -595,13 +652,14 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 /* The same inset `원문` has (CodeMirror's own 6px): the text should not move
    sideways when the view changes, and `.cm-content` already carries the
    editor's own padding. */
-.nt-live .cm-line { padding: 0 6px; }
+.nt-live .cm-line { padding: 3px 6px; }
 .nt-cm-h1, .nt-cm-h2, .nt-cm-h3, .nt-cm-h4, .nt-cm-h5, .nt-cm-h6 {
   font-weight: 600; color: var(--rk-ink);
 }
 .nt-cm-h1 { font-size: 1.45em; }
 .nt-cm-h2 { font-size: 1.22em; }
 .nt-cm-h3 { font-size: 1.07em; }
+.nt-cm-headno { margin-right: .75em; }
 .nt-cm-strong { font-weight: 700; color: var(--rk-ink); }
 .nt-cm-em { font-style: italic; }
 .nt-cm-del { text-decoration: line-through; color: var(--rk-mute); }
@@ -635,7 +693,21 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 /* An item under another one: one step smaller than the line above it, and only
    one — a list five deep is not five sizes smaller. The step in is drawn, not
    written, so the spaces in the file stay as they were. */
-.nt-cm-sub { font-size: calc(var(--rk-fs) - 2px); }
+/* Half a step down, not a whole one: an item under another is still read. */
+.nt-cm-sub { font-size: calc(var(--rk-fs) - 1.5px); }
+/* A list item's `- ` or `1. `, out of the flow and standing in the room the
+   line's padding makes for it (its `left` is written on it). The words — every
+   line of them, wrapped or not — start at that padding. */
+.nt-cm-li, .nt-cm-sub { position: relative; }
+.nt-cm-mark { position: absolute; }
+/* A formula drawn in the text. KaTeX brings its own type; all this says is
+   that it sits in the line like a word does, and a `$$` one gets its own. */
+.nt-cm-math .katex { font-size: 1.05em; }
+.nt-cm-math-block { display: inline-block; width: 100%; text-align: center; }
+
+/* Where the words begin: nothing to see, nothing to measure — the caret
+   stands on it (see livemd.js). */
+.nt-cm-gap { display: inline-block; width: 0; }
 /* A table, drawn as a table — while the caret is somewhere else. The lines it
    covers are still in the file, and pressing it puts the caret back in them. */
 .nt-cm-table {
@@ -697,3 +769,163 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 }
 .nt-tagsug-i { padding: 0 10px; color: var(--rk-cite-t, #1d4ed8); cursor: pointer; overflow: hidden; text-overflow: ellipsis; }
 .nt-tagsug-i.on, .nt-tagsug-i:hover { background: var(--rk-cite, #dbeafe); }
+
+/* A file being dragged over the editor: the editor says it will take it, and
+   the drop cursor (CodeMirror's own) says onto which line. */
+.nt-raw .cm-editor.nt-dropping {
+  outline: 2px dashed var(--rk-cite-t);
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--rk-cite-t) 6%, transparent);
+}
+.nt-raw .cm-dropCursor {
+  border-left: 2px solid var(--rk-cite-t);
+  margin-left: -1px;
+}
+
+/* A line with nothing on it, while the caret is standing there: its number
+   gives way to a dash. The number is no loss on the one line you are already
+   standing on, and a mark BESIDE the number had nowhere to stand once the
+   numbers reached three digits. */
+.nt-raw .cm-gutterElement.nt-gut-empty { position: relative; color: transparent; }
+.nt-raw .cm-gutterElement.nt-gut-empty::after {
+  content: '\2014';
+  position: absolute; inset: 0;
+  text-align: center; color: var(--rk-cite-t);
+}
+
+/* 서식: a button wears the mark it writes — a strike really struck through, a
+   code chip really a chip, a list item with its bullet. Quicker to read than
+   the word for it, and it says what the text will come out as. */
+.nt-fmt .rl-btn code { margin: 0; }
+.nt-fmt-as { font-family: var(--rk-mono); color: var(--rk-dim); margin-right: 4px; }
+.nt-fmt-q {
+  border-left: 2px solid var(--rk-mute); padding-left: 5px;
+  color: var(--rk-dim); font-style: italic;
+}
+
+/* The line a picture came from, drawn as what it DOES: which figure it is,
+   what it is called, and the only thing anyone changes about it — its size.
+   One box ruled into cells, as tall as the line it stands in and in the text's
+   own size: it stands where a line of text stood, and it reads as one. */
+.nt-fig-bar {
+  display: inline-flex; align-items: stretch; max-width: 100%;
+  height: 1.7em; margin: 0; vertical-align: top;
+  border: 1px solid var(--rk-edge); background: var(--rk-panel);
+  font-size: inherit; line-height: calc(1.7em - 2px); color: var(--rk-dim);
+  overflow: hidden;
+}
+.nt-fig-c { display: block; padding: 0 10px; white-space: nowrap; }
+.nt-fig-c + .nt-fig-c { border-left: 1px solid var(--rk-line); }
+.nt-fig-n { background: var(--rk-gut); color: var(--rk-ink); font-weight: 700; }
+.nt-fig-name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  font-family: var(--rk-mono); font-size: .92em; color: var(--rk-ink);
+}
+/* The buttons are buttons: a face of their own, and a hand on hover. */
+.nt-fig-do {
+  flex: 0 0 auto; border: 0; background: var(--rk-cite); color: var(--rk-cite-t);
+  font: inherit; line-height: inherit; cursor: pointer;
+}
+.nt-fig-do:hover { background: var(--rk-cite-t); color: var(--rk-panel); }
+.nt-fig-less, .nt-fig-more { font-family: var(--rk-mono); font-weight: 700; padding: 0 12px; }
+.nt-fig-edit { background: var(--rk-panel); color: var(--rk-ink); }
+.nt-fig-edit:hover { background: var(--rk-gut); color: var(--rk-ink); }
+/* Narrow, and without the stepper: the two buttons beside it ARE the stepper. */
+.nt-fig-px {
+  flex: 0 0 64px; width: 64px; padding: 0 8px; border: 0; border-left: 1px solid var(--rk-line);
+  background: var(--rk-panel); font: inherit; font-family: var(--rk-mono); font-size: .92em;
+  color: var(--rk-ink); text-align: right; appearance: textfield; -moz-appearance: textfield;
+}
+.nt-fig-px:focus { outline: none; background: var(--rk-gut); }
+.nt-fig-px::-webkit-outer-spin-button,
+.nt-fig-px::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* A width that is only read, not written: dimmer, so it is not mistaken for one. */
+.nt-fig-px.nt-fig-auto { color: var(--rk-mute); }
+
+/* 그림 3 in the files tool: the number is the button that goes there. */
+.nt-fig-go { flex: 0 0 auto; font-weight: 700; }
+.nt-gal-cell { position: relative; display: flex; flex-direction: column; }
+.nt-gal-cell > button { flex: 1 1 auto; }
+.nt-gal-cell .nt-fig-go { position: absolute; left: 4px; top: 4px; opacity: .9; }
+
+/* ── slides (slides.jsx) ───────────────────────────────────────────────────
+   One page, 1000 wide and `--nt-deck-h` tall, whose type is its own and not the screen's: the show
+   scales the whole page to the screen, and the numbers here are in the file
+   because a picture's written width (`|600`) has to mean the same thing on it. */
+.nt-slide, .nt-deck { --nt-deck-fs: 24px; }
+.nt-deck {
+  box-sizing: border-box; width: 1000px; padding: 40px 50px;
+  background: #fff; color: #111;
+  font-family: var(--rk-sans); font-size: var(--nt-deck-fs); line-height: 1.45;
+}
+.nt-deck-page { position: absolute; left: 50%; top: 50%; height: var(--nt-deck-h); overflow: hidden; }
+.nt-deck-no { position: absolute; right: 20px; bottom: 12px; font-size: .6em; color: #64748b; }
+.nt-deck-flow { position: fixed; left: -20000px; top: 0; visibility: hidden; }
+.nt-deck > :first-child { margin-top: 0; }
+.nt-deck h1, .nt-deck h2, .nt-deck h3, .nt-deck h4 { margin: .5em 0 .3em; font-weight: 600; color: #000; }
+.nt-deck h1 { font-size: 1.45em; }
+.nt-deck h2 { font-size: 1.22em; }
+.nt-deck h3 { font-size: 1.07em; }
+.nt-deck h4 { font-size: 1em; }
+.nt-deck p, .nt-deck ul, .nt-deck ol, .nt-deck blockquote, .nt-deck pre, .nt-deck table { margin: 0 0 .5em; }
+.nt-deck ul, .nt-deck ol { padding-left: 1.4em; }
+.nt-deck img { display: block; max-width: 100%; max-height: calc(var(--nt-deck-h) - 80px); width: auto; height: auto; object-fit: contain; }
+/* Slide 1: the note's title and the line under it, in the middle of the page. */
+.nt-deck-cover { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.nt-deck-cover h1, .nt-deck-cover-ed h1 { margin: 0; font-size: 2.2em; font-weight: 600; color: #000; }
+/* The title a little above the middle, and what is under it further down, where
+   a name goes. The editor's title slide (below) is laid out to the same marks. */
+.nt-deck.nt-deck-cover > h1 { display: flex; align-items: flex-end; min-height: calc(var(--nt-deck-h) * .46 - 40px); margin: 0 0 calc(var(--nt-deck-h) * .2); }
+
+/* In the editor: the page, drawn at `--nt-k` of its size (SourceArea) with the
+   same type and margins, so a line breaks where it breaks in the show. What
+   the pane has left over at the sides is not slide, and looks it. */
+.nt-raw.nt-slide .cm-scroller { justify-content: center; background: var(--rk-ground); scrollbar-gutter: stable; }
+.nt-raw.nt-slide .cm-content {
+  /* `min-width: 0`: the cover and the lines reach past the margins on purpose,
+     and flex would otherwise widen the page to hold them. */
+  flex: 0 0 calc(1000px * var(--nt-k, 1)); min-width: 0;
+  padding: 0 calc(50px * var(--nt-k, 1)) calc(40px * var(--nt-k, 1));
+  background: #fff;
+  font-size: calc(var(--nt-deck-fs) * var(--nt-k, 1));
+}
+.nt-raw.nt-slide .cm-line { padding: calc(3px * var(--nt-k, 1)) 0; }
+.nt-raw.nt-slide .nt-embed-box { margin-left: 0; }
+.nt-raw.nt-slide .cm-editor:not(.cm-focused) .cm-activeLine,
+.nt-raw.nt-slide .cm-editor:not(.cm-focused) .cm-activeLineGutter { background: none; }
+/* The note's own smaller sub-items and tables are fixed sizes for a screen. A
+   slide has one type size, and a list steps in the way `.nt-deck` lists do. */
+.nt-raw.nt-slide .nt-cm-sub, .nt-raw.nt-slide .nt-cm-table { font-size: 1em; }
+.nt-raw.nt-slide .cm-line.nt-cm-li, .nt-raw.nt-slide .cm-line.nt-cm-sub { padding-left: calc((var(--nt-d) + 1) * 1.4em) !important; }
+.nt-raw.nt-slide .nt-cm-mark { left: calc(var(--nt-d) * 1.4em + .4em) !important; }
+.nt-raw.nt-slide img.nt-embed {
+  width: calc(var(--nt-w, var(--nt-n, 1000)) * var(--nt-k, 1) * 1px) !important;
+  max-height: calc((var(--nt-deck-h) - 80px) * var(--nt-k, 1)) !important;
+}
+.nt-deck-cover-ed {
+  box-sizing: border-box; width: calc(1000px * var(--nt-k, 1)); height: calc(var(--nt-deck-h) * .66 * var(--nt-k, 1));
+  padding-bottom: calc(var(--nt-deck-h) * .2 * var(--nt-k, 1));
+  margin-left: calc(-50px * var(--nt-k, 1));
+  display: flex; align-items: flex-end; justify-content: center; text-align: center;
+}
+.nt-deck-cover-alone { height: calc(var(--nt-deck-h) * var(--nt-k, 1)); padding-bottom: calc(var(--nt-deck-h) * .54 * var(--nt-k, 1)); }
+.nt-deck-fill { height: calc((var(--nt-deck-h) * .34 - 60px) * var(--nt-k, 1)); }
+.nt-raw.nt-slide .cm-line.nt-deck-sub { text-align: center; }
+/* Between two slides: the empty end of the last (`--nt-gap`, page pixels), one
+   solid line with a hair of room round it, and the next slide's top margin.
+   Height rather than margin: CodeMirror measures the border box. */
+.nt-deck-cut {
+  --nt-above: calc(var(--nt-gap) * var(--nt-k, 1) * 1px);
+  height: calc(var(--nt-above) + 5px + 40px * var(--nt-k, 1));
+  margin-inline: calc(-50px * var(--nt-k, 1));
+  background: linear-gradient(var(--rk-dim) 0 0) 0 calc(var(--nt-above) + 2px) / 100% 1px no-repeat;
+}
+.cm-gutterElement .nt-deck-cut { margin-inline: -10px -8px; }
+
+/* The show. Above everything, with the page in the middle of black. */
+.nt-show { position: fixed; inset: 0; z-index: 10000; overflow: hidden; background: #000; cursor: default; user-select: none; }
+.nt-show-x {
+  position: absolute; top: 0; right: 0; width: 48px; height: 48px; border: 0;
+  background: rgb(0 0 0 / 55%); color: #fff; font-size: 24px; cursor: pointer; opacity: 0;
+}
+.nt-show-x:hover, .nt-show-x:focus-visible { opacity: 1; }

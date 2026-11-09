@@ -95,7 +95,7 @@ export default {
   rk_required: (a0) => `${a0} is required.`,
   rk_created_x: (a0, a1) => `${a0} '${a1}' created`,
   rk_deleted_x: (a0, a1) => `${a0} '${a1}' deleted`,
-  rk_show_in_calendar: "Show in calendar",
+  rk_show_in_calendar: "Calendar",
   rk_cannot: "Cannot do that.",
   rk_revealed: (a0) => `Shown in its folder — ${a0}`,
   rk_opened: (a0) => `Opened — ${a0}`,

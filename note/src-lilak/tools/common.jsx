@@ -11,7 +11,7 @@ import { tr } from 'lilak-ui/i18n.jsx'
  *  things and no more. It is a field grid now, the same one activity's editor
  *  is: label on the left, the thing on the right.
  */
-function Body({ note, setNote, go, keep, where, read, print, say, ask, tags, words, fold, tex, make }) {
+function Body({ note, setNote, go, keep, where, read, slide, print, say, ask, tags, words, fold, tex, make }) {
   const { pins, last, marks } = keep
   return (
     <div className="rl-rec nt-common">
@@ -58,7 +58,7 @@ function Body({ note, setNote, go, keep, where, read, print, say, ask, tags, wor
       {/* Whatever else the front matter holds. The backend keeps keys it does
           not know, so a note brought from somewhere else loses nothing. */}
       {Object.entries(note.fields || {})
-        .filter(([k]) => k !== 'format' && k !== 'reference')
+        .filter(([k]) => k !== 'format' && k !== 'reference' && k !== 'ratio' && k !== 'numbered' && k !== 'mode')
         .map(([k, v]) => (
           <RackField key={k} label={<span className="rl-mono">{k}</span>}>
             <span className="rl-hint">{String(v ?? '')}</span>
@@ -71,8 +71,12 @@ function Body({ note, setNote, go, keep, where, read, print, say, ask, tags, wor
           twice is not a comparison. */}
       {note.tex ? null : (
         <RackField label={tr("nt_tool_look")}>
-          <button type="button" className={`rl-btn${read.on ? ' on' : ''}`} aria-pressed={read.on}
-            title={tr("nt_preview_hint")} {...press(() => read.set(!read.on))}>{tr("nt_preview")}</button>
+          {slide ? (
+            <button type="button" className="rl-btn" title={tr("nt_show_hint")} {...press(slide.show)}>{tr("nt_show")}</button>
+          ) : (
+            <button type="button" className={`rl-btn${read.on ? ' on' : ''}`} aria-pressed={read.on}
+              title={tr("nt_preview_hint")} {...press(() => read.set(!read.on))}>{tr("nt_preview")}</button>
+          )}
           <button type="button" className="rl-btn" title={tr("nt_print_hint")} {...press(print)}>{tr("nt_print")}</button>
         </RackField>
       )}

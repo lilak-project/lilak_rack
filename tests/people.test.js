@@ -60,6 +60,10 @@ describe('@ in a note', () => {
     expect(authorsFor('이정')[0]).toMatchObject({ text: '이정우', show: '이정우', other: 'Jung Woo Lee' })
     // one row per person, not one per spelling
     expect(authorsFor('이정').length).toBe(1)
+    // a syllable on its way: 이저 is 이정 unfinished, 이정ㅇ is 이정우 unfinished
+    expect(authorsFor('이저')[0].show).toBe('이정우')
+    expect(authorsFor('이정ㅇ')[0].show).toBe('이정우')
+    expect(authorsFor('이저'.normalize('NFD'))[0].show).toBe('이정우')
     // nothing typed: everyone, once
     expect(authorsFor('').map((x) => x.show)).toEqual(['김민주', '이정우'])
   })

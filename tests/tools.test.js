@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { missingFiles } from '../note/src-lilak/tools/files.jsx'
 import { leading, table } from '../note/src-lilak/tools/format.jsx'
 import { headings, refMap } from '../note/src-lilak/tools/outline.jsx'
+import { unindent } from '../note/src-lilak/tools/format.jsx'
 import { citeMap, citedIn } from '../note/src-lilak/tools/bib.jsx'
 import { comments } from '../note/src-lilak/comments.js'
-import { wonPair } from '../note/src-lilak/liveedit.js'
+import { backJamo, dueAt, isText, leadIn, moveDay, wonPair } from '../note/src-lilak/liveedit.js'
+import { item, MATH } from '../note/src-lilak/livemd.js'
 
 // 목차 — `#` and `\section` are one tool's two spellings.
 describe('headings', () => {
@@ -180,5 +182,138 @@ describe('wonPair', () => {
   })
   it('says no when there is none', () => {
     expect(wonPair('그냥 글')).toBe(-1)
+  })
+})
+
+// A wrapped list item hangs by its marker, so the second line starts under the
+// words of the first.
+describe('item', () => {
+  it('measures the marker, not the line', () => {
+    expect(item('- 할 일')).toEqual({ depth: 0, pad: 0, at: 0, wide: 2 })
+    expect(item('12. 할 일')).toEqual({ depth: 0, pad: 0, at: 0, wide: 4 })
+  })
+  it('steps in under another item, and still hangs', () => {
+    expect(item('  - 할 일')).toEqual({ depth: 1, pad: 26, at: 2, wide: 2 })
+    expect(item('\t- 할 일')).toEqual({ depth: 1, pad: 26, at: 1, wide: 2 })
+  })
+  it('is not a list', () => {
+    expect(item('그냥 글')).toBe(null)
+    expect(item('-빈칸없음')).toBe(null)
+  })
+})
+
+// `$…$` in a markdown note is set as a formula — but a price is a price.
+describe('MATH', () => {
+  const found = (t) => [...t.matchAll(MATH)].map((m) => m[2])
+  it('finds a formula', () => {
+    expect(found('보자 $x^2 + y^2$ 이것')).toEqual(['x^2 + y^2'])
+    expect(found('$$\\frac{1}{2}$$ 블록')).toEqual(['\\frac{1}{2}'])
+  })
+  it('leaves money alone', () => {
+    expect(found('$5 랑 $10 은 돈')).toEqual([])
+    expect(found('A4 용지 $3 하고 커피 $4 샀다')).toEqual([])
+  })
+})
+
+// Pressing a due date opens the little calendar on the day already written.
+describe('dueAt', () => {
+  const line = '- [ ] 한번 해보기 » 2026-11-5 끝'
+  it('finds the date under the press, padded for the input', () => {
+    expect(dueAt(line, line.indexOf('2026') + 2)).toEqual({
+      at: line.indexOf('»'), to: line.indexOf('»') + '» 2026-11-5'.length, was: '2026-11-05',
+    })
+  })
+  it('is nothing when the press is elsewhere on the line', () => {
+    expect(dueAt(line, 3)).toBe(null)
+    expect(dueAt('아무 날짜 없는 줄', 4)).toBe(null)
+  })
+})
+
+// 미니 달력 — the keys and the arrows walk the month without it walking off.
+describe('moveDay', () => {
+  it('steps a day and a week, across the end of a month', () => {
+    expect(moveDay('2026-11-04', 1)).toBe('2026-11-05')
+    expect(moveDay('2026-11-04', -7)).toBe('2026-10-28')
+    expect(moveDay('2026-11-30', 7)).toBe('2026-12-07')
+  })
+  it('keeps a month step inside the month it lands in', () => {
+    expect(moveDay('2026-01-31', 0, 1)).toBe('2026-02-28')
+    expect(moveDay('2026-03-15', 0, -1)).toBe('2026-02-15')
+    expect(moveDay('2026-12-10', 0, 1)).toBe('2027-01-10')
+  })
+})
+
+// 원문으로 끌어온 텍스트 파일은 내용이 들어간다 — 그 판단.
+describe('isText', () => {
+  const f = (name, size = 100, type = '') => ({ name, size, type })
+  it('takes a text file the system gave no type to', () => {
+    expect(isText(f('main.tex'))).toBe(true)
+    expect(isText(f('refs.bib'))).toBe(true)
+    expect(isText(f('run.py'))).toBe(true)
+    expect(isText(f('notes.txt', 100, 'text/plain'))).toBe(true)
+  })
+  it('leaves a picture, an archive and a huge log to be stored', () => {
+    expect(isText(f('fig1.png', 100, 'image/png'))).toBe(false)
+    expect(isText(f('paper.zip'))).toBe(false)
+    expect(isText(f('run.log', 50 << 20))).toBe(false)
+  })
+})
+
+// 쓰고 있던 글자는 자음·모음 하나씩 — 그 한 글자의 계산.
+describe('backJamo', () => {
+  it('takes the final consonant off, then the vowel, then gives up', () => {
+    expect(backJamo('한')).toBe('하')
+    expect(backJamo('하')).toBe('ㅎ')
+    expect(backJamo('ㅎ')).toBe(null)
+  })
+  it('undoes one key at a time, not one jamo', () => {
+    expect(backJamo('값')).toBe('갑')   // ㅄ was two presses
+    expect(backJamo('갑')).toBe('가')
+    expect(backJamo('과')).toBe('고')   // ㅘ was ㅗ then ㅏ
+    expect(backJamo('뭐')).toBe('무')
+    expect(backJamo('읽')).toBe('일')
+  })
+  it('comes apart for a jamo standing on its own, where there is a part to keep', () => {
+    expect(backJamo('ㅘ')).toBe('ㅗ')
+    expect(backJamo('ㄱ')).toBe(null)
+  })
+  it('leaves everything else to the ordinary backspace', () => {
+    expect(backJamo('a')).toBe(null)
+    expect(backJamo('漢')).toBe(null)
+    expect(backJamo(' ')).toBe(null)
+  })
+})
+
+// 목록 표시는 한 글자처럼 한 번에 지워진다 — 어디까지가 그 표시인가.
+describe('leadIn', () => {
+  it('takes the bullet, the number and the task box with the indent', () => {
+    expect(leadIn('- hello')).toBe('- ')
+    expect(leadIn('    * hello')).toBe('    * ')
+    expect(leadIn('12. hello')).toBe('12. ')
+    expect(leadIn('- [ ] hello')).toBe('- [ ] ')
+    expect(leadIn('  - [x] hello')).toBe('  - [x] ')
+  })
+  it('is nothing on a line that is not a list', () => {
+    expect(leadIn('hello')).toBe('')
+    expect(leadIn('# heading')).toBe('')
+    expect(leadIn('-no space')).toBe('')
+    expect(leadIn('> quoted')).toBe('')
+  })
+})
+
+// 앞 공백 지우기 — 고른 줄 앞의 자리만, 줄 안쪽은 그대로.
+describe('unindent', () => {
+  it('takes spaces and tabs off the front', () => {
+    expect(unindent('    hello')).toBe('hello')
+    expect(unindent('\t\thello')).toBe('hello')
+    expect(unindent('  \t - [ ] 할 일')).toBe('- [ ] 할 일')
+  })
+  it('leaves the rest of the line, and a line with no room in front', () => {
+    expect(unindent('hello  world')).toBe('hello  world')
+    expect(unindent('hello')).toBe('hello')
+    expect(unindent('')).toBe('')
+  })
+  it('empties a line that was nothing but space', () => {
+    expect(unindent('     ')).toBe('')
   })
 })

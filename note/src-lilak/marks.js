@@ -97,6 +97,105 @@ export const URGENT_RE = /(^|\s)!!(?=\s|$)/g
 export const isImage = (name) =>
   /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i.test(String(name || ''))
 
+/** The pictures a note embeds, in order, numbered from the top: `그림 1`,
+ *  `그림 2` … — `{ at, line, name, spec, n }`, `at` where the markup starts,
+ *  `line` the (1-based) line it is on. Files that are not pictures (a pdf, a
+ *  .tex) are embeds too, but not figures, and get no number.
+ *
+ *  ponytail: an embed inside a code fence is counted. Nobody writes one. */
+/** A note cut into slides. `blocks` are what the renderer drew, top to bottom:
+ *  { line, top, bottom, rule, h1 }. The first is the title slide's one line of
+ *  content, and only it. After that a slide ends at a `---` (`rule`, on neither
+ *  side), before a `#` heading, or before a block that would run past `room`
+ *  — one too tall for any slide is left alone at the top of its own, to be cut.
+ *  → [{ from, to, spare }], source lines, 1-based and inclusive, and how much of
+ *  `room` the slide left empty; [0] is the title slide, `{ from: 0, to: -1 }`
+ *  when a `---` came first. */
+export function cutPages(blocks, room) {
+  const pages = []
+  let page = null, top = 0
+  for (const b of blocks) {
+    if (b.rule) {
+      if (page) page.to = b.line - 1
+      else if (!pages.length) pages.push({ from: 0, to: -1, spare: 0 })
+      page = null
+    } else {
+      if (!page || pages.length === 1 || b.h1 || b.bottom - top > room) {
+        if (page) page.to = b.line - 1
+        page = { from: b.line, to: Infinity, spare: 0 }
+        top = b.top
+        pages.push(page)
+      }
+      page.spare = Math.max(0, room - (b.bottom - top))
+    }
+  }
+  return pages
+}
+
+/** The lines that are nothing but `---`, code blocks aside. On a slide each is
+ *  the line between two slides, even straight under a line of text. */
+export function ruleLines(body) {
+  let fenced = false
+  const out = []
+  String(body || '').split('\n').forEach((l, i) => {
+    if (/^ {0,3}(```|~~~)/.test(l)) fenced = !fenced
+    else if (!fenced && /^ {0,3}-{3,}\s*$/.test(l)) out.push(i + 1)
+  })
+  return out
+}
+
+/** The note as the renderer should read it: `***` says what `---` says and,
+ *  unlike it, cannot turn the line above into a heading. The lines stay put. */
+export function plainRules(body) {
+  const rules = new Set(ruleLines(body))
+  return String(body || '').split('\n').map((l, i) => (rules.has(i + 1) ? '***' : l)).join('\n')
+}
+
+/** line → `1`, `1.2`, `1.2.3`: the numbers `#`, `##`, `###` come to, counted
+ *  through the note. A note that opens on `##` has no first number to show. */
+export function headingNumbers(body) {
+  const at = [0, 0, 0]
+  const out = new Map()
+  outsideCode(String(body || '')).split('\n').forEach((l, i) => {
+    const m = /^ {0,3}(#{1,3})[ \t]+\S/.exec(l)
+    if (!m) return
+    const depth = m[1].length
+    at[depth - 1] += 1
+    at.fill(0, depth)
+    out.set(i + 1, at.slice(at.findIndex(Boolean), depth).join('.'))
+  })
+  return out
+}
+
+/** The body with those numbers written into its headings, for whatever renders
+ *  it: only there, the file does not get them. The lines stay where they are. */
+export function numberHeadings(body) {
+  const nos = headingNumbers(body)
+  return String(body || '').split('\n')
+    .map((l, i) => (nos.has(i + 1) ? l.replace(/^ {0,3}#{1,3}[ \t]+/, (h) => `${h}${nos.get(i + 1)}\u2002 `) : l))
+    .join('\n')
+}
+
+/** The text of each of those slides. */
+export function pageTexts(body, pages) {
+  const lines = String(body || '').split('\n')
+  return pages.map((p) => lines.slice(p.from - 1, p.to).join('\n'))
+}
+
+export function figureList(body) {
+  const text = String(body || '')
+  const out = []
+  let line = 1, seen = 0
+  for (const m of text.matchAll(EMBED_RE)) {
+    const [name] = embedSpec(m[1])
+    if (!isImage(name)) continue
+    for (let i = seen; i < m.index; i += 1) if (text.charCodeAt(i) === 10) line += 1
+    seen = m.index
+    out.push({ at: m.index, line, name, spec: m[1], n: out.length + 1 })
+  }
+  return out
+}
+
 /** `name|400` — Obsidian's way of saying how wide this one picture should be.
  *  Everything else is left to the stylesheet, which keeps a picture inside the
  *  pane and under two thirds of the screen. */
@@ -168,7 +267,14 @@ export const authorShow = (word) => {
 /** [{ text, show, other, email }] — `text` is written, `show` is the name it
  *  is written from, `other` the name in the other script. */
 export const authorsFor = (q) => {
-  const k = String(q).toLowerCase()
+  const k = String(q).normalize('NFC').toLowerCase()
+  // A syllable still being composed matches nobody on its way: 다여 is 다영
+  // not yet finished, 당 is 다 with the ㅇ of 영 still on it. So the people
+  // for what is already there stay offered until the syllable is done.
+  const rows = authorRows(k)
+  return rows.length || !/[\u3131-\u318e\uac00-\ud7a3]$/.test(k) ? rows : authorRows(k.slice(0, -1))
+}
+const authorRows = (k) => {
   const rows = []
   for (const x of PEOPLE) {
     // Their own spellings, Korean first; with nothing typed, just the one.

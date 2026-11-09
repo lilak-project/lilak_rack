@@ -4,7 +4,7 @@ export default {
   pm_project: "프로젝트",
   pm_projects: "프로젝트",
   pm_name: "이름",
-  pm_show_in_calendar: "달력에서 보기",
+  pm_show_in_calendar: "달력",
   pm_name_hint: "한 낱말로 — 본문에서 +이름 으로 부릅니다",
   pm_name_one_word: "프로젝트 이름에는 띄어쓰기와 # + . , ; : ! ? ( ) [ ] { } ' \" 를 쓸 수 없습니다 (예: STARK_CRIB)",
   pm_tags: "태그",

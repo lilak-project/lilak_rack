@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { fileSrc, kb } from '../api.js'
 import { press } from './press.js'
 import { dropped } from '../liveedit.js'
-import { EMBED_RE, embedSpec, isImage } from '../marks.js'
+import { EMBED_RE, embedSpec, figureList, isImage } from '../marks.js'
 import { tr } from 'lilak-ui/i18n.jsx'
 
 /** 그림·파일 — what is in the note's folder, and what the note says about it.
@@ -50,9 +50,35 @@ export function missingFiles(body, files, tex) {
   return out
 }
 
-/** One row of the list: a thumbnail, the name, the size, and `넣기`. */
-const Row = ({ x, src, put }) => (
+/** The steps the gathered pictures grow through: how wide a cell is at least,
+ *  and how tall the picture in it. `100%` is one to a row — the column cannot
+ *  fit two of them, which is the point. */
+const GAL = [['96px', '72px'], ['150px', '110px'], ['230px', '170px'], ['360px', '260px'], ['100%', '60vh']]
+
+/** The text for a file, on the clipboard. The portal frames this page, where
+ *  the clipboard API is not always granted; the old way still works and costs
+ *  three lines, so it is the fallback rather than an apology. */
+async function toClipboard(text) {
+  try { await navigator.clipboard.writeText(text); return true } catch { /* framed */ }
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.cssText = 'position:fixed;top:-50px;opacity:0'
+  document.body.appendChild(ta)
+  ta.select()
+  try { return document.execCommand('copy') } catch { return false } finally { ta.remove() }
+}
+
+/** `그림 3`, as a button that goes to the picture's line — the same glide the
+ *  line numbers make (ctx.go). Nothing for a file that is not a figure. */
+const FigNo = ({ fig, go }) => (fig ? (
+  <button type="button" className="rl-btn nt-pin-go nt-fig-go" title={tr("nt_fig_go", fig.n)}
+    {...press(() => go(fig.line))}>{tr("nt_fig_n", fig.n)}</button>
+) : null)
+
+/** One row of the list: its figure number, a thumbnail, the name, the size, `넣기` and `복사`. */
+const Row = ({ x, src, put, copy, fig, go }) => (
   <li>
+    <FigNo fig={fig} go={go} />
     {/* A picture says what it is better than its name does. */}
     {isImage(x.name)
       ? <img className="nt-thumb" src={src} alt="" loading="lazy" />
@@ -60,16 +86,24 @@ const Row = ({ x, src, put }) => (
     <a className="rl-mono nt-fname" href={src} target="_blank" rel="noreferrer">{x.name}</a>
     <span className="rl-hint">{kb(x.bytes)}</span>
     <button type="button" className="rl-btn" title={tr("nt_file_put")} {...press(put)}>{tr("nt_file_put_do")}</button>
+    <button type="button" className="rl-btn" title={tr("nt_file_copy_hint")} {...press(copy)}>{tr("nt_file_copy")}</button>
   </li>
 )
 
-function Body({ note, edit, files, seeFiles, tex }) {
+function Body({ note, edit, files, seeFiles, say, go, tex }) {
   const gone = missingFiles(note.body, files, note.tex)
   // Gathered or listed, and how big. A folder of figures is looked at, not
   // read — but the list is what tells you a `.sty` is there, so it is a switch
   // rather than a replacement.
-  const [gathered, setGathered] = useState(false)
-  const [big, setBig] = useState(false)
+  const [gathered, setGathered] = useState(true)
+  // How big a gathered picture is drawn. Finding one among twenty wants them
+  // small; looking AT one wants it big — so it is a step rather than a switch,
+  // and the last step is one picture to a row, as wide as the column gets.
+  const [z, setZ] = useState(GAL.length - 1)
+  // Read through a clamp, not straight: a press that lands past either end
+  // would be `undefined[0]`, and the whole page goes to the error screen for
+  // the sake of a button that should simply have done nothing.
+  const step = GAL[Math.min(Math.max(z, 0), GAL.length - 1)]
   const src = (x) => fileSrc(x.name, note.tex ? note.id : '')
   const all = Array.isArray(files) ? files : []
   // A markdown note's folder is the vault's: only what this note embeds is
@@ -80,16 +114,38 @@ function Body({ note, edit, files, seeFiles, tex }) {
       .sort((a, b) => want.indexOf(a.name) - want.indexOf(b.name))
   })()
   const pics = mine.filter((x) => isImage(x.name))
+  // Which figure a file is in THIS note (its first embedding), for the number
+  // that goes there. A markdown note's pictures are numbered as the live view
+  // numbers them (marks.js figureList); a tex note's are not figures here.
+  const figs = new Map()
+  if (!note.tex) for (const f of figureList(note.body)) if (!figs.has(f.name)) figs.set(f.name, f)
   const rest = mine.filter((x) => !isImage(x.name))
-  const put = (x) => () => edit.put(dropped(x.name, note.tex))
+  // A line of its own, under the one the caret is in (App's `edit.block`):
+  // a picture put in the middle of a word is never what was meant, least of
+  // all in the middle of another picture's markup.
+  const put = (x) => () => edit.block(dropped(x.name, note.tex))
+  // What `넣기` would have written, on the clipboard instead: the same line,
+  // for another note or another place in this one.
+  const copy = (x) => () => {
+    const text = dropped(x.name, note.tex).trim()
+    toClipboard(text).then((ok) => say(ok ? tr("nt_file_copied", text) : tr("nt_file_copy_no")))
+  }
   return (<>
     <div className="nt-mrow">
+      {/* Two ways of looking at the same folder, as two buttons: a switch that
+          was one button said what it would do next, never which one you were
+          in. The list is what tells you a `.sty` is there; the pictures are
+          what you look at. */}
+      <button type="button" className={`rl-btn${gathered ? '' : ' on'}`} aria-pressed={!gathered}
+        title={tr("nt_files_list_hint")} {...press(() => setGathered(false))}>{tr("nt_files_list")}</button>
       <button type="button" className={`rl-btn${gathered ? ' on' : ''}`} aria-pressed={gathered}
-        title={tr("nt_files_gather_hint")} {...press(() => setGathered(!gathered))}>{tr("nt_files_gather")}</button>
-      {gathered ? (
-        <button type="button" className={`rl-btn${big ? ' on' : ''}`} aria-pressed={big}
-          title={tr("nt_files_big_hint")} {...press(() => setBig(!big))}>{tr("nt_files_big")}</button>
-      ) : null}
+        title={tr("nt_files_gather_hint")} {...press(() => setGathered(true))}>{tr("nt_files_gather")}</button>
+      {gathered ? (<>
+        <button type="button" className="rl-btn" disabled={!z} title={tr("nt_files_smaller")}
+          {...press(() => setZ((n) => Math.max(0, n - 1)))}>−</button>
+        <button type="button" className="rl-btn" disabled={z >= GAL.length - 1} title={tr("nt_files_bigger")}
+          {...press(() => setZ((n) => Math.min(GAL.length - 1, n + 1)))}>+</button>
+      </>) : null}
       {/* A file input wearing the bar's button. Only on an empty tex note —
           see `empty` — so it is gone by the time there is a manuscript to
           overwrite. */}
@@ -119,12 +175,15 @@ function Body({ note, edit, files, seeFiles, tex }) {
       ) : gathered ? (
         /* The pictures as pictures. Pressing one puts it in the note. */
         !pics.length ? <p className="rl-hint nt-empty">{tr("nt_files_nopic")}</p> : (
-          <div className={`nt-gal${big ? ' big' : ''}`}>
+          <div className="nt-gal" style={{ '--gal-w': step[0], '--gal-h': step[1] }}>
             {pics.map((x) => (
-              <button key={x.name} type="button" title={`${x.name} · ${kb(x.bytes)}`} {...press(put(x))}>
-                <img src={src(x)} alt="" loading="lazy" />
-                <span className="rl-mono">{x.name.split('/').pop()}</span>
-              </button>
+              <span key={x.name} className="nt-gal-cell">
+                <button type="button" title={`${x.name} · ${kb(x.bytes)}`} {...press(put(x))}>
+                  <img src={src(x)} alt="" loading="lazy" />
+                  <span className="rl-mono">{x.name.split('/').pop()}</span>
+                </button>
+                <FigNo fig={figs.get(x.name)} go={go} />
+              </span>
             ))}
           </div>
         )
@@ -134,13 +193,13 @@ function Body({ note, edit, files, seeFiles, tex }) {
         {pics.length ? (<>
           <p className="rl-hint nt-files-head">{tr("nt_files_pics", pics.length)}</p>
           <ul className="nt-files">
-            {pics.map((x) => <Row key={x.name} x={x} src={src(x)} put={put(x)} />)}
+            {pics.map((x) => <Row key={x.name} x={x} src={src(x)} put={put(x)} copy={copy(x)} fig={figs.get(x.name)} go={go} />)}
           </ul>
         </>) : null}
         {rest.length ? (<>
           <p className="rl-hint nt-files-head">{tr("nt_files_rest", rest.length)}</p>
           <ul className="nt-files">
-            {rest.map((x) => <Row key={x.name} x={x} src={src(x)} put={put(x)} />)}
+            {rest.map((x) => <Row key={x.name} x={x} src={src(x)} put={put(x)} copy={copy(x)} />)}
           </ul>
         </>) : null}
       </>)}

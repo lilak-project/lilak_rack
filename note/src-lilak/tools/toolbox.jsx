@@ -66,6 +66,17 @@ export default function Toolbox({ anchor, kit, at, onPick, onShut, onPush, ctx }
   const [wide, setWide] = useState(() => (Number(load(WIDE, WIDTHS[0])) === WIDTHS[1] ? WIDTHS[1] : WIDTHS[0]))
   useEffect(() => { save(WIDE, wide) }, [wide])
   const pushed = useRef(0)
+  // Which end of this window the host opened for us (`frame.jsx`). Right is
+  // what a window with no host has, and what a host gives when it can.
+  const [side, setSide] = useState('right')
+  useEffect(() => {
+    const heard = (e) => {
+      if (e.origin !== window.location.origin || e.source !== window.parent) return
+      if (e.data?.rack === 'frame-side') setSide(e.data.side === 'left' ? 'left' : 'right')
+    }
+    window.addEventListener('message', heard)
+    return () => window.removeEventListener('message', heard)
+  }, [])
   // Asking the host for room. Only from inside a frame, and only our origin.
   const beg = (px) => {
     if (window.parent === window) return
@@ -86,13 +97,29 @@ export default function Toolbox({ anchor, kit, at, onPick, onShut, onPush, ctx }
       if (!r) return
       const box = { top: r.top, height: r.height }
       let next
-      if (window.innerWidth - r.right >= wide) next = { ...box, left: r.right }
-      else if (r.left >= wide) next = { ...box, right: Math.max(0, window.innerWidth - r.left) }
+      // The side with MORE room wins, not the right one first: an editor that
+      // sits in the right half has the window's edge a few pixels away, and a
+      // panel drawn there is cut off by it (a frame makes this worse — the
+      // guest's `innerWidth` is the frame's, which can run past what the host
+      // shows). The list is usually to the left, and covering the list is
+      // what this panel is for.
+      const roomL = r.left
+      const roomR = window.innerWidth - r.right
+      const right = () => ({ ...box, left: Math.max(0, Math.min(r.right, window.innerWidth - wide)) })
+      if (roomR >= wide && roomR >= roomL) next = right()
+      else if (roomL >= wide) next = { ...box, right: Math.max(0, window.innerWidth - r.left) }
+      else if (roomR >= wide) next = right()
       // No room either side (a full-width tab): stand inside its edge and let
       // the editor be pushed over.
+      else if (side === 'left') next = { ...box, left: Math.max(0, r.left), push: true }
       else next = { ...box, left: Math.max(0, r.right - wide), push: true }
       const want = next.push ? wide : 0
-      if (want !== pushed.current) { pushed.current = want; onPush?.(want); beg(want) }
+      if (want !== pushed.current || (want && pushed.side !== side)) {
+        pushed.current = want
+        pushed.side = side
+        onPush?.(want ? { px: want, side } : 0)
+        beg(want)
+      }
       setSpot(next)
     }
     place()
@@ -100,7 +127,7 @@ export default function Toolbox({ anchor, kit, at, onPick, onShut, onPush, ctx }
     if (anchor.current) ro.observe(anchor.current)
     window.addEventListener('resize', place)
     return () => { ro.disconnect(); window.removeEventListener('resize', place) }
-  }, [anchor, wide, onPush])
+  }, [anchor, wide, onPush, side])
 
   // Shut, pushed or not, the editor gets its width back — and the host its room.
   useEffect(() => () => { if (pushed.current) { onPush?.(0); beg(0) } }, [onPush])

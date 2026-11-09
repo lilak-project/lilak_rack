@@ -17,6 +17,9 @@ export default defineConfig({
     alias: [
       { find: /^racklist$/, replacement: resolve(__dirname, 'racklist/index.js') },
       { find: /^racklist\//, replacement: `${resolve(__dirname, 'racklist')}/` },
+      // CodeMirror lives in note's own tree; the test and the module under it
+      // must get the SAME copy or the view refuses the state.
+      { find: /^@codemirror\//, replacement: `${resolve(__dirname, 'note/node_modules/@codemirror')}/` },
       { find: /^lilak-ui\//, replacement: `${UI}/` },
       { find: /^lilak-ui$/, replacement: UI },
     ],

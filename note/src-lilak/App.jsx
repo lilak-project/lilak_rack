@@ -18,10 +18,11 @@ import {
   projectKey, load, authHeaders, tagKey, tagWithin, mergeTags as tagCounts, useTagSources, uniqueTags, useProjects,
   useReferences, useAuthors, save, addReference, referenceDoc, bibText,
 } from 'racklist'
-import { TAG_RE, TAG_COMMENT, URGENT_RE, outsideCode, replaceOutsideCode, setTagChoices, setProjChoices, setCiteChoices, setAuthorChoices, authorShow } from './marks.js'
+import { numberHeadings, TAG_RE, TAG_COMMENT, URGENT_RE, outsideCode, replaceOutsideCode, untagged, setTagChoices, setProjChoices, setCiteChoices, setAuthorChoices, authorShow } from './marks.js'
 import SourceArea from './SourceArea.jsx'
 import { wrapSel } from './liveedit.js'
 import { Rendered } from './reading.jsx'
+import { DeckMeasure, SlideShow, enterFull, gapBefore, slideH } from './slides.jsx'
 import { toolsFor } from './tools/index.js'
 import { press } from './tools/press.js'
 import Toolbox from './tools/toolbox.jsx'
@@ -59,6 +60,8 @@ const tagsOf = (n) => (n.tags || []).filter(Boolean)
  *  so `@이정우` and `@JungWooLee` are ONE value here however the note spells
  *  them, and a `@word` naming nobody is left as it was written. */
 const peopleOf = (n) => [...new Set((n.authors || []).map((w) => authorShow(w) || w).filter(Boolean))]
+/** The body as it renders: with its heading numbers, if the note has them on. */
+const headed = (n) => (n.fields?.numbered ? numberHeadings(n.body) : n.body)
 /** `format: tex` in the front matter — the note is a LaTeX document. */
 const texNote = (n) => String(n?.fields?.format || '').toLowerCase() === 'tex'
 /** The tags a body carries — and the body is the only place one lives.
@@ -88,6 +91,11 @@ export function renameBodyTag(body, from, to) {
 /** A day as this app writes one. The browser's own, not UTC: a note saved at
  *  half past midnight was saved today. */
 const day = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+/** The weekday in the title, in English and three letters whatever the
+ *  language: a daily note's name is read in a file listing as often as on the
+ *  screen, and `2026-11-04 (Wed)` sorts the same as `2026-11-04` did. */
+const WDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+export const dayName = (d) => `${day(d)} (${WDAY[d.getDay()]})`
 /** When the FILE last changed. The list already carries it: `version` is the
  *  file's modification time in nanoseconds, which is what a save compares
  *  against — the date beside it is the one the note itself claims. */
@@ -95,10 +103,6 @@ const updatedOn = (n) => {
   const ms = Number(n.version) / 1e6
   return ms > 0 ? day(new Date(ms)) : ''
 }
-
-const untagged = (text) => replaceOutsideCode(text, TAG_RE, (m, lead) => lead)
-  .replace(/\s{2,}/g, ' ')
-  .trim()
 
 /** Urgent and not done: on top whatever the sort, and the mark before its text. */
 const urgentNow = (t) => !!t.urgent && !t.done
@@ -483,8 +487,12 @@ async function made(a, body, said) {
  *  Two places press this — the ⋯ menu and the toolbox's `공용` — because it is
  *  the one template that gets used, so it is a button and not a list entry. */
 async function openDaily(a) {
-  const title = `Daily ${day(new Date())}`
-  const had = (a.doc?.notes || []).find((n) => n.title === title)
+  const now = new Date()
+  const title = `Daily ${dayName(now)}`
+  // Found by the DATE, not the whole title: the notes made before the weekday
+  // was part of the name are still that day's note, and a second one would be
+  // the one thing this button exists to prevent.
+  const had = (a.doc?.notes || []).find((n) => (n.title || '').startsWith(`Daily ${day(now)}`))
   if (had) { a.openItem(had.id); a.setNote(tr("nt_opened", title)); return }
   try {
     const template = (a.doc?.templates || []).includes('daily') ? 'daily' : null
@@ -527,14 +535,19 @@ function Todos({ a, tscope, who, system = false }) {
   const reload = useCallback(() => ask('/todos').then(({ body }) => setTodos(body.todos)).catch((e) => a.setNote(String(e.message || e))), [])   // eslint-disable-line react-hooks/exhaustive-deps
   // Read again whenever the notes are — a note saved may have ticked one.
   useEffect(() => { reload() }, [reload, a.doc])
-  const rows = useMemo(() => {
+  // `cut` is how many this tab HAS that a filter is holding back — an empty
+  // table that says "write `- [ ] 할 일`" when there are 24 of them behind the
+  // 누구의 노트 button is telling the reader the wrong thing to do.
+  const { rows, cut } = useMemo(() => {
     const q = (a.query || '').trim().toLowerCase()
     const keep = (TODO_SCOPES.find((x) => x.k === tscope) || TODO_SCOPES[0]).is
     // A todo goes by the note it is in: its own tags say what it is, not whose.
     const shown = new Set((a.doc?.notes || []).filter(who.is).map((n) => n.id))
-    return (todos || []).filter((t) => isSystemTodo(t) === system).filter(keep).filter((t) => shown.has(t.id))
+    const mine = (todos || []).filter((t) => isSystemTodo(t) === system).filter(keep)
+    const out = mine.filter((t) => shown.has(t.id))
       .filter((t) => !q || [t.text, t.title, ...(t.tags || [])].filter(Boolean).some((v) => String(v).toLowerCase().includes(q)))
       .sort((x, y) => urgentNow(y) - urgentNow(x) || byKeys(sort, TODO_SORTERS)(x, y))
+    return { rows: out, cut: mine.length - out.length }
   }, [todos, a.query, tscope, sort, system, who, a.doc])
   async function toggle(t) {
     try {
@@ -568,7 +581,11 @@ function Todos({ a, tscope, who, system = false }) {
             done: t.doneAt || D,
           }} />
       ))}
-      {rows.length === 0 && <p className="rl-msg">{tr(system ? "nt_no_system_todos" : "nt_no_todos")}</p>}
+      {rows.length === 0 && (
+        <p className="rl-msg">{!cut ? tr(system ? "nt_no_system_todos" : "nt_no_todos")
+          : who.k !== 'all' ? tr("nt_todos_who", cut, who.label())
+          : tr("nt_todos_find", cut)}</p>
+      )}
     </RackTable>
   )
 }
@@ -642,6 +659,7 @@ const Ribbon = ({ on }) => (
 const MODES = {
   live: { kind: 'md', label: () => 'MD', paint: true },
   raw: { kind: 'md', label: () => tr("nt_raw") },
+  slide: { kind: 'md', label: () => tr("nt_slide"), paint: true },
   tex: { kind: 'tex', label: () => 'LaTeX', hint: () => tr("nt_tex"), format: 'tex' },
 }
 
@@ -654,8 +672,14 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   // Kept with the place (scrolled.js) for the same reason the scroll is:
   // moving the pane builds this editor again, and coming back to `라이브`
   // when you were reading is the same lost place by another name.
-  const [view, setView] = useState(() => placeBack(`${id}:view`) || 'live')
+  const [picked, setView] = useState(() => placeBack(`${id}:view`) || 'live')
+  // A deck is a fact about the note, written with it (`mode: slide`), so it is
+  // still a deck after a reload and on the next machine.
+  const view = f?.fields?.mode === 'slide' ? 'slide' : picked
   useEffect(() => { placeSave(`${id}:view`, view) }, [id, view])
+  // A slide note: where the renderer cut it, and whether it is being shown.
+  const [pages, setPages] = useState([])
+  const [showing, setShowing] = useState(null)       // the slide it started on
   // Which tool is open, '' for shut. The toolbox belongs to THIS tab: moving
   // to another takes it away with this editor, and that tab opens and shuts
   // its own. Kept with the rest of where-you-were (scrolled.js).
@@ -684,6 +708,26 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
         const r = v.state.selection.main
         v.dispatch({ changes: { from: r.from, to: r.to, insert: text },
           selection: { anchor: r.from + text.length }, scrollIntoView: true })
+        v.focus()
+      },
+      /** Something that is a LINE and not a word — a picture, a file. It goes
+       *  on a line of its own under the caret's, and the caret goes PAST it.
+       *
+       *  `put` would drop it wherever the caret happens to be, and the caret
+       *  in a live note is often inside the markup of a picture already there
+       *  (`![[a.png]]`), which the new name then cuts in half: both pictures
+       *  gone, and the only sign of it a line of text where one of them was.
+       *  Left ON the new line it would be no better — the caret's line is
+       *  drawn as the markup it IS, so the picture would not appear until you
+       *  pressed an arrow key. And a selection is left alone: pressing a
+       *  picture in the files tool is not an edit to whatever is selected. */
+      block(text) {
+        const v = now()
+        if (!v) return
+        const line = v.state.doc.lineAt(v.state.selection.main.head)
+        const insert = (line.text.trim() ? '\n' : '') + (text.endsWith('\n') ? text : `${text}\n`)
+        v.dispatch({ changes: { from: line.to, insert },
+          selection: { anchor: line.to + insert.length }, scrollIntoView: true })
         v.focus()
       },
       /** Round what is selected — `**` and `**`, `\\textbf{` and `}`. The same
@@ -764,6 +808,35 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   // it is being looked at in.
   const mode = tex ? 'tex' : view
   const can = MODES[mode] || MODES.live
+  const isDeck = view === 'slide' && !tex
+  const deckH = slideH(f?.fields?.ratio)
+  // Which slide a line is on, and going to one: to the top of the box.
+  const slideOf = (ln) => pages.reduce((at, p, i) => (i && p.from <= ln ? i : at), 0)
+  const toSlide = (i, quiet = false) => {
+    const n = Math.max(0, Math.min(pages.length - 1, i))
+    const p = pages[n]
+    if (p) setGo({ line: n ? p.from : 1, flush: gapBefore(pages, n), quiet, n: Date.now() })
+    return n
+  }
+  // `<<` `>>`: from the slide in front of you, or the one still being glided
+  // to when the button is pressed again in the middle of the glide.
+  const heading = useRef({ at: 0, until: 0 })
+  const stepSlide = (by) => {
+    const from = Date.now() < heading.current.until ? heading.current.at : viewing()
+    heading.current = { at: toSlide(from + by, true), until: Date.now() + 400 }
+  }
+  // The slide in front of you: the caret's if you are typing and it is on
+  // screen, or else the one at the top of the box.
+  const viewing = () => {
+    const v = cm.current
+    if (!v) return 0
+    const { head } = v.state.selection.main
+    const at = v.coordsAtPos(head)
+    const box = v.scrollDOM.getBoundingClientRect()
+    const pos = v.hasFocus && at && at.top >= box.top && at.bottom <= box.bottom ? head : v.lineBlockAtHeight(v.scrollDOM.scrollTop + 8).to
+    return slideOf(v.state.doc.lineAt(pos).number)
+  }
+  const startShow = () => { enterFull(); setShowing(viewing()) }
   const [errs, setErrs] = useState(null)      // what stopped the last compile
   const [busy, setBusy] = useState(false)
   // When this note's PDF was made (nanoseconds, the backend's `_pdf_at`), or
@@ -1057,6 +1130,20 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
     words: f.body.split(/\s+/).filter(Boolean).length,
     fold: { on: fold, set: setFold },
     read: { on: read, set: setRead },
+    numbered: {
+      on: !!f.fields?.numbered,
+      set: (on) => setF((st) => {
+        const fields = { ...(st.fields || {}) }
+        if (on) fields.numbered = true
+        else delete fields.numbered
+        return { ...st, fields }
+      }),
+    },
+    slide: isDeck ? {
+      show: startShow,
+      ratio: f.fields?.ratio,
+      setRatio: (ratio) => setF((st) => ({ ...st, fields: { ...(st.fields || {}), ratio } })),
+    } : null,
     // The note's folder — both kinds have one, so it is not tex's.
     files,
     seeFiles,
@@ -1078,7 +1165,8 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   }
 
   return (
-    <div className="nt-edit" ref={root} style={push ? { paddingRight: push } : undefined}>
+    <div className="nt-edit" ref={root}
+      style={!push ? undefined : push.side === 'left' ? { paddingLeft: push.px } : { paddingRight: push.px }}>
       {/* The buttons sit above the title: everything below them is the note.
           The same bar every editor in every rack-list service wears. */}
       {/* The note saves itself, and closing it keeps what is there. */}
@@ -1097,6 +1185,8 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
                 const fields = { ...(st.fields || {}) }
                 if (MODES[v].format) fields.format = MODES[v].format
                 else delete fields.format
+                if (v === 'slide') fields.mode = 'slide'
+                else delete fields.mode
                 return { ...st, fields }
               })
               if (!MODES[v].format) setView(v)
@@ -1109,6 +1199,7 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
               <option key={k} value={k} title={m.hint?.()}>{m.label()}</option>
             ))}
           </select>
+          {isDeck ? <button type="button" className="rl-btn" title={tr("nt_show_hint")} {...press(startShow)}>{tr("nt_show_btn")}</button> : null}
           {/* Every tool behind ONE button. The dot is the only thing a shut
               toolbox still says: something inside it wants reading. */}
           <button type="button" className={`rl-btn${tab ? ' on' : ''}`} aria-expanded={!!tab}
@@ -1123,6 +1214,8 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
       {/* Reading, the sheet carries the title and the date itself. */}
       {/* One line: the title, its tags, and the fold — a button with a word on
           it, big enough to hit — which opens the date and the file's name below. */}
+      {isDeck ? <DeckMeasure body={headed(f)} h={deckH} onPages={setPages} /> : null}
+      {showing != null ? <SlideShow title={f.title} body={headed(f)} pages={pages} h={deckH} start={showing} onClose={() => setShowing(null)} /> : null}
       <div className="nt-work">
         <div className="nt-main">
               <div className="nt-titlerow" style={gut ? { '--nt-gut': `${gut}px` } : undefined}>
@@ -1142,6 +1235,10 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
                  note. The two ends, the line last typed in, every bookmark, and —
                  last — a box for a line nobody bookmarked. */
               <span className="nt-jump">
+                {isDeck ? (<>
+                  <button type="button" className="rl-btn" title={tr("nt_slide_prev")} aria-label={tr("nt_slide_prev")} {...press(() => stepSlide(-1))}>{'<<'}</button>
+                  <button type="button" className="rl-btn" title={tr("nt_slide_next")} aria-label={tr("nt_slide_next")} {...press(() => stepSlide(1))}>{'>>'}</button>
+                </>) : null}
                 <button type="button" className="rl-btn" {...press(() => jump(1))}>{tr("nt_jump_top")}</button>
                 <button type="button" className="rl-btn" {...press(() => jump(lines))}>{tr("nt_jump_end")}</button>
                 {last && !pins.includes(last) ? (
@@ -1158,9 +1255,13 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
                 ) : null}
                 {/* A form, so the Enter key is the `go` button and neither has to
                     be told about the other. */}
-                <form className="nt-goto" onSubmit={(e) => { e.preventDefault(); jump(parseInt(num, 10)) }}>
-                  <input className="rl-in nt-gotoin" inputMode="numeric" value={num} title={tr("nt_jump_hint")}
-                    placeholder={tr("nt_jump_at")} onChange={(e) => setNum(e.target.value.replace(/\D/g, ''))} />
+                <form className="nt-goto" onSubmit={(e) => {
+                  e.preventDefault()
+                  const to = parseInt(num, 10)
+                  if (isDeck) { if (to >= 1) toSlide(to - 1) } else jump(to)
+                }}>
+                  <input className="rl-in nt-gotoin" inputMode="numeric" value={num} title={tr(isDeck ? "nt_slide_at_hint" : "nt_jump_hint")}
+                    placeholder={tr(isDeck ? "nt_slide_at" : "nt_jump_at")} onChange={(e) => setNum(e.target.value.replace(/\D/g, ''))} />
                   <button type="submit" className="rl-btn">{tr("nt_jump_go")}</button>
                 </form>
               </span>
@@ -1172,13 +1273,13 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
           {/* Reading, in place of the text — the same sheet the print page
               draws. Everything else about the tab stays where it was, tools
               and all, so it is one press back. */}
-          {read && !tex ? (
+          {read && !tex && view !== 'slide' ? (
             <div className="nt-read" ref={(el) => { if (el) el.scrollTop = placeBack(`${id}:read`) || 0 }}
               onScroll={(e) => placeSave(`${id}:read`, e.currentTarget.scrollTop)}>
               <article className="nt-sheet">
                 <h1>{f.title}</h1>
                 <p className="nt-meta">{f.date}</p>
-                <Rendered>{f.body}</Rendered>
+                <Rendered>{headed(f)}</Rendered>
               </article>
             </div>
           ) : (<>
@@ -1186,11 +1287,13 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
               the text with its line numbers; `MD` paints the markdown over it
               and keeps the marks on the line the caret is in. Either way what
               is saved is what is typed, character for character. */}
-          <SourceArea key={`${view}${tex}`} live={view === 'live'} tex={tex} at={id}
+          <SourceArea key={`${view}${tex}${!!f.fields?.numbered}`} live={view !== 'raw'} tex={tex} at={id}
+            numbered={!!f.fields?.numbered}
+            deck={isDeck ? { pages, title: f.title, h: deckH } : null}
             pins={gutter} goto={go} openAt={openAt}
             onGutter={setGut}
             // A number pressed means whichever the ribbon says it means.
-            onPin={(ln) => (marking ? setPins(togglePin(id, ln))
+            onPin={(ln) => (isDeck ? toSlide(slideOf(ln)) : marking ? setPins(togglePin(id, ln))
               : setGo({ line: ln, n: Date.now() }))}
             onEdit={(ln) => { sawEdit(id, ln); setLast(ln) }}
             fileSrc={(name) => fileSrc(name, tex ? id : '')} onOpenNote={onOpenNote}
@@ -1248,7 +1351,7 @@ export function PrintView({ ids }) {
             {n.date}
             {Object.entries(n.fields || {}).map(([k, v]) => ` · ${k}: ${v}`)}
           </p>
-          <Rendered>{n.body}</Rendered>
+          <Rendered>{headed(n)}</Rendered>
         </article>
       ))}
     </div>

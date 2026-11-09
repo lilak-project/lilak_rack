@@ -4,7 +4,7 @@ export default {
   pm_project: "project",
   pm_projects: "projects",
   pm_name: "Name",
-  pm_show_in_calendar: "Show in calendar",
+  pm_show_in_calendar: "Calendar",
   pm_name_hint: "One word — called +name in text",
   pm_name_one_word: "A project name can't hold spaces or # + . , ; : ! ? ( ) [ ] { } ' \" (e.g. STARK_CRIB)",
   pm_tags: "tags",

@@ -249,6 +249,8 @@ export function RackPaneStrip({ panes, col, name }) {
     return now && now !== t.label ? { ...t, label: now } : t
   })
   const box = useRef(null)
+  // Which tab was showing when a press began (for the double-click below).
+  const was = useRef(null)
   const { all, setAll, over } = useTabSpread(box, tabs.length, cur?.id, panes.hidden)
   return (
     <div className={`rl-strip${all ? ' rl-strip-all' : ''}`} ref={box}>
@@ -281,8 +283,16 @@ export function RackPaneStrip({ panes, col, name }) {
           </button>
         </span>
       )}
-      <div className="rl-strip-tabs" onDoubleClick={() => panes.setFull(!panes.full)}
-        title={tr("rk_dbl_full_width")}>
+      {/* Two presses anywhere on the strip go full width and back — on a tab
+          too, where the first of the two has already moved to that tab. That
+          move is undone rather than forbidden: a double-click asked about the
+          WIDTH, and it should not cost you the record you were reading. */}
+      <div className="rl-strip-tabs" title={tr("rk_dbl_full_width")}
+        onPointerDown={(e) => { if (e.detail <= 1) was.current = cur?.id }}
+        onDoubleClick={() => {
+          if (was.current && was.current !== panes.current(col)?.id) panes.pick(col, was.current)
+          panes.setFull(!panes.full)
+        }}>
         <RackTabs tabs={tabs} active={cur?.id} opened
           onPick={(id) => panes.pick(col, id)} onClose={panes.leave} />
       </div>

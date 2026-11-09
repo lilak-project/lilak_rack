@@ -1,9 +1,11 @@
 import { Decoration, EditorView, WidgetType } from '@codemirror/view'
 import { ViewPlugin } from '@codemirror/view'
-import { StateField } from '@codemirror/state'
+import { StateEffect, StateField } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
+import katex from 'katex'
+import { tr } from 'lilak-ui/i18n.jsx'
 import { openTab as open } from './api.js'
-import { isImage, embedSpec, isProject, isAuthor, onProjChoices, onAuthorChoices, URGENT_RE } from './marks.js'
+import { headingNumbers, isImage, embedSpec, figureList, isProject, isAuthor, onProjChoices, onAuthorChoices, URGENT_RE } from './marks.js'
 
 /** Markdown drawn on top of the text that IS the file.
  *
@@ -34,35 +36,300 @@ const DATE = /(»|📅|✓|✅)\s*(\d{4}-\d{1,2}-\d{1,2})/g
 const EMBED = /!\[\[([^\]]+)\]\]/g
 const WIKI = /(?<!!)\[\[([^\]]+)\]\]/g
 const TASK = /^(\s*[-*]\s+)\[([ xX])\]/
+/** `$x^2$` and `$$…$$` on one line. No space just inside the dollars, which is
+ *  what keeps "$5 and $10" out of it — what is between those two ends with a
+ *  space. Money is the only thing a lone `$` is for. */
+export const MATH = /(\$\$?)(?!\s)((?:[^$\n\\]|\\.)+?)(?<!\s)\1(?!\$)/g
 /** A list item, and how far in it sits. */
 const ITEM = /^(\s*)(?:[-*+]|\d{1,9}[.)])\s/
+
+/** A list item's line: how far in it sits, and how wide its marker is.
+ *
+ *  `pad` is the step for an item under another one — which steps further in
+ *  than its spaces alone say, and whose text drops ONE size, however deep it
+ *  goes after that. `wide` is the marker and the space after it (`- `, `12. `),
+ *  which the line HANGS by: a wrapped line starts where the words started, not
+ *  under the bullet, because the bullet marks the item and the second line is
+ *  not a new one. In `ch` because that is what a character is wide. */
+export const item = (text) => {
+  const m = ITEM.exec(text)
+  if (!m) return null
+  const depth = Math.min(Math.floor(m[1].replace(/\t/g, '  ').length / 2), 6)
+  return { depth, pad: depth > 0 ? 14 + depth * 12 : 0, at: m[1].length, wide: m[0].length - m[1].length }
+}
 /** A row of a table: its pipes only line up in a fixed-width face. */
 const ROW = /^\s*\|/
 
-class Embed extends WidgetType {
+/** A formula, set. The source stays in the file and comes back the moment the
+ *  caret is on its line — like every other mark here, the picture is paint.
+ *
+ *  KaTeX is already in this app for the read view and for `.tex` notes, so
+ *  there is nothing to add: the same two lines, in the editor. */
+class Formula extends WidgetType {
+  constructor(tex, block) { super(); this.tex = tex; this.block = block }
+  eq(o) { return o.tex === this.tex && o.block === this.block }
+  toDOM() {
+    const s = document.createElement('span')
+    s.className = this.block ? 'nt-cm-math nt-cm-math-block' : 'nt-cm-math'
+    // `throwOnError: false` draws what it could not read in red, in place —
+    // which is the answer while something is half-typed.
+    try { s.innerHTML = katex.renderToString(this.tex, { throwOnError: false, displayMode: this.block }) }
+    catch { s.textContent = this.tex }
+    return s
+  }
+  ignoreEvent() { return false }
+}
+
+/** Nothing, drawn: where a list item's words begin (see below). */
+class Hold extends WidgetType {
+  eq() { return true }
+  toDOM() { const s = document.createElement('span'); s.className = 'nt-cm-gap'; return s }
+  ignoreEvent() { return true }
+}
+
+/** A picture in the note is two things on the screen, and neither is the
+ *  text any more:
+ *
+ *  - the BAR, drawn in place of the markup (`![[a.png|420]]`): which figure
+ *    this is, the file, and the only thing anyone changes about it — its
+ *    size. It is atomic: the caret cannot get into it, a click on it lands the
+ *    caret at its right, and Backspace there takes the whole picture off in
+ *    one press, because that is what the bar IS — one thing.
+ *  - the PICTURE, a block under that line. It stays under the line whether the
+ *    bar or the raw markup is shown above it.
+ *
+ *  The markup comes back ONLY through the bar's 편집 button (the `raw` field).
+ *  Not when the caret arrives — a caret comes to read as often as to write —
+ *  and not when a button is pressed: a size written by the bar is the note
+ *  changing, not the note being typed in. It goes again when the caret leaves
+ *  the line.
+ */
+
+/** The markup being edited by hand: where it starts, or -1. Set by 편집,
+ *  carried along through edits, ended when the caret goes to another line. */
+const setRaw = StateEffect.define()
+const raw = StateField.define({
+  create: () => -1,
+  update(pos, tr) {
+    for (const e of tr.effects) if (e.is(setRaw)) return e.value
+    if (pos < 0) return pos
+    pos = Math.min(tr.changes.mapPos(pos), tr.state.doc.length)
+    const line = tr.state.doc.lineAt(pos).number
+    return tr.state.doc.lineAt(tr.state.selection.main.head).number === line ? pos : -1
+  },
+})
+
+/** Where `![[spec]]` is, read from where the widget's DOM stands: the bar
+ *  stands in it, the picture stands at the end of its line — either way the
+ *  markup is on that line, and the text itself says exactly where. `null`
+ *  when it is not (the note changed under the widget): then nothing is done,
+ *  which is the right amount. */
+function markupAt(view, dom, spec) {
+  const want = `![[${spec}]]`
+  let at
+  try { at = view.posAtDOM(dom) } catch { return null }
+  if (at == null || at < 0) return null
+  const doc = view.state.doc
+  for (const p of [at, Math.max(0, at - 1)]) {
+    const line = doc.lineAt(Math.min(p, doc.length))
+    const i = line.text.indexOf(want)
+    if (i >= 0) return { from: line.from + i, to: line.from + i + want.length, line }
+  }
+  return null
+}
+
+/** The markup rewritten with this width, or with none (`px` 0). */
+/** How much smaller than the page a slide is drawn in this pane (SourceArea
+ *  `--nt-k`), 1 everywhere else. A written width means the page's pixels. */
+const zoomOf = (view) => parseFloat(view.dom.parentElement?.style.getPropertyValue('--nt-k')) || 1
+
+function writeWidth(view, dom, spec, px) {
+  const [name] = embedSpec(spec)
+  const at = markupAt(view, dom, spec)
+  if (!at) return
+  view.dispatch({ changes: { from: at.from, to: at.to, insert: `![[${name}${px ? `|${Math.round(px)}` : ''}]]` } })
+}
+
+/** The caret to the right of the markup — where it lands when the bar or the
+ *  picture is pressed. The bar is atomic, so this is as near as it gets. */
+function caretAfter(view, dom, spec) {
+  const at = markupAt(view, dom, spec)
+  if (!at) return
+  view.dispatch({ selection: { anchor: at.to }, scrollIntoView: true })
+  view.focus()
+}
+
+/** The picture this bar is over: the block right under the bar's line. Found
+ *  through the DOM because the two are separate widgets; `null` until it is
+ *  drawn. */
+const pictureUnder = (bar) => bar.closest('.cm-line')?.nextElementSibling?.querySelector?.('img.nt-embed') || null
+
+/** A file that is not a picture (`![[paper.pdf]]`): a link, in the markup's place. */
+class FileLink extends WidgetType {
   constructor(spec, src) { super(); this.spec = spec; this.src = src }
   eq(other) { return other.spec === this.spec }
   toDOM() {
+    const a = document.createElement('a')
+    a.className = 'nt-file'
+    a.href = this.src(this.spec)
+    a.textContent = this.spec
+    a.addEventListener('mousedown', (e) => { e.preventDefault(); open(a.href) })
+    return a
+  }
+  ignoreEvent() { return true }
+}
+
+/** A heading's number (`numbered` notes): drawn, never in the file. */
+class HeadNo extends WidgetType {
+  constructor(no) { super(); this.no = no }
+  eq(other) { return other.no === this.no }
+  toDOM() {
+    const el = document.createElement('span')
+    el.className = 'nt-cm-headno'
+    el.textContent = this.no
+    return el
+  }
+}
+
+class Bar extends WidgetType {
+  constructor(spec, n) { super(); this.spec = spec; this.n = n }
+  eq(other) { return other.spec === this.spec && other.n === this.n }
+  toDOM(view) {
     const [name, w] = embedSpec(this.spec)
-    if (!isImage(name)) {
-      const a = document.createElement('a')
-      a.className = 'nt-file'
-      a.href = this.src(name)
-      a.textContent = name
-      a.addEventListener('mousedown', (e) => {
-        e.preventDefault()
-        open(a.href)
-      })
-      return a
+    const bar = document.createElement('span')
+    bar.className = 'nt-fig-bar'
+    const cell = (cls, text, title) => {
+      const el = document.createElement('span')
+      el.className = `nt-fig-c ${cls}`
+      el.textContent = text
+      if (title) el.title = title
+      bar.appendChild(el)
+      return el
     }
+    const button = (cls, text, title, fn) => {
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.className = `nt-fig-c nt-fig-do ${cls}`
+      b.textContent = text
+      b.title = title
+      b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); fn() })
+      bar.appendChild(b)
+      return b
+    }
+    cell('nt-fig-n', tr('nt_fig_n', this.n))
+    cell('nt-fig-name', name.split('/').pop(), name)
+    // The text, to be edited by hand — the one way back to it.
+    button('nt-fig-edit', tr('nt_fig_edit'), tr('nt_fig_edit_hint'), () => {
+      const at = markupAt(view, bar, this.spec)
+      if (!at) return
+      view.dispatch({ effects: setRaw.of(at.from), selection: { anchor: at.to }, scrollIntoView: true })
+      view.focus()
+    })
+    /** How wide the picture is NOW: as written, or as drawn under the bar. */
+    const wide = () => w || Math.round((pictureUnder(bar)?.getBoundingClientRect().width || 0) / zoomOf(view)) || 400
+    const write = (px) => writeWidth(view, bar, this.spec, px)
+    // A quarter either way. Wider than the column shows nothing more (the
+    // picture stops at the column's edge whatever is written), so + stops there.
+    button('nt-fig-less', '−', tr('nt_img_out'), () => write(Math.max(40, wide() / 1.25)))
+    button('nt-fig-more', '+', tr('nt_img_in'), () => write(Math.min((view.contentDOM.clientWidth || 9e3) / zoomOf(view), wide() * 1.25)))
+    const px = document.createElement('input')
+    px.type = 'number'
+    px.className = 'nt-fig-c nt-fig-px'
+    px.min = '40'
+    px.step = '10'
+    px.title = tr('nt_img_px')
+    if (w) px.value = String(w)
+    else {
+      // No width written: the box still says how wide it IS, in the dim
+      // colour of a thing read rather than set. The picture is drawn after
+      // the bar, so it is asked a moment later, and once more when it has
+      // had time to load. ponytail: two looks, not a listener.
+      px.classList.add('nt-fig-auto')
+      const look = () => { if (!px.value && document.activeElement !== px) { const n = wide(); if (n !== 400) px.value = String(n) } }
+      requestAnimationFrame(look)
+      setTimeout(look, 400)
+      px.addEventListener('focus', () => { px.classList.remove('nt-fig-auto') })
+    }
+    px.addEventListener('mousedown', (e) => e.stopPropagation())
+    px.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); px.blur() } })
+    px.addEventListener('change', () => write(Math.max(0, Number(px.value) || 0)))
+    bar.appendChild(px)
+    button('nt-fig-fit', tr('nt_img_auto'), tr('nt_img_auto_hint'), () => write(0))
+    // Pressed anywhere else on it: the caret to its right.
+    bar.addEventListener('mousedown', (e) => { e.preventDefault(); caretAfter(view, bar, this.spec) })
+    return bar
+  }
+  // Everything on the bar is the bar's: nothing here is a place in the text.
+  ignoreEvent() { return true }
+}
+
+/** The picture, under its line. Drag the corner and the width is written
+ *  into the markup above — once, when the button comes up. */
+class Picture extends WidgetType {
+  constructor(spec, src) { super(); this.spec = spec; this.src = src }
+  eq(other) { return other.spec === this.spec }
+  toDOM(view) {
+    const [name, w] = embedSpec(this.spec)
+    const box = document.createElement('div')
+    box.className = 'nt-embed-box'
     const img = document.createElement('img')
     img.className = 'nt-embed'
     img.src = this.src(name)
     img.alt = name
-    if (w) img.style.width = `${w}px`
-    return img
+    // A width written in the note is meant: it is let out of the height cap
+    // the pictures without one are kept under (note.css).
+    if (w) { img.style.width = `${w}px`; img.style.maxHeight = 'none'; img.style.setProperty('--nt-w', w) }
+    // A picture with no width is its own size on a slide, so that scales too.
+    img.addEventListener('load', () => img.style.setProperty('--nt-n', img.naturalWidth))
+    box.appendChild(img)
+    const grip = document.createElement('span')
+    grip.className = 'nt-embed-grip'
+    grip.title = tr('nt_img_drag')
+    grip.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const x0 = e.clientX
+      const w0 = img.getBoundingClientRect().width
+      const k = zoomOf(view)
+      const to = (ev) => Math.max(40, Math.round((w0 + ev.clientX - x0) / k))
+      const move = (ev) => { img.style.width = `${to(ev)}px`; img.style.maxHeight = 'none'; img.style.setProperty('--nt-w', to(ev)) }
+      const up = (ev) => {
+        document.removeEventListener('mousemove', move)
+        document.removeEventListener('mouseup', up)
+        document.body.classList.remove('nt-sizing')
+        writeWidth(view, box, this.spec, to(ev))
+      }
+      document.body.classList.add('nt-sizing')
+      document.addEventListener('mousemove', move)
+      document.addEventListener('mouseup', up)
+    })
+    box.appendChild(grip)
+    // A press on the picture: the caret to the right of its bar.
+    box.addEventListener('mousedown', (e) => { e.preventDefault(); caretAfter(view, box, this.spec) })
+    return box
   }
-  ignoreEvent() { return false }
+  ignoreEvent() { return true }
+}
+
+/** The pictures, as blocks under their lines. A block decoration may not come
+ *  from a plugin (it changes how tall a line is), so this is a field: read
+ *  from the whole note whenever the note changes, which is cheap — a note is
+ *  a page, not a book. */
+const pictureBlocks = (fileSrc) => {
+  const of = (state) => {
+    const doc = state.doc
+    const marks = []
+    for (const f of figureList(doc.toString())) {
+      marks.push(Decoration.widget({ widget: new Picture(f.spec, fileSrc), block: true, side: 1 })
+        .range(doc.lineAt(f.at).to))
+    }
+    return Decoration.set(marks, true)
+  }
+  return StateField.define({
+    create: of,
+    update: (deco, tr) => (tr.docChanged ? of(tr.state) : deco),
+    provide: (f) => EditorView.decorations.from(f),
+  })
 }
 
 /** A table, drawn as one. The lines underneath are untouched — press into it
@@ -141,14 +408,21 @@ const openLines = (state) => {
   return open
 }
 
-function build(view, fileSrc) {
+function build(view, fileSrc, numbered) {
+  const nos = numbered ? headingNumbers(view.state.doc.toString()) : null
   const marks = []
+  const bars = []                // the bars alone: these are what the caret skips (atomicRanges)
+  const figAt = new Map(figureList(view.state.doc.toString()).map((f) => [f.at, f.n]))
+  const rawAt = view.state.field(raw, false) ?? -1
   const tables = []
   // Where the code is. `#include` is not a tag and `+x` is not a project, so
   // everything this app draws ON TOP of markdown (below) asks here first.
   const code = []
   const inCode = (pos) => code.some((r) => pos >= r.from && pos < r.to)
-  const open = openLines(view.state)
+  // A slide nobody is typing in is drawn clean: the caret left behind in it
+  // must not spell its line out (slide steps take the focus away on purpose).
+  const away = !view.hasFocus && view.dom.parentElement?.classList.contains('nt-slide')
+  const open = away ? new Set() : openLines(view.state)
   const shown = (pos) => open.has(view.state.doc.lineAt(pos).number)
   const hide = (from, to) => { if (to > from) marks.push(Decoration.replace({}).range(from, to)) }
 
@@ -178,6 +452,10 @@ function build(view, fileSrc) {
           // a heading rather than jumping to heading size and back.
           if (!/^#{1,6}[ \t]/.test(line.text)) return
           marks.push(Decoration.line({ class: `nt-cm-h${name.slice(-1)}` }).range(line.from))
+          if (nos?.has(line.number)) {
+            marks.push(Decoration.widget({ widget: new HeadNo(nos.get(line.number)), side: -1 })
+              .range(line.from + /^#{1,6}[ \t]+/.exec(line.text)[0].length))
+          }
           return
         }
         if (name === 'Blockquote') {
@@ -256,10 +534,18 @@ function build(view, fileSrc) {
 
     for (const m of text.matchAll(EMBED)) {
       const start = at(m.index)
-      if (inCode(start)) continue
-      marks.push(Decoration.widget({ widget: new Embed(m[1], fileSrc), side: 1 })
-        .range(start + m[0].length))
-      if (!shown(start)) hide(start, start + m[0].length)
+      if (inCode(start) || start === rawAt) continue     // being edited by hand: the text is the text
+      const n = figAt.get(start)
+      const widget = n ? new Bar(m[1], n) : new FileLink(m[1], fileSrc)
+      bars.push(Decoration.replace({ widget }).range(start, start + m[0].length))
+    }
+    for (const m of text.matchAll(MATH)) {
+      const start = at(m.index)
+      // Not in code, and not while the caret is on that line — there the
+      // dollars and the TeX are what you came to edit.
+      if (inCode(start) || shown(start)) continue
+      marks.push(Decoration.replace({ widget: new Formula(m[2], m[1] === '$$') })
+        .range(start, start + m[0].length))
     }
     for (const m of text.matchAll(WIKI)) {
       if (inCode(at(m.index))) continue
@@ -321,15 +607,34 @@ function build(view, fileSrc) {
       } else if (ROW.test(line.text)) {
         marks.push(Decoration.line({ class: 'nt-cm-row' }).range(line.from))
       } else {
-        const item = ITEM.exec(line.text)
-        // An item under another one steps further in than its spaces alone say,
-        // and its text drops ONE size — once, however deep it goes after that.
-        const depth = item ? Math.min(Math.floor(item[1].replace(/\t/g, '  ').length / 2), 6) : 0
-        if (depth > 0) {
+        const li = item(line.text)
+        if (li) {
+          // ALL of the item's text starts at the padding — first line and
+          // wrapped lines alike — and the marker is lifted out of the flow and
+          // put in that padding, which is how a real `<ul>` draws one. Hanging
+          // the line by a guessed width instead (`text-indent: -2ch`) cannot
+          // be right: `- ` in a proportional face is not two zeroes wide.
           marks.push(Decoration.line({
-            class: 'nt-cm-sub',
-            attributes: { style: `padding-left:${14 + depth * 12}px` },
+            class: li.depth > 0 ? 'nt-cm-sub' : 'nt-cm-li',
+            attributes: { style: `--nt-d:${li.depth};padding-left:calc(${li.pad}px + ${li.wide}ch)` },
           }).range(line.from))
+          marks.push(Decoration.mark({
+            class: 'nt-cm-mark',
+            attributes: { style: `left:${li.pad}px` },
+          }).range(line.from + li.at, line.from + li.at + li.wide))
+          // Something of the line for the caret to stand on where the words
+          // begin. With the whole marker lifted out of the flow the caret had
+          // nothing there and drew itself back at the bullet; a styled SPACE
+          // was no better, because its own glyph still carried the caret a
+          // space-width INTO the first letter. An empty widget has no glyph
+          // and no width: the caret lands exactly in front of the word.
+          marks.push(Decoration.widget({ widget: new Hold(), side: -1 })
+            .range(line.from + li.at + li.wide))
+          // The spaces that say how deep the item is are drawn too, and they
+          // only push the FIRST line — which is the wrapped line sticking out
+          // to the left. The step is the line's padding now, so the spaces
+          // have no work left to do; nothing is lost by not drawing them.
+          if (li.at) marks.push(Decoration.replace({}).range(line.from, line.from + li.at))
         }
       }
       if (line.to >= view.state.doc.length) break
@@ -337,7 +642,7 @@ function build(view, fileSrc) {
     }
   }
 
-  return Decoration.set(marks, true)
+  return { marks: Decoration.set([...marks, ...bars], true), bars: Decoration.set(bars, true) }
 }
 
 /** Where the tables are, as decorations. A block decoration may not come from
@@ -369,19 +674,20 @@ const tableBlocks = StateField.define({
   provide: (f) => EditorView.decorations.from(f),
 })
 
-const paint = (fileSrc, onOpenNote) => ViewPlugin.fromClass(class {
+const paint = (fileSrc, onOpenNote, numbered) => ViewPlugin.fromClass(class {
   constructor(view) {
-    this.decorations = build(view, fileSrc)
+    this.take(build(view, fileSrc, numbered))
     // The projects come after the first paint: draw again when they do.
     const redraw = () => setTimeout(() => { if (this.off) { this.again = true; view.dispatch({}) } })
     const offProj = onProjChoices(redraw)
     const offAuth = onAuthorChoices(redraw)
     this.off = () => { offProj(); offAuth() }
   }
+  take({ marks, bars }) { this.decorations = marks; this.bars = bars }
   update(u) {
-    if (u.docChanged || u.selectionSet || u.viewportChanged || this.again) {
+    if (u.docChanged || u.selectionSet || u.viewportChanged || u.focusChanged || this.again) {
       this.again = false
-      this.decorations = build(u.view, fileSrc)
+      this.take(build(u.view, fileSrc, numbered))
     }
   }
   destroy() { this.off(); this.off = null }
@@ -434,7 +740,15 @@ const paint = (fileSrc, onOpenNote) => ViewPlugin.fromClass(class {
   },
 })
 
-export const livePreview = (fileSrc, onOpenNote) => [tableBlocks, paint(fileSrc, onOpenNote)]
+export const livePreview = (fileSrc, onOpenNote, numbered = false) => {
+  const painter = paint(fileSrc, onOpenNote, numbered)
+  return [
+    raw, tableBlocks, pictureBlocks(fileSrc), painter,
+    // The bars are one thing each: the caret steps over them, and Backspace
+    // beside one takes the whole of it.
+    EditorView.atomicRanges.of((v) => v.plugin(painter)?.bars || Decoration.none),
+  ]
+}
 
 /** Wrapped lines, because prose is read across the pane, not scrolled sideways. */
 export const liveLook = [EditorView.lineWrapping]

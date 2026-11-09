@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { EditorState, RangeSet, StateEffect, StateField } from '@codemirror/state'
-import { EditorView, keymap, lineNumbers, gutterLineClass, GutterMarker,
+import { EditorView, keymap, lineNumbers, gutterLineClass, GutterMarker, dropCursor, scrollPastEnd,
   highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { syntaxHighlighting, defaultHighlightStyle, HighlightStyle, StreamLanguage } from '@codemirror/language'
@@ -13,9 +13,10 @@ import { shell } from '@codemirror/legacy-modes/mode/shell'
 import { json } from '@codemirror/legacy-modes/mode/javascript'
 import { yaml } from '@codemirror/legacy-modes/mode/yaml'
 import { livePreview, liveLook } from './livemd.js'
+import { deckField, deckGutter, setDeck } from './slides.jsx'
 import { commentFold, setFoldComments } from './comments.js'
 import { placeBack, placeSave } from './scrolled.js'
-import { tagComplete, citeComplete, dueKeys, markKeys, quotePaste, takeFiles, tableKeys, tableInput, wonCode } from './liveedit.js'
+import { tagComplete, citeComplete, dueKeys, jamoKeys, listKeys, markKeys, quotePaste, takeFiles, tableKeys, tableInput, wonCode } from './liveedit.js'
 
 /** The note as the file has it, in a real text editor — plain (`원문`) or with
  *  the markdown drawn over it (`라이브`).
@@ -64,6 +65,25 @@ export const noteHighlight = HighlightStyle.define(
 const mark = (cls) => new (class extends GutterMarker { elementClass = cls })()
 const PIN = mark('nt-pin')
 const PIN_TMP = mark('nt-pin nt-pin-tmp')
+const EMPTY = mark('nt-gut-empty')
+
+/** The caret's line, when there is nothing on it.
+ *
+ *  A blank line is the one line that looks the same whether the caret is on
+ *  it or not — and in a drawn markdown note it is also where a heading or a
+ *  list is ABOUT to be, so knowing you are standing on nothing is worth a
+ *  mark. Only one line is ever marked: the one the caret is on, and only if
+ *  there is truly nothing on it, not so much as a space. */
+const blankAt = (state) => {
+  const line = state.doc.lineAt(state.selection.main.head)
+  return line.length ? RangeSet.empty : RangeSet.of([EMPTY.range(line.from)])
+}
+
+const blankField = StateField.define({
+  create: blankAt,
+  update: (set, tr) => ((tr.docChanged || tr.selection) ? blankAt(tr.state) : set),
+  provide: (f) => gutterLineClass.from(f),
+})
 const setPins = StateEffect.define()
 
 const lineSet = (state, { lines, tmp }) => RangeSet.of(
@@ -92,7 +112,10 @@ const look = EditorView.theme({
     background: 'transparent',
   },
   '&.cm-focused': { outline: 'none' },
-  '.cm-scroller': { fontFamily: 'inherit', lineHeight: '1.75', overflow: 'auto' },
+  // Lines are told apart by the gap BETWEEN them, so the gap inside one (a
+  // line too long for the width) has to be smaller than it: 1.45 here, and
+  // `.cm-line`'s own padding puts the rest back between the lines.
+  '.cm-scroller': { fontFamily: 'inherit', lineHeight: '1.45', overflow: 'auto' },
   '.cm-content': { padding: '10px 26px 24px 14px', caretColor: 'var(--rk-ink)' },
   '.cm-gutters': {
     background: 'var(--rk-gut)',
@@ -112,7 +135,7 @@ const look = EditorView.theme({
 })
 
 export default function RawArea({ value, onChange, live = false, tex = false, at, fileSrc, onFiles, onOpenNote,
-  pins, onPin, onEdit, onGutter, goto: go, openAt = 0, hold, fold = false }) {
+  pins, onPin, onEdit, onGutter, goto: go, openAt = 0, hold, fold = false, deck = null, numbered = false }) {
   const host = useRef(null)
   const view = useRef(null)
   const cb = useRef(onChange)
@@ -141,7 +164,7 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
           // Clicking a number bookmarks that line, and clicking it again
           // takes the bookmark off — the gutter is the only place where a
           // line and its number are the same thing to point at.
-          lineNumbers({
+          (deck ? deckGutter : lineNumbers)({
             domEventHandlers: {
               click: (ed, block) => {
                 hit.current?.(ed.state.doc.lineAt(block.from).number)
@@ -149,11 +172,18 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
               },
             },
           }),
+          // Past the end: the last slide can come to the top of the box too.
+          ...(deck ? [deckField, scrollPastEnd()] : []),
           pinField,
+          ...(tex || deck ? [] : [blankField]),
           highlightActiveLineGutter(),
-          ...(live && !tex ? [livePreview(fileSrc, onOpenNote), ...liveLook] : []),
+          ...(live && !tex ? [livePreview(fileSrc, onOpenNote, numbered), ...liveLook] : []),
           highlightActiveLine(),
           history(),
+          // Backspace takes the 한글 syllable still being typed apart, jamo by
+          // jamo. Above both keymaps, and outside the tex/markdown split: a
+          // LaTeX note is written in Korean too.
+          ...jamoKeys,
           // A tex note is LaTeX, not markdown: the language changes and every
           // markdown helper below it goes away. `|` is a column of a matrix,
           // `#` is a macro argument, `>>` is a shift — none of them wants the
@@ -176,15 +206,22 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
             tableKeys,
             keymap.of([...markdownKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
             // ```python and friends are read in that language inside the fence.
-            markdown({ base: markdownLanguage, codeLanguages: fenceLanguage }),
+            // `---` is always a rule: under a line of text, markdown would
+            // call that line a heading and draw it bold.
+            markdown({ base: markdownLanguage, codeLanguages: fenceLanguage,
+              extensions: [{ remove: ['SetextHeading'] }] }),
             markKeys,
             tagComplete,
             ...dueKeys,
             tableInput,
+            listKeys,
             wonCode,
             quotePaste,
           ]),
-          ...(onFiles ? [takeFiles(onFiles, tex)] : []),
+          // Where a dragged file would land, drawn as a caret on the line
+          // under the pointer. CodeMirror's own, so it is the same line the
+          // drop then uses — nothing here measures it a second time.
+          ...(onFiles ? [dropCursor(), takeFiles(onFiles, tex, !live)] : []),
           syntaxHighlighting(noteHighlight, { fallback: true }),
           look,
           EditorView.updateListener.of((u) => {
@@ -232,7 +269,7 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
       // thrown across the document for moving a pane is not a kindness.
       const line = v.state.doc.line(openAt)
       v.dispatch({ selection: { anchor: line.from },
-        effects: EditorView.scrollIntoView(line.from, { y: 'center' }) })
+        effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: 24 }) })
     }
     v.scrollDOM.addEventListener('scroll', () => {
       const p = top()
@@ -281,6 +318,31 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
     view.current?.dispatch({ effects: setFoldComments.of(!!fold) })
   }, [fold])
 
+  // Where the slides were cut, and the title that is the first of them.
+  useEffect(() => {
+    if (deck) view.current?.dispatch({ effects: setDeck.of(deck) })
+  }, [deck?.pages, deck?.title])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The slide, fitted to this pane the way the show fits it to the screen.
+  // The pane's scroll bar is kept out of it (`scrollbar-gutter`, note.css), or
+  // a slide long enough to need one would shrink and no longer need it.
+  useEffect(() => {
+    if (!deck) return undefined
+    const el = host.current
+    const fit = () => {
+      const v = view.current
+      if (!v) return
+      const gutter = v.dom.querySelector('.cm-gutters')?.offsetWidth || 0
+      el.style.setProperty('--nt-deck-h', `${deck.h}px`)
+      el.style.setProperty('--nt-k', Math.min((v.scrollDOM.clientWidth - gutter) / 1000, el.clientHeight / deck.h))
+      v.requestMeasure()
+    }
+    const ro = new ResizeObserver(fit)
+    ro.observe(el)
+    fit()
+    return () => ro.disconnect()
+  }, [deck?.h])   // eslint-disable-line react-hooks/exhaustive-deps
+
   // The bookmarks, as the gutter shows them.
   useEffect(() => {
     view.current?.dispatch({ effects: setPins.of({ lines: pins?.lines || [], tmp: !!pins?.tmp }) })
@@ -289,9 +351,11 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
   // `go` is a line and a nonce, so pressing the same one twice goes there
   // twice: the first press may have been followed by scrolling away.
   //
-  // The line's TOP lands in the middle of the box, so what you came for has
-  // the whole lower half to be read in, and the caret goes with it — arriving
-  // somewhere means being able to type there.
+  // The line lands just under the top of the box, so what you came for has
+  // nearly the whole of it to be read in, and the caret goes with it —
+  // arriving somewhere means being able to type there. Two lines of room
+  // above it rather than none: a heading with nothing over it reads as the
+  // top of the file, and the line before is often what says where you are.
   //
   // The glide is ours, 280ms of it however far the line is. The browser's own
   // `behavior: 'smooth'` takes as long as the distance is long — a bookmark
@@ -303,14 +367,20 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
     const v = view.current
     if (!v || !go?.line || go.line > v.state.doc.lines) return
     const line = v.state.doc.line(go.line)
-    v.dispatch({ selection: { anchor: line.from } })
-    v.focus()
+    // `quiet`: the view moves and the caret does not; the focus leaves, so no
+    // line is spelled out and no caret blinks on the slide.
+    if (go.quiet) v.contentDOM.blur()
+    else {
+      v.dispatch({ selection: { anchor: line.from } })
+      v.focus()
+    }
     // Where the line's top sits half a box down — asked again every frame,
     // because the height map only ESTIMATES the lines it has never drawn: the
     // glide renders what it passes, and the answer sharpens under it.
     const el = v.scrollDOM
     const place = () => Math.max(0, Math.min(el.scrollHeight - el.clientHeight,
-      v.lineBlockAt(line.from).top + v.documentPadding.top - el.clientHeight / 2))
+      v.lineBlockAt(line.from).top + v.documentPadding.top
+        + (go.flush != null ? go.flush * parseFloat(host.current.style.getPropertyValue('--nt-k') || 1) : -v.defaultLineHeight * 2)))
     // A jump of twenty screens is not something to watch — it is a blur, and
     // CodeMirror cannot draw the lines flying past it either. So a long one
     // ARRIVES a screen and a half away, and glides that: the eye still gets
@@ -350,5 +420,5 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
     v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: value } })
   }, [value])
 
-  return <div className={live ? 'nt-raw nt-live' : 'nt-raw'} ref={host} />
+  return <div className={`nt-raw${live ? ' nt-live' : ''}${deck ? ' nt-slide' : ''}`} ref={host} />
 }

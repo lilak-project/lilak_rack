@@ -37,6 +37,8 @@
  *   seeFiles() ask again (after something put a file there)
  *   fold      { on, set } — are the `%` lines folded (a tex note)
  *   read      { on, set } — is the editor showing the note as it reads
+ *   slide     { show(), ratio, setRatio } in the slide mode, else null
+ *   numbered  { on, set } — does this note number its headings
  *   where     { notes, files } — the folders on the host, or null
  *   tex       the tex machinery (compile, the folder, the bib) — null for a
  *             markdown note. ponytail: this is still Editor's state handed
@@ -44,12 +46,12 @@
  *             needs it.
  */
 import common from './common.jsx'
-import outline from './outline.jsx'
 import format from './format.jsx'
+import outline from './outline.jsx'
 import files from './files.jsx'
 import bib from './bib.jsx'
 
-export const TOOLS = [common, outline, format, files, bib]
+export const TOOLS = [common, format, outline, files, bib]
 
 /** The tools of a kind of note, in the order they are declared. */
 export const toolsFor = (kind) => TOOLS.filter((t) => t.modes.includes(kind))

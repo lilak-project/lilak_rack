@@ -7,7 +7,7 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { remarkSoftBreaks } from 'lilak-ui/log/Markdown.jsx'
-import { TAG_RE, PROJ_RE, AUTH_RE, EMBED_RE, embedSpec, isImage, isProject, isAuthor, authorShow } from './marks.js'
+import { TAG_RE, PROJ_RE, AUTH_RE, EMBED_RE, embedSpec, isImage, isProject, isAuthor, authorShow, plainRules } from './marks.js'
 import { fileSrc } from './api.js'
 
 /** The body, rendered — with `#태그` drawn as a tag and `» 2026-12-24` as the
@@ -66,19 +66,28 @@ const RENDER = {
   h1: tagged('h1'), h2: tagged('h2'), h3: tagged('h3'), h4: tagged('h4'),
   img: Img, a: Link,
 }
-export function Rendered({ children }) {
+/** Each element says which line of the file it came from (`data-line`), so a
+ *  slide can be cut where the renderer says the page ends (slides.jsx). */
+const rehypeLines = () => (tree) => {
+  const walk = (n) => {
+    if (n.type === 'element' && n.position) (n.properties ||= {}).dataLine = n.position.start.line
+    n.children?.forEach(walk)
+  }
+  walk(tree)
+}
+export function Rendered({ children, lines = false }) {
   // Maths is `$x^2$` and `$$…$$`, which KaTeX draws here and the editor leaves
   // as the text it is — the file is the same either way.
   // `![[name]]` is Obsidian's embed, not markdown — here it is turned into the
   // markdown image it means. Only on the way to the page: the file keeps its
   // own spelling.
-  const md = String(children || '').replace(EMBED_RE, (_, spec) => {
+  const md = plainRules(children).replace(EMBED_RE, (_, spec) => {
     const [name] = embedSpec(spec)
     return `![${spec}](${fileSrc(name)})`
   })
   return (
     <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath, remarkSoftBreaks]}
-      rehypePlugins={[rehypeKatex]} components={RENDER}>
+      rehypePlugins={lines ? [rehypeLines, rehypeKatex] : [rehypeKatex]} components={RENDER}>
       {md}
     </ReactMarkdown>
   )
