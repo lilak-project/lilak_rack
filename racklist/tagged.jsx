@@ -128,7 +128,7 @@ export function useTaggedRows(names, match = 'or', skip, mention = '') {
 export function RackTaggedTab({ rows, cols, onDrag, onOpen, onList, sort, onSort, filter, mark }) {
   if (!rows) return <p className="rl-msg">…</p>
   return (
-    <RackTable cols={cols} onDrag={onDrag} sort={sort} onSort={onSort} facet={filter.tableFacet}>
+    <RackTable cols={cols} onDrag={onDrag} sort={sort} onSort={onSort} facet={filter.tableFacet} lit={filter.lit}>
       <FacetRows f={filter} labels={{ empty: tr('rk_column_empty') }} />
       {!filter.mode && rows.map((r, i) => (
         <RackRow key={i} cols={cols} tone={{ what: 'ink', sub: 'dim', svc: 'dim', date: 'dim' }} paint={{ svc: r.from }} className="rl-hit" mark={mark}

@@ -12,7 +12,7 @@ import { tr } from 'lilak-ui/i18n.jsx'
  */
 const sortRank = (sort, k) => asSorts(sort).findIndex((s) => s.k === k)
 
-export function RackTable({ cols, onDrag, head, sort, onSort, facet, children }) {
+export function RackTable({ cols, onDrag, head, sort, onSort, facet, lit, children }) {
   const tmpl = `${cols.map((c) => `${c.w}px`).join(' ')} 1fr`
   // When the table is wider than the room it has — a narrow window, or the
   // editor taking half — the columns that fall off the end are reached by the
@@ -69,7 +69,7 @@ export function RackTable({ cols, onDrag, head, sort, onSort, facet, children })
         {cols.map((c) => (
           <span key={c.k}
             className={`${c.k === 'num' ? 'rl-gut' : 'rl-c'}`
-              + `${c.num ? ' rl-num' : ''}${c.k === 'chk' ? ' rl-chk' : ''}`}>
+              + `${c.num ? ' rl-num' : ''}${c.k === 'chk' ? ' rl-chk' : ''}${lit?.includes(c.k) ? ' rl-lit-head' : ''}`}>
             {c.k === 'chk' && head ? (
               <input type="checkbox" checked={head.all}
                 ref={(el) => { if (el) el.indeterminate = !head.all && head.some }}

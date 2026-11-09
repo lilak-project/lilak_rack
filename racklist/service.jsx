@@ -2,9 +2,9 @@ import './strings.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RackTable, RackRow, RackTabs } from './table.jsx'
 import { RackFrame } from './frame.jsx'
-import { RackPaneStrip, RackPaneTools, paneLayout, paneStyles, FULL } from './panes.jsx'
+import { RackPaneStrip, RackPaneTools, paneLayout, paneStyles, useTabSpread, FULL } from './panes.jsx'
 import { RackBar } from './bar.jsx'
-import { RackMenu, MenuRow, useRackMenu } from './menu.jsx'
+import { RackMenu, RackRail, MenuRow, useRackMenu } from './menu.jsx'
 import { PaneFind } from './panefind.jsx'
 import { RackCalendar } from './calendar.jsx'
 import { RackTrash, TRASH_COLS } from './trash.jsx'
@@ -44,9 +44,13 @@ import { RackTagged, RackTaggedTab, TAGGED_COLS, TAGGED_SORTERS, useTaggedRows }
  * Nothing here knows what the records are about; `def` (see defineRack) does.
  *
  * The ways out, for what a declaration cannot say:
- *   slots.commands(api)          more buttons on the command line
+ *   slots.commands(api)          more buttons in the menu, under making
+ *   slots.pick(api)              more buttons in the menu, under the selection
+ *   slots.show(api)              more buttons in the menu, under what is shown
  *   slots.barTools(api)          a button of its own in the title bar, left of ↻
  *   slots.keep(item)             which items the service's own filter lets through
+ *   slots.keepOn                 that filter holds something back (the menu says so, shut)
+ *   slots.keepTools(api)         its controls in the open menu, where barTools gives way
  *   slots.tabs                   [{ id, label, render(api) }] — tabs of the service's own
  *   slots.settings(api)          more of the settings tab, under the kit's (a manager's)
  *   slots.views                  { view: (tab, api) => node } — tabs of its own opened on
@@ -106,6 +110,7 @@ const NONE = []                       // one empty list, so a hook sees the same
 const SOLO = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('solo') : null
 // ?bare=1: the list without its bar and tab strip — one tab of it (#open=tab:…)
 // shown inside another service's tab (a group's authors under a project).
+const MENU_W = 190
 const BARE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('bare')
 // A save anywhere on this page's service and project (a solo editor in another
 // service's pane, the list itself) tells every open list of it to read again.
@@ -222,7 +227,8 @@ function RackList({ def: declared, slots = {} }) {
   // asset's 자산번호). Lists hold these; the selection and the editors use them.
   const IDK = def.item.id || 'id'
   const idOf = useCallback((r) => r?.[IDK], [IDK])
-  const L = useRackList({ idOf,
+  const menuState = useRackMenu(BARE ? undefined : projectKey(def.key, 'menu'))
+  const L = useRackList({ idOf, spare: !BARE && menuState.open ? MENU_W : 0,
     key: BARE ? `${def.key}.bare` : def.key, fixed: FIXED, firstTab: FIRST, scopeOf, search,
     sorters: sortersFor, cols: colSets, clsSort: def.classSort || { k: 'count', dir: -1 },
   })
@@ -890,14 +896,13 @@ function RackList({ def: declared, slots = {} }) {
   }
 
   const beforeSettings = useRef(null)
-  const menuState = useRackMenu()
   const setMenu = menuState.setOpen
   const frameRef = useRef(null)
   // A frame tab (another service's list) has that page's own ⋯ and find: this
   // bar's open its menu and search its list, by message.
   const toFrame = (msg) => frameRef.current?.contentWindow?.postMessage(msg, window.location.origin)
   const [frameFind, setFrameFind] = useState('')
-  useEffect(() => { setMenu(false); setFrameFind('') }, [L.active])
+  useEffect(() => { if (BARE) setMenu(false); setFrameFind('') }, [L.active])
   // …and closes it as this page's own would: Esc.
   useEffect(() => {
     if (tab?.kind !== 'frame') return undefined
@@ -916,27 +921,59 @@ function RackList({ def: declared, slots = {} }) {
     return () => window.removeEventListener('message', take)
   }, [])
 
-  // What this tab can do, behind the ⋯ at the left of the title bar. It pops
-  // out over the list, one line per kind of thing — making, the selection,
-  // merging, what is shown, the tabs — so the list never moves for it.
-  // On the title bar, right of the menu; a bare page has no bar, so in its menu.
+  const barBox = useRef(null)
+  const barTabs = tabs.filter((t) => t.id !== 'settings')
+  const spread = useTabSpread(barBox, barTabs.length, L.active, !BARE)
+  // Settings is still a tab, drawn on the bar or in the menu instead of among the
+  // lists. An editor filling the page would hide it, so that steps aside. Pressed
+  // again, back to where you were, editor and all.
+  const hasSettings = FIXED.some((t) => t.id === 'settings')
+  const toggleSettings = () => {
+    if (L.active === 'settings') {
+      L.setActive(beforeSettings.current?.tab || FIRST)
+      if (beforeSettings.current?.hid) panes.setHidden(false)
+    } else {
+      beforeSettings.current = { tab: L.active, hid: !showList }
+      L.setActive('settings')
+      if (!showList) panes.setHidden(true)
+    }
+  }
+  // Where the tab being shown stands in the strip, for the two buttons that
+  // walk it (−1 when the list has no tab of its own to be on).
+  const tabAt = tabs.findIndex((t) => t.id === tab?.id)
+  // A frame tab's menu is the page inside it, so this column stays out of the way.
+  const railOpen = menuState.open && tab?.kind !== 'frame'
+
+  // What this tab can do, in the column the menu opens: a section per kind of
+  // thing — making, the selection, merging, what is shown. +new stands on the
+  // title bar, right of the menu, until the column opens and takes it; a bare
+  // page has no bar, so always in its menu.
   const newButton = (
     <button type="button" className="rl-btn rl-new" title={tr("rk_add_new_x", cls?.stored ? cls.noun : def.item.noun)}
       onClick={() => (cls?.stored ? openClass(cls, null) : openItem(null))}>+new</button>
   )
   const menuRows = (
     <>
-      <MenuRow>{BARE && newButton}</MenuRow>
-      <MenuRow>
+      <MenuRow title={tr("rk_menu_make")}>
+        {newButton}
         {slots.commands?.(api)}
       </MenuRow>
-      <MenuRow>
-        {tab?.kind === 'items' && picked.size > 1 && (
-          <button type="button" className="rl-btn" title={tr("rk_bulk_edit_hint")}
+      {/* Faint with nothing picked, not gone: what is below them stays put as rows are picked. */}
+      <MenuRow title={tr("rk_menu_pick")}>
+        {tab?.kind === 'items' && (
+          <button type="button" className="rl-btn" title={tr("rk_bulk_edit_hint")} disabled={picked.size < 2}
             onClick={openMany}>{tr("rk_bulk_edit_n", picked.size)}</button>
         )}
-        {tab?.kind === 'items' && picked.size > 0 && listClasses.map((c) => (
-          <select key={c.k} className="rl-btn rl-pick" value=""
+        {/* The other reading of "open what I picked": not one form over all of
+            them (above) but each in a tab of its own, to go through one by one.
+            ponytail: no ceiling — 40 picked rows is 40 editors, and the tab
+            strip is what says so. Put one in if anyone ever does it twice. */}
+        {tab?.kind === 'items' && (
+          <button type="button" className="rl-btn" title={tr("rk_open_each_hint")} disabled={!picked.size}
+            onClick={() => chosen.forEach((r) => openItem(idOf(r), r))}>{tr("rk_open_each_n", picked.size)}</button>
+        )}
+        {tab?.kind === 'items' && listClasses.map((c) => (
+          <select key={c.k} className="rl-btn rl-pick" value="" disabled={!picked.size}
             onChange={(e) => e.target.value && putInList(c, e.target.value)}>
             <option value="">{tr("rk_put_in_x", c.noun)}</option>
             <option value="+new">{tr("rk_add_new_x", c.noun)}</option>
@@ -951,12 +988,13 @@ function RackList({ def: declared, slots = {} }) {
           <button type="button" className="rl-btn rl-tabonly"
             onClick={() => { const l = findStored(inList, tab.key); if (l) openClass(inList, l) }}>{tr("rk_edit_x", inList.noun)}</button>
         )}
-        {inList && picked.size > 0 && (
-          <button type="button" className="rl-btn" title={tr("rk_remove_from_this_hint", inList.label)}
+        {inList && (
+          <button type="button" className="rl-btn" disabled={!picked.size} title={tr("rk_remove_from_this_hint", inList.label)}
             onClick={() => takeOutOfList(inList, tab.key)}>{tr("rk_remove_from_x_n", inList.label, picked.size)}</button>
         )}
+        {slots.pick?.(api)}
       </MenuRow>
-      <MenuRow>
+      <MenuRow title={tr("rk_menu_merge")}>
         {mergeable && (
           <RackMergeButtons merge={merge} noun={cls.stored ? cls.noun : (clsField.label || cls.noun)}
             onOpen={(names) => openEdit({ id: `merge:${cls.k}`, kind: 'merge', of: cls.k, names,
@@ -981,22 +1019,52 @@ function RackList({ def: declared, slots = {} }) {
             {tr(m === 'or' ? 'rk_bundle_any_n' : 'rk_bundle_all_n', def.item.noun, merge.size)}</button>
         ))}
       </MenuRow>
-      <MenuRow>
+      <MenuRow title={tr("rk_menu_show")}>
         {fNow && <span data-keep className="rl-menu-keep"><FilterBar f={fNow} /></span>}
         {tab?.kind === 'items' && (def.item.quick || []).map((q) => (
           <button key={q.id} type="button" data-keep className={`rl-btn${quick.includes(q.id) ? ' on' : ''}`} title={q.title}
             onClick={() => setQuick((xs) => (xs.includes(q.id) ? xs.filter((x) => x !== q.id) : [...xs, q.id]))}>{q.label}</button>
         ))}
+        {!BARE && slots.keepTools?.(api)}
+        {slots.show?.(api)}
       </MenuRow>
-      <MenuRow>
-        {BARE && panes.tabs.length > 0 && (
-          <button type="button" className="rl-btn" title={tr("rk_close_editors_hint")} onClick={() => panes.leaveAll()}>{tr("rk_close_editors_n", panes.tabs.length)}</button>
-        )}
-      </MenuRow>
+      {BARE ? (
+        <MenuRow>
+          {panes.tabs.length > 0 && (
+            <button type="button" className="rl-btn" title={tr("rk_close_editors_hint")} onClick={() => panes.leaveAll()}>{tr("rk_close_editors_n", panes.tabs.length)}</button>
+          )}
+        </MenuRow>
+      ) : (
+        <>
+          {/* What the title bar has while this column is shut. */}
+          <MenuRow title={tr("rk_menu_tabs")}>
+            {/* Along the strip without aiming at it: the tabs are small, and
+                the one you want is usually the one beside the one you are on. */}
+            <button type="button" data-keep className="rl-btn" title={tr("rk_tab_prev")}
+              disabled={tabAt <= 0} onClick={() => L.setActive(tabs[tabAt - 1].id)}>‹</button>
+            <button type="button" data-keep className="rl-btn" title={tr("rk_tab_next")}
+              disabled={tabAt < 0 || tabAt >= tabs.length - 1} onClick={() => L.setActive(tabs[tabAt + 1].id)}>›</button>
+            <button type="button" data-spread className={`rl-btn${spread.all ? ' on' : ''}`} disabled={!spread.all && !spread.over}
+              aria-expanded={spread.all} onClick={() => spread.setAll((a) => !a)}>{tr(spread.all ? "rk_tabs_one_row" : "rk_tabs_all")}</button>
+            <button type="button" className="rl-btn" disabled={!L.opened} title={tr("rk_close_tabs_hint")} onClick={L.closeOpened}>{tr("rk_close_tabs")}</button>
+            {panes.count > 0 && panes.hidden && (
+              <button type="button" className="rl-btn on" title={tr("rk_show_editors", panes.count)} onClick={() => panes.setHidden(false)}>{tr("rk_hidden_editors", panes.count)}</button>
+            )}
+          </MenuRow>
+          <MenuRow title={tr("rk_menu_service")}>
+            <button type="button" className="rl-btn" title={tr("rk_reload_service")} onClick={() => window.location.reload()}>{tr("rk_reload")}</button>
+            {hasSettings && (
+              <button type="button" className={`rl-btn${L.active === 'settings' ? ' on' : ''}`} aria-pressed={L.active === 'settings'}
+                onClick={toggleSettings}>{tr("rk_tab_settings")}</button>
+            )}
+          </MenuRow>
+        </>
+      )}
     </>
   )
   const menuButton = (
-    <RackMenu m={menuState} label={tr("rk_menu")} count={tab?.kind === 'frame' ? 0 : picked.size} lit={!!(fNow?.mode || fNow?.on || quick.length)}
+    <RackMenu m={railOpen ? menuState : { ...menuState, open: false }} label={tr("rk_menu")} count={tab?.kind === 'frame' ? 0 : picked.size}
+      lit={!!(fNow?.mode || fNow?.on || quick.length || slots.keepOn)}
       onToggle={tab?.kind === 'frame' ? () => toFrame({ rackMenu: 'toggle' }) : undefined}
       beside={tab?.kind !== 'frame' && newButton}>{menuRows}</RackMenu>
   )
@@ -1067,26 +1135,14 @@ function RackList({ def: declared, slots = {} }) {
 
   return (
     <div className="rl" style={brandStyle()}>
-      <section className="rl-mod">
-        {!BARE && <RackBar menu={menuButton} tabCount={tabs.filter((t) => t.id !== 'settings').length} activeTab={L.active}
+      <section className={`rl-mod${BARE ? '' : ' rl-mod-rail'}`} style={BARE ? undefined : { '--rl-rail': `${MENU_W}px` }}>
+        {!BARE && <RackBar box={barBox} spread={spread} menu={menuButton} open={railOpen} tabCount={barTabs.length}
           onCloseTabs={L.closeOpened} canCloseTabs={L.opened > 0} beforeReload={slots.barTools?.(api)}
           tools={panes.count > 0 && panes.hidden && <RackPaneTools panes={panes} />}
           last={<>
-            {/* Settings is still a tab, drawn here instead of among the lists. An editor
-                filling the page would hide it, so that steps aside. Pressed again, back to
-                where you were, editor and all. */}
-            {FIXED.some((t) => t.id === 'settings') && (
+            {hasSettings && (
               <button type="button" className={`rl-reload${L.active === 'settings' ? ' on' : ''}`} title={tr("rk_tab_settings")}
-                aria-pressed={L.active === 'settings'} onClick={() => {
-                  if (L.active === 'settings') {
-                    L.setActive(beforeSettings.current?.tab || FIRST)
-                    if (beforeSettings.current?.hid) panes.setHidden(false)
-                  } else {
-                    beforeSettings.current = { tab: L.active, hid: !showList }
-                    L.setActive('settings')
-                    if (!showList) panes.setHidden(true)
-                  }
-                }}>
+                aria-pressed={L.active === 'settings'} onClick={toggleSettings}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true">
                   <circle cx="8" cy="8" r="4.3" strokeWidth="1.3" /><circle cx="8" cy="8" r="1.5" strokeWidth="1.3" />
                   <path strokeWidth="1.7" d="M8 .8v2.9M8 12.3v2.9M.8 8h2.9M12.3 8h2.9M2.9 2.9 5 5M11 11l2.1 2.1M2.9 13.1 5 11M11 5l2.1-2.1" />
@@ -1094,8 +1150,8 @@ function RackList({ def: declared, slots = {} }) {
               </button>
             )}
           </>}
-          tabs={menuState.open ? null : <RackTabs tabs={tabs.filter((t) => t.id !== 'settings')} active={L.active} fixed={FIXED} onPick={L.setActive} onClose={closeTab} />} />}
-        {BARE && <RackMenu m={menuState} bare>{menuRows}</RackMenu>}
+          tabs={<RackTabs tabs={barTabs} active={L.active} fixed={FIXED} onPick={L.setActive} onClose={closeTab} />} />}
+        {BARE ? <RackMenu m={menuState} bare>{menuRows}</RackMenu> : <RackRail open={railOpen}>{menuRows}</RackRail>}
 
         <div className="rl-body">
           {doc && lay.left.map((c) => editorPane(c, ps.left))}
@@ -1107,7 +1163,7 @@ function RackList({ def: declared, slots = {} }) {
 
             {doc && tab?.kind === 'items' && (
               <>
-                <RackTable cols={cols} onDrag={drag('')} facet={filter.tableFacet}
+                <RackTable cols={cols} onDrag={drag('')} facet={filter.tableFacet} lit={filter.lit}
                   sort={order}
                   onSort={(k) => setSort((s2) => bumpSort(asSorts(s2).length ? s2 : def.item.order, k))}
                   head={filter.mode ? null : { all: allPicked, some: somePicked, onAll: toggleAll }}>
@@ -1164,7 +1220,7 @@ function RackList({ def: declared, slots = {} }) {
             {doc && cls && (
               <RackTable cols={merge.mode ? mergeCols : clsCols} onDrag={drag('c:')} sort={clsSort}
                 onSort={(k) => setClsSort((s2) => (s2.k === k ? { k, dir: -s2.dir } : { k, dir: 1 }))}
-                facet={merge.mode ? null : clsFilter.tableFacet}
+                facet={merge.mode ? null : clsFilter.tableFacet} lit={merge.mode ? null : clsFilter.lit}
                 head={merge.mode ? merge.head(clsShown.map((r) => r.name)) : null}>
                 <FacetRows f={clsFilter} labels={{ empty: tr("rk_column_empty") }} />
                 {!clsFilter.mode && clsRowsNow.map((r, i) => {

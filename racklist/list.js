@@ -60,6 +60,7 @@ export function useRackList(cfg) {
   const panes = useEditorPanes(projectKey(key, 'panes'))
   const split = usePaneSplit(projectKey(key, 'split'))
   const vw = useViewportWidth()
+  const spare = cfg.spare || 0                 // room the page gives up (the menu's column), so the columns that leave go by what is left
   const every = useMemo(() => Object.values(cols).flat(), [cols])   // eslint-disable-line react-hooks/exhaustive-deps
   const { drag, sized } = useColumnWidths(projectKey(key, 'cols'), every)
   const findRef = useRef(null)
@@ -72,8 +73,8 @@ export function useRackList(cfg) {
    *  the classes — so two tables remember two widths for a column named alike.
    *  `set` picks which columns when one key serves two tables (authors and the
    *  other classes share 'c:' widths but not columns). */
-  const colsOf = useCallback((prefix = '', set) => sized(set || cols[prefix] || [], vw, prefix),
-    [sized, vw, cols])                                             // eslint-disable-line react-hooks/exhaustive-deps
+  const colsOf = useCallback((prefix = '', set) => sized(set || cols[prefix] || [], vw - spare, prefix),
+    [sized, vw, spare, cols])                                             // eslint-disable-line react-hooks/exhaustive-deps
 
   // The service sorts its own scope — a numbered reference list keeps its
   // numbers, a My-List-like tab keeps the order things were added — so the sort

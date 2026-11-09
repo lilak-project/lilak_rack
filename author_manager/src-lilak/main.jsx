@@ -9,7 +9,7 @@ import def from './def.jsx'
 // in as slots: the group buttons on the command line, and editing many at once
 // — which, for people, is about the affiliations and groups they share.
 const slots = {
-  commands: (api) => <AuthorCommands api={api} />,
+  pick: (api) => <AuthorCommands api={api} />,
   editors: {
     many: (etab, api) => (
       <EditMany ids={etab.ids || []} doc={api.doc} onSave={api.commit} say={api.setNote}

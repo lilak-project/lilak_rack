@@ -20,6 +20,8 @@ import { tr } from 'lilak-ui/i18n.jsx'
  *   <RackTable facet={f.tableFacet} …>      // labels become value pickers
  *     <FacetRows f={f} />                   // the values, while the mode is on
  */
+const NONE = []
+
 export function useFacetFilter(scope, sorters, initial = {}) {
   const [mode, setMode] = useState(false)
   const [col, setCol] = useState(null)
@@ -56,9 +58,12 @@ export function useFacetFilter(scope, sorters, initial = {}) {
   const passes = useCallback((r) => passesFilter(r, sel, sorters), [sel, sorters])
   /** What RackTable needs to turn its labels into value pickers. */
   const tableFacet = mode ? { col, count: (k) => chosen(k).length + excluded(k).length, onPick: pick } : null
+  /** The columns what has been applied is holding the list back by. */
+  const lit = useMemo(() => (on && !mode ? Object.keys(sel).filter((k) => sel[k].length).map((k) => k.replace(/!$/, '')) : NONE),
+    [on, mode, sel])
 
   return { mode, col, sel, on, find, setFind, setSel, setOn, facet, total, chosen, excluded,
-           toggle, start, pick, apply, cancel, clear, passes, tableFacet }
+           toggle, start, pick, apply, cancel, clear, passes, tableFacet, lit }
 }
 
 /** The three states on the command line: choose, applied, off. */

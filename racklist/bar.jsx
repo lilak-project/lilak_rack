@@ -1,16 +1,18 @@
 import './strings.js'
-import { useEffect, useRef } from 'react'
-import { AllTabsIcon, CloseAllIcon, useTabSpread } from './panes.jsx'
+import { useEffect } from 'react'
+import { AllTabsIcon, CloseAllIcon } from './panes.jsx'
 import { tr } from 'lilak-ui/i18n.jsx'
 
 /**
  * The title bar of a rack service, in the service's own colour (brandStyle on
  * the root): the menu — what the tab can do — then the tabs, then `tools`
  * (the editors' buttons), show all the tabs, close them, ↻ and `last` (⚙). One
- * part, so every service has the same bar.
+ * part, so every service has the same bar. With the menu `open` those buttons
+ * stand in its column instead, and the bar has the menu and the tabs.
  *
- *   <RackBar menu={<RackMenu label="메뉴" …/>} tabs={<RackTabs …/>} tools={<RackPaneTools …/>}
- *     tabCount={n} activeTab={id} onCloseTabs={close} canCloseTabs={opened > 0} />
+ *   const box = useRef(null), spread = useTabSpread(box, n, id, true)
+ *   <RackBar box={box} spread={spread} menu={<RackMenu label="메뉴" …/>} tabs={<RackTabs …/>}
+ *     tools={<RackPaneTools …/>} tabCount={n} onCloseTabs={close} canCloseTabs={opened > 0} />
  *
  * The tabs keep to one row and scroll; shown all, they take the whole width from
  * the second row on, as an editor column's do.
@@ -19,15 +21,14 @@ import { tr } from 'lilak-ui/i18n.jsx'
  * not the portal around it (after a sync, a new build). ⇧⌘R is left to the
  * browser: everything, the hard way.
  */
-export function RackBar({ menu = null, tabs = null, tools = null, tabCount = 0, activeTab, onCloseTabs, canCloseTabs, beforeReload = null, last = null, children }) {
+export function RackBar({ box, spread, menu = null, open = false, tabs = null, tools = null, tabCount = 0, onCloseTabs, canCloseTabs, beforeReload = null, last = null, children }) {
   useReloadKey()
-  const box = useRef(null)
-  const { all, setAll, over } = useTabSpread(box, tabCount, activeTab, !!tabs)
+  const { all, setAll, over } = spread
   return (
-    <header className={`rl-bar${all && tabs ? ' rl-bar-all' : ''}`} ref={box}>
+    <header className={`rl-bar${all && tabs ? ' rl-bar-all' : ''}${open ? ' rl-bar-open' : ''}`} ref={box}>
       {menu}
       {/* Before the tabs, so they can flow round it; `order` puts it at the right. */}
-      <span className="rl-bar-end">
+      {!open && <span className="rl-bar-end">
         {tools}
         {tabs && tabCount > 0 && (
           <button type="button" className={`rl-bar-ic rl-bar-count${all ? ' on' : ''}`} disabled={!all && !over}
@@ -45,7 +46,7 @@ export function RackBar({ menu = null, tabs = null, tools = null, tabCount = 0, 
         <button type="button" className="rl-reload" title={tr("rk_reload_service")}
           onClick={() => window.location.reload()}>↻</button>
         {last}
-      </span>
+      </span>}
       {tabs}
       {children}
     </header>

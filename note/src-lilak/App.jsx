@@ -112,16 +112,18 @@ const TODO_COLS = [
   { k: 'num', w: 40, min: 30, fix: true, label: '#' },
   { k: 'text', w: 380, min: 120, label: tr("nt_todo") },
   { k: 'tags', w: 150, min: 60, label: 'tags' },
+  { k: 'people', w: 130, min: 60, label: tr("nt_people"), drop: 1100 },
   { k: 'title', w: 200, min: 80, label: 'note' },
   { k: 'date', w: 100, min: 84, label: 'date' },
   { k: 'due', w: 100, min: 84, label: tr("nt_due") },
   { k: 'done', w: 100, min: 84, label: tr("nt_done") },
 ]
-const TONE = { title: 'ink', text: 'ink', date: 'dim', updated: 'dim', tags: 'dim', excerpt: 'dim' }
+const TONE = { title: 'ink', text: 'ink', date: 'dim', updated: 'dim', tags: 'dim', people: 'dim', excerpt: 'dim' }
 
 const TODO_SORTERS = {
   text: (t) => t.text || '', title: (t) => t.title || '', date: (t) => t.date || '',
   tags: Object.assign((t) => (t.tags || []).join(' '), { many: (t) => t.tags || [] }), done: (t) => t.doneAt || '',
+  people: Object.assign((t) => peopleOf(t).join(', '), { many: peopleOf }),
   // A todo with no date is not due before everything that has one.
   due: (t) => t.due || '9999',
 }
@@ -365,16 +367,46 @@ function PdfPane({ t }) {
 
 /** Whose notes the list shows, pressed round in turn: everything, the person's,
  *  the ones Claude sessions keep (`#agent`, `#agent/rack`). */
-const isAgentNote = (n) => tagsOf(n).some((t) => tagWithin(t, 'agent'))
+const hasTag = (tag) => (n) => tagsOf(n).some((t) => tagWithin(t, tag))
+const isAgentNote = hasTag('agent')
 const WHO_ICON = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.3, strokeLinejoin: 'round', strokeLinecap: 'round' }
 const WHO = [
-  { k: 'all', is: () => true, label: () => tr("nt_who_all"),
+  { k: 'all', is: () => true, label: () => tr("nt_who_all"), short: () => tr("nt_all"),
     icon: <path d="M5 7.5v6.5H2V7.5zM5 7.5 8.2 1.8c1 0 1.8.8 1.8 1.9V6.5h3.2c.9 0 1.5.8 1.3 1.7l-1 4.5c-.2.8-.8 1.3-1.6 1.3H5" /> },
-  { k: 'people', is: (n) => !isAgentNote(n), label: () => tr("nt_who_people"),
+  { k: 'people', is: (n) => !isAgentNote(n), label: () => tr("nt_who_people"), short: () => tr("nt_people"),
     icon: <><circle cx="8" cy="5" r="3" /><path d="M2.5 14.5C3.1 11.5 5.3 10 8 10s4.9 1.5 5.5 4.5" /></> },
-  { k: 'agent', is: isAgentNote, label: () => tr("nt_who_agent"),
+  { k: 'agent', is: isAgentNote, label: () => tr("nt_who_agent"), short: () => tr("nt_short_agent"),
     icon: <><rect x="1.5" y="2.5" width="13" height="9" rx="1" /><path d="M8 11.5v3M5 14.5h6" /></> },
 ]
+/** What kind of note, the same way round: everything, the `#daily`, the `#summary`.
+ *  It adds to whose: a `#summary` is `#agent/summary` too, so "the person's" hides it. */
+const KIND = [
+  { k: 'all', is: () => true, label: () => tr("nt_kind_all"), short: () => tr("nt_all"),
+    icon: <><path d="M3 1.5h7l3 3v10H3z" /><path d="M10 1.5v3h3" /></> },
+  { k: 'daily', is: hasTag('daily'), label: () => tr("nt_kind_daily"), short: () => tr("nt_short_daily"),
+    icon: <><rect x="1.5" y="3" width="13" height="11.5" rx="1" /><path d="M1.5 6.5h13M5 1.5V4M11 1.5V4" /></> },
+  { k: 'summary', is: hasTag('summary'), label: () => tr("nt_kind_summary"), short: () => tr("nt_short_summary"),
+    icon: <path d="M2 3.5h12M2 8h8M2 12.5h5" /> },
+]
+/** One of those, in the title bar: pressing it goes on to the next. */
+function NoteCycle({ list, now, set }) {
+  return (
+    <button type="button" className={`rl-reload${now.k === 'all' ? '' : ' on'}`} title={now.label()}
+      onClick={() => set(list[(list.indexOf(now) + 1) % list.length].k)}>
+      <svg viewBox="0 0 16 16" aria-hidden="true" {...WHO_ICON}>{now.icon}</svg>
+    </button>
+  )
+}
+/** The same, in the open menu: every choice in sight. */
+function NoteChoice({ list, now, set }) {
+  return (
+    <span className="rl-seg">
+      {list.map((x) => (
+        <button key={x.k} type="button" className={`rl-btn${x === now ? ' on' : ''}${x.short().length > 6 ? ' rl-seg-long' : ''}`} onClick={() => set(x.k)}>{x.short()}</button>
+      ))}
+    </span>
+  )
+}
 
 /** Notes just made: their editor takes the caret at the title, once. */
 const FRESH = new Set()
@@ -399,6 +431,9 @@ export default function App() {
   const [whoK, setWhoK] = useState(() => load(VIEW_KEY, {}).who || 'all')
   useEffect(() => { save(VIEW_KEY, { ...load(VIEW_KEY, {}), who: whoK }) }, [whoK])
   const who = WHO.find((x) => x.k === whoK) || WHO[0]
+  const [kindK, setKindK] = useState(() => load(VIEW_KEY, {}).kind || 'all')
+  useEffect(() => { save(VIEW_KEY, { ...load(VIEW_KEY, {}), kind: kindK }) }, [kindK])
+  const kind = KIND.find((x) => x.k === kindK) || KIND[0]
 
   // A file dropped anywhere but the editor: the browser's own answer is to
   // leave the app and show the picture, which inside the portal's frame reads
@@ -415,17 +450,25 @@ export default function App() {
   }, [])
 
   const slots = useMemo(() => ({
-    commands: (a) => <NoteCommands a={a} tscope={tscope} setTscope={setTscope} />,
-    keep: who.is,
+    commands: (a) => <button type="button" className="rl-btn rl-go" title={tr("nt_today_hint")} onClick={() => openDaily(a)}>daily</button>,
+    show: (a) => <TodoScopes a={a} tscope={tscope} setTscope={setTscope} />,
+    keep: (n) => who.is(n) && kind.is(n),
+    keepOn: who.k !== 'all' || kind.k !== 'all',
+    keepTools: () => (
+      <>
+        <NoteChoice list={KIND} now={kind} set={setKindK} />
+        <NoteChoice list={WHO} now={who} set={setWhoK} />
+      </>
+    ),
     barTools: () => (
-      <button type="button" className={`rl-reload${who.k === 'all' ? '' : ' on'}`} title={who.label()}
-        onClick={() => setWhoK(WHO[(WHO.indexOf(who) + 1) % WHO.length].k)}>
-        <svg viewBox="0 0 16 16" aria-hidden="true" {...WHO_ICON}>{who.icon}</svg>
-      </button>
+      <>
+        <NoteCycle list={KIND} now={kind} set={setKindK} />
+        <NoteCycle list={WHO} now={who} set={setWhoK} />
+      </>
     ),
     tabs: [
-      { id: 'todos', label: tr('nt_tab_todos'), render: (a) => <Todos a={a} tscope={tscope} who={who} /> },
-      { id: 'system', label: tr('nt_tab_system'), render: (a) => <Todos a={a} tscope={tscope} who={who} system /> },
+      { id: 'todos', label: tr('nt_tab_todos'), render: (a) => <Todos a={a} tscope={tscope} who={who} kind={kind} /> },
+      { id: 'system', label: tr('nt_tab_system'), render: (a) => <Todos a={a} tscope={tscope} who={who} kind={kind} system /> },
     ],
     editors: {
       item: (t, a) => (
@@ -468,7 +511,7 @@ export default function App() {
       ),
       pdf: (t) => <PdfPane t={t} />,
     },
-  }), [tscope, who])
+  }), [tscope, who, kind])
 
   return <RackService def={NOTE_DEF} slots={slots} />
 }
@@ -534,23 +577,21 @@ async function saveTemplate(a, name, body) {
 
 /** note's own line in the ⋯: today's note, and, on the to-dos tab, which of
  *  them it shows. Printing and templates live in the toolbox (`공용`). */
-function NoteCommands({ a, tscope, setTscope }) {
-  return (
-    <>
-      <button type="button" className="rl-btn rl-go" title={tr("nt_today_hint")} onClick={() => openDaily(a)}>daily</button>
-      {(a.tab?.id === 'todos' || a.tab?.id === 'system') && TODO_SCOPES.map((x) => (
-        <button key={x.k} type="button" data-keep className={`rl-btn${tscope === x.k ? ' on' : ''}`}
-          onClick={() => setTscope(x.k)}>{x.label}</button>
-      ))}
-    </>
-  )
+function TodoScopes({ a, tscope, setTscope }) {
+  return (a.tab?.id === 'todos' || a.tab?.id === 'system') && TODO_SCOPES.map((x) => (
+    <button key={x.k} type="button" data-keep className={`rl-btn${tscope === x.k ? ' on' : ''}`}
+      onClick={() => setTscope(x.k)}>{x.label}</button>
+  ))
 }
 
 /** The to-dos: every GFM checkbox in every note, read by the server. A press
  *  ticks one (an edit to its note's text); a right-click opens the note. */
-function Todos({ a, tscope, who, system = false }) {
+function Todos({ a, tscope, who, kind, system = false }) {
   const [todos, setTodos] = useState(null)
   const [sort, setSort] = useState([{ k: 'date', dir: -1 }])
+  // This table's own columns, at whatever width they were last dragged to —
+  // `t:` keeps them apart from the notes table's, which has a `tags` column too.
+  const cols = a.colsOf('t:', TODO_COLS)
   const reload = useCallback(() => ask('/todos').then(({ body }) => setTodos(body.todos)).catch((e) => a.setNote(String(e.message || e))), [])   // eslint-disable-line react-hooks/exhaustive-deps
   // Read again whenever the notes are — a note saved may have ticked one.
   useEffect(() => { reload() }, [reload, a.doc])
@@ -561,13 +602,13 @@ function Todos({ a, tscope, who, system = false }) {
     const q = (a.query || '').trim().toLowerCase()
     const keep = (TODO_SCOPES.find((x) => x.k === tscope) || TODO_SCOPES[0]).is
     // A todo goes by the note it is in: its own tags say what it is, not whose.
-    const shown = new Set((a.doc?.notes || []).filter(who.is).map((n) => n.id))
+    const shown = new Set((a.doc?.notes || []).filter((n) => who.is(n) && kind.is(n)).map((n) => n.id))
     const mine = (todos || []).filter((t) => isSystemTodo(t) === system).filter(keep)
     const out = mine.filter((t) => shown.has(t.id))
-      .filter((t) => !q || [t.text, t.title, ...(t.tags || [])].filter(Boolean).some((v) => String(v).toLowerCase().includes(q)))
+      .filter((t) => !q || [t.text, t.title, ...(t.tags || []), ...peopleOf(t)].filter(Boolean).some((v) => String(v).toLowerCase().includes(q)))
       .sort((x, y) => urgentNow(y) - urgentNow(x) || byKeys(sort, TODO_SORTERS)(x, y))
     return { rows: out, cut: mine.length - out.length }
-  }, [todos, a.query, tscope, sort, system, who, a.doc])
+  }, [todos, a.query, tscope, sort, system, who, kind, a.doc])
   async function toggle(t) {
     try {
       const { conflict, body } = await ask('/todos', { method: 'PUT',
@@ -578,9 +619,9 @@ function Todos({ a, tscope, who, system = false }) {
   }
   if (!todos) return <p className="rl-msg">{tr("nt_loading")}</p>
   return (
-    <RackTable cols={TODO_COLS} sort={sort} onSort={(k) => setSort((s) => bumpSort(s, k))}>
+    <RackTable cols={cols} onDrag={a.drag('t:')} sort={sort} onSort={(k) => setSort((s) => bumpSort(s, k))}>
       {rows.map((t, i) => (
-        <RackRow key={`${t.id}:${t.line}`} cols={TODO_COLS} tone={TONE}
+        <RackRow key={`${t.id}:${t.line}`} cols={cols} tone={TONE}
           className={`rl-hit${t.done ? ' rl-done' : ''}${late(t) ? ' nt-late' : ''}`}
           title={tr("nt_todo_hint")}
           onClick={() => toggle(t)}
@@ -596,6 +637,7 @@ function Todos({ a, tscope, who, system = false }) {
             ),
             date: t.date || D,
             tags: (t.tags || []).join(' ') || D,
+            people: peopleOf(t).join(', ') || D,
             due: t.due || D,
             done: t.doneAt || D,
           }} />
@@ -603,6 +645,7 @@ function Todos({ a, tscope, who, system = false }) {
       {rows.length === 0 && (
         <p className="rl-msg">{!cut ? tr(system ? "nt_no_system_todos" : "nt_no_todos")
           : who.k !== 'all' ? tr("nt_todos_who", cut, who.label())
+          : kind.k !== 'all' ? tr("nt_todos_kind", cut, kind.label())
           : tr("nt_todos_find", cut)}</p>
       )}
     </RackTable>

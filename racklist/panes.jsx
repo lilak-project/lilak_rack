@@ -206,7 +206,8 @@ export const AllTabsIcon = () => (
 )
 
 /** A row of tabs that stays one row and scrolls, until it is asked to show them
- *  all; any press outside `box` folds it again. `over`: there are more than fit.
+ *  all; any press outside `box` folds it again, but for the button that asks
+ *  from elsewhere (`data-spread`). `over`: there are more than fit.
  *  `active` is scrolled into view; `again` is anything else that redraws them. */
 export function useTabSpread(box, count, active, again) {
   const [all, setAll] = useState(false)
@@ -226,7 +227,7 @@ export function useTabSpread(box, count, active, again) {
   useEffect(() => {
     if (!all) return undefined
     const off = () => setAll(false)
-    const press = (e) => { if (!box.current?.contains(e.target)) off() }
+    const press = (e) => { if (!box.current?.contains(e.target) && !e.target.closest?.('[data-spread]')) off() }
     document.addEventListener('mousedown', press, true)
     window.addEventListener('blur', off)
     return () => {
