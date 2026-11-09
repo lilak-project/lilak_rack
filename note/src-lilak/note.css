@@ -595,6 +595,25 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 .nt-bibs .nt-out-text { flex: 0 0 auto; max-width: 45%; }
 .nt-bib-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nt-refs .rl-btn { flex: 0 0 auto; margin-right: 10px; }
+/* 흐름: what to do, then the notes in order (this one bold), then where to put it. */
+.nt-flow-do, .nt-flow-put { display: flex; gap: 4px; margin: 6px 0; }
+.nt-flow-put .rl-in { flex: 1; min-width: 0; }
+/* A rack list in little: the gutter number, then the row, then what can be
+   done to it. The number is where the note stands in the flow. */
+.nt-flow { margin: 0; padding: 0; list-style: none; }
+.nt-flow li { display: flex; align-items: center; border-bottom: 1px solid var(--rk-line); }
+.nt-flow li:last-child { border-bottom: 0; }
+.nt-flow li.on { background: var(--rk-gut); }
+.nt-flow li.on .nt-out-text { font-weight: 700; color: var(--rk-ink); }
+.nt-flow .rl-gut { flex: 0 0 26px; padding-right: 5px; font-family: var(--rk-mono); font-size: var(--fs-small); }
+.nt-flow .nt-out { flex: 1 1 auto; min-width: 0; }
+.nt-flow .nt-out:disabled { cursor: default; }
+/* Up and down, side by side and out of the way: they are for the rare day the
+   notes came out in the wrong order, not for every press. */
+.nt-flow-mv { display: flex; flex: 0 0 auto; gap: 2px; padding-right: 6px; }
+.nt-flow-mv .rl-btn { padding: 0 5px; }
+.nt-flow-hits { margin-bottom: 6px; border-top: 1px solid var(--rk-line); }
+.nt-flow-in { flex: 0 0 auto; }
 
 /* The folder, as it is. A tex note's files are a tree now, and a tree nobody
    can see is a tree you guess at. */

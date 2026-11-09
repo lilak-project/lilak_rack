@@ -40,6 +40,8 @@
  *   slide     { show(), ratio, setRatio } in the slide mode, else null
  *   numbered  { on, set } — does this note number its headings
  *   where     { notes, files } — the folders on the host, or null
+ *   flow      the note's flow (flow.js): { members, here, own, others, step, follow, put, out },
+ *             or null where there is no list of notes to read it from
  *   tex       the tex machinery (compile, the folder, the bib) — null for a
  *             markdown note. ponytail: this is still Editor's state handed
  *             down; it moves into a hook of its own when a second thing
@@ -50,8 +52,9 @@ import format from './format.jsx'
 import outline from './outline.jsx'
 import files from './files.jsx'
 import bib from './bib.jsx'
+import flow from './flow.jsx'
 
-export const TOOLS = [common, format, outline, files, bib]
+export const TOOLS = [common, format, outline, files, bib, flow]
 
 /** The tools of a kind of note, in the order they are declared. */
 export const toolsFor = (kind) => TOOLS.filter((t) => t.modes.includes(kind))

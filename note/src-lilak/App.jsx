@@ -24,6 +24,7 @@ import { wrapSel } from './liveedit.js'
 import { Rendered } from './reading.jsx'
 import { DeckMeasure, SlideShow, enterFull, gapBefore, slideH } from './slides.jsx'
 import { toolsFor } from './tools/index.js'
+import { flowItems, noteSteps, noteFlow, joinFlow } from './flow.js'
 import { press } from './tools/press.js'
 import Toolbox from './tools/toolbox.jsx'
 import { citedIn, citeMap } from './tools/bib.jsx'
@@ -378,6 +379,14 @@ const WHO = [
 /** Notes just made: their editor takes the caret at the title, once. */
 const FRESH = new Set()
 
+/** The tool a tab has open, handed to the note that takes its place: which
+ *  tool is open belongs to the TAB, and `scrolled.js` keeps it under the note
+ *  because a note is what a tab holds. */
+const carryTools = (from, to) => {
+  placeSave(`${to}:tab`, placeBack(`${from}:tab`) ?? '')
+  placeSave(`${to}:was`, placeBack(`${from}:was`) ?? '')
+}
+
 /** The notes, listed by the kit's RackService as every rack service is — the
  *  table, the tags tab, the ⋯, the panes. What is a note's own is said here:
  *  the editor, a PDF, the to-dos, daily · templates · print. */
@@ -430,6 +439,16 @@ export default function App() {
             else a.setNote(tr("nt_no_note", name))
           }}
           takeCaret={FRESH.has(t.who)} onCaret={() => FRESH.delete(t.who)}
+          flow={{ notes: a.doc?.notes, open: (nid) => a.openItem(nid), reload: a.reload,
+            step: (nid, title) => {
+              // A step along the flow swaps the NOTE in this tab, so the tab
+              // keeps what it was wearing: the toolbox was open at 흐름, and
+              // shutting it to step is the editor jumping wider under the
+              // hand that pressed. The toolbox is kept against the note
+              // (scrolled.js), so the new note is given this one's.
+              carryTools(t.who, nid)
+              a.panes.step(t.id, { id: `item:${nid}`, kind: 'item', who: nid, label: title || nid })
+            } }}
           onPdf={(nid, title, v) => {
             // A tab already open keeps what it was opened with, and the PDF
             // behind it has just changed — so the old one goes for the new one.
@@ -617,10 +636,29 @@ export function SoloNote({ id }) {
   const [said, say] = useState('')
   const [gone, setGone] = useState(false)
   const closed = () => { ask(`/notes/${encodeURIComponent(id)}`).catch(() => setGone(true)) }
+  // Its flow is read from the list here (there is no list beside it); a step
+  // is this page showing the other note.
+  const [notes, setNotes] = useState(null)
+  const reload = useCallback(() => { ask('/notes').then(({ body }) => setNotes(body.notes || [])).catch(() => {}) }, [])
+  useEffect(() => { reload() }, [reload])
+  const to = (nid, title) => {
+    const u = new URL(window.location.href)
+    u.searchParams.set('solo', nid)
+    // Framed in another service (an activity's note): the tab over there is
+    // showing THIS address, and it is the address a refresh draws again. So
+    // the tab is told to step with us — otherwise the frame walks on and the
+    // tab it lives in stays pointed at the note it was opened with.
+    if (window.parent !== window) {
+      window.parent.postMessage({ rackStep: { was: id, id: nid, label: title, src: u.pathname + u.search } },
+        window.location.origin)
+    }
+    window.location.replace(u)
+  }
   return (
     <div className="rl nt-solo" style={brandStyle()}>
       {gone ? <p className="rl-msg">{tr("nt_deleted")}</p> : (
-        <Editor id={id} say={say} onClosed={closed}
+        <Editor id={id} say={say} onClosed={closed} onSaved={reload}
+          flow={notes ? { notes, reload, open: to, step: to } : null}
           onPrint={() => openTab(`${PORTAL_BASE}/?print=${encodeURIComponent(id)}`)} />
       )}
       {said && <div className="rl-hint nt-solo-note">{said}</div>}
@@ -663,7 +701,9 @@ const MODES = {
   tex: { kind: 'tex', label: () => 'LaTeX', hint: () => tr("nt_tex"), format: 'tex' },
 }
 
-function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpenNote, onPdf, make }) {
+// A next note being made (flow.js): one at a time, whichever editor asked.
+let following = false
+function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpenNote, onPdf, make, flow: notes }) {
   const [n, setN] = useState(null)
   const [f, setF] = useState(null)
   const [where, setWhere] = useState(null)   // the folders, once a tool asks
@@ -1111,6 +1151,81 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   }
 
 
+  // ── the note's flow (flow.js) ─────────────────────────────────────────────
+  // `notes` (from whoever shows this editor): the list, step(id, title) — this
+  // tab shows that note instead — open(id), reload(). The list is as saved;
+  // this note is read as it stands in the form.
+  const items = notes?.notes ? flowItems(notes.notes, { id, ...f }) : null
+  const steps = items && noteSteps(items, id)
+  const titleOf = (s) => items?.find((x) => x.id === s?.id)?.title || ''
+  const stepTo = (s, dir) => (
+    <button type="button" className="rl-btn" disabled={!s} title={s ? `${titleOf(s)} · ${s.day}` : ''}
+      {...press(() => notes.step(s.id, titleOf(s)))}>{dir < 0 ? '‹' : '›'}</button>
+  )
+  const setChain = (v) => setF((st) => {
+    const fields = { ...(st.fields || {}) }
+    if (v) fields.chain = v
+    else delete fields.chain
+    return { ...st, fields }
+  })
+  const flowTool = !items ? null : {
+    members: noteFlow(items, id).map((x) => ({ id: x.id, title: x.title, date: x.date })),
+    here: id,
+    own: !!f.fields?.chain,
+    // Any other note, newest first — the tool searches this itself and shows
+    // what it found, so it is the notes rather than a list of labels.
+    others: [...items].filter((x) => x.id !== id).sort((a, b) => String(b.date).localeCompare(String(a.date))),
+    step: (nid, title) => notes.step(nid, title),
+    out: () => setChain(''),
+    // Up or down the flow. The order IS the days, so moving a note trades days
+    // with the one it passes — which is also the only thing that could be
+    // meant by "put this one first": it was written first. Two notes of the
+    // same day have nothing to trade, and the tool greys the arrow out.
+    move: async (nid, dir) => {
+      const line = noteFlow(items, id)
+      const i = line.findIndex((x) => x.id === nid)
+      const a = line[i], b = line[i + dir]
+      if (!a || !b || a.date === b.date) return
+      try {
+        for (const [x, date] of [[a, b.date], [b, a.date]]) {
+          // This note is the one being edited: its date belongs to the form,
+          // and writing the file under it would throw away everything else
+          // unsaved. The other note is saved where it lies.
+          if (x.id === id) { setF((st) => ({ ...st, date })); continue }
+          const { body } = await ask(`/notes/${encodeURIComponent(x.id)}`)
+          await putNote(x.id, body.version, { ...body, date })
+        }
+        notes.reload?.()
+      } catch (e) { say(String(e.message || e)) }
+    },
+    // In the flow `t` is in — `t` given it too if it was in none (it is saved
+    // here, read fresh, so its own edits are kept).
+    put: async (t) => {
+      const { flow: to, mark } = joinFlow(items, t)
+      try {
+        if (mark) {
+          const { body } = await ask(`/notes/${encodeURIComponent(t.id)}`)
+          await putNote(t.id, body.version, { ...body, fields: { ...(body.fields || {}), chain: to } })
+        }
+        setChain(to)
+        notes.reload?.()
+      } catch (e) { say(String(e.message || e)) }
+    },
+    // A new note after this one, in its flow (named after this note if it was in none).
+    follow: async () => {
+      if (following) return        // a second press while the first is making it
+      following = true
+      const { flow: to, mark } = joinFlow(items, items.find((x) => x.id === id))
+      try {
+        if (mark) setChain(to)
+        const { body } = await ask('/notes', { method: 'POST', body: JSON.stringify({ title: f.title }) })
+        await putNote(body.id, body.version, { ...body, fields: { ...(body.fields || {}), chain: to } })
+        notes.reload?.()
+        notes.open(body.id)
+      } catch (e) { say(String(e.message || e)) } finally { following = false }
+    },
+  }
+
   // ── what a tool is given (tools/index.js) ───────────────────────────────
   // Built here because it is all about THIS note; the tools themselves are
   // files that know nothing but this.
@@ -1125,6 +1240,7 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
     say,
     ask,
     keep: { pins, last, marks, setPins, clear: () => { setPins(clearPins(id)); setGo(null) } },
+    flow: flowTool,
     where,
     tags,
     words: f.body.split(/\s+/).filter(Boolean).length,
@@ -1208,6 +1324,14 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
             {tr("nt_manage")}{flag.length && !tab ? <i className="nt-dot">●</i> : null}
           </button>
         </>}
+        after={/* The note before and after this one in its flow. It walks the
+          TAB to another note rather than doing anything to the note in hand,
+          so it stands after close rather than among that note's own buttons. */
+        steps ? (<>
+          {stepTo(steps.prev, -1)}
+          <span className="rl-hint" title={tr('nt_flow_at')}>{steps.at}/{steps.total}</span>
+          {stepTo(steps.next, 1)}
+        </>) : null}
         onDelete={remove}
         deleteWarn={tr("nt_delete_warn")} />
 
