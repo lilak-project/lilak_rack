@@ -48,6 +48,9 @@ import { RackTagged, RackTaggedTab, TAGGED_COLS, TAGGED_SORTERS, useTaggedRows }
  *   slots.keep(item)             which items the service's own filter lets through
  *   slots.tabs                   [{ id, label, render(api) }] — tabs of the service's own
  *   slots.settings(api)          more of the settings tab, under the kit's (a manager's)
+ *   slots.views                  { view: (tab, api) => node } — tabs of its own opened on
+ *                                demand: api.openTab({ id, kind: 'view', view, label, who? });
+ *                                kept like any opened tab (who: the item it is for)
  *   slots.editors                { kind: (tab, api) => node } — editor panes of its own;
  *                                open one with api.openEdit({ id, kind, label, … })
  *   registerType(name, type)     a field type of its own (types.jsx)
@@ -268,6 +271,7 @@ function RackList({ def: declared, slots = {} }) {
           || (doc[t.of] || []).some((r) => r[c.keyBy || 'name'] === (t.key || t.name))
       }
       if (t.kind === 'tagged') return !t.item || items.some((r) => idOf(r) === t.item)
+      if (t.kind === 'view') return !!slots.views?.[t.view] && (!t.who || items.some((r) => idOf(r) === t.who))
       if (t.ids || t.src) return true
       return false
     })
@@ -1254,6 +1258,7 @@ function RackList({ def: declared, slots = {} }) {
             )}
 
             {doc && slotTab && slotTab.render(api)}
+            {doc && tab?.kind === 'view' && slots.views?.[tab.view]?.(tab, api)}
           </div>)}
 
           {ps.after && <div {...ps.after} />}

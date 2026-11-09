@@ -16,8 +16,10 @@
 import { useMemo, useRef, useState } from 'react'
 import { addStrings, tr } from 'lilak-ui/i18n.jsx'
 import Lightbox from 'lilak-ui/components/Lightbox.jsx'
-import { PORTAL_BASE, authHeaders } from './portal.js'
+import { PORTAL_BASE, authHeaders, projectKey } from './portal.js'
 import { registerType } from './types.jsx'
+import { RackTable, RackRow } from './table.jsx'
+import { useColumnWidths, useViewportWidth } from './hooks.js'
 import './uploads.css'
 
 addStrings({
@@ -108,7 +110,17 @@ export function filesOf(def, doc, field) {
   return out.sort((a, b) => String(b.f.at || '').localeCompare(String(a.f.at || '')))
 }
 
-/** The tab: a table of the files, or a gallery of the pictures. */
+const FILE_COLS = [
+  { k: 'num', w: 40, min: 30, fix: true, label: '#' },
+  { k: 'name', w: 320, min: 120, label: tr('up_name') },
+  { k: 'of', w: 260, min: 80, label: tr('up_of') },
+  { k: 'size', w: 70, min: 50, label: tr('up_size'), num: true, drop: 900 },
+  { k: 'when', w: 130, min: 80, label: tr('up_when'), drop: 1000 },
+  { k: 'by', w: 140, min: 60, label: tr('up_by'), drop: 1100 },
+]
+
+/** The tab: the files in the rack table every list is drawn with, or a gallery
+ *  of the pictures. */
 export function RackFiles({ api, field }) {
   const { def, doc, openItem } = api
   const idk = def.item.id || 'id'
@@ -128,6 +140,9 @@ export function RackFiles({ api, field }) {
   const pictures = rows.filter(({ f }) => isPicture(f))
   const open = (rec) => openItem?.(rec[idk], rec)
   const shown = at >= 0 ? pictures[at] : null
+  const { drag, sized } = useColumnWidths(projectKey('files', 'cols'), FILE_COLS)
+  const vw = useViewportWidth()
+  const cols = sized(FILE_COLS, vw)
 
   return (
     <div className="rl-files">
@@ -143,31 +158,29 @@ export function RackFiles({ api, field }) {
         </span>
       </div>
 
-      {view === 'table' && (rows.length === 0 ? <p className="rl-hint">{tr('up_no_files')}</p> : (
-        <table className="rl-files-table">
-          <thead><tr>
-            <th>{tr('up_name')}</th><th>{tr('up_of')}</th><th>{tr('up_size')}</th><th>{tr('up_when')}</th><th>{tr('up_by')}</th>
-          </tr></thead>
-          <tbody>
-            {rows.map(({ f, rec }) => (
-              <tr key={f.id}>
-                <td className="rl-files-name">
+      {view === 'table' && (
+        <RackTable cols={cols} onDrag={drag('')}>
+          {rows.map(({ f, rec }, i) => (
+            <RackRow key={f.id} cols={cols} className="rl-hit" tone={{ size: 'dim', when: 'dim', by: 'dim' }} cell={{
+              num: i + 1,
+              name: (
+                <span className="rl-files-name">
                   {isPicture(f) && <img className="rl-up-thumb" src={uploadUrl(f)} alt="" loading="lazy" />}
                   <a href={uploadUrl(f)} target="_blank" rel="noreferrer">{f.name}</a>
                   <a className="rl-hint" href={uploadUrl(f, true)} title={tr('up_download')}>↓</a>
-                </td>
-                <td><button type="button" className="rl-linkish" onClick={() => open(rec)}>{labelOf(rec)}</button></td>
-                <td className="rl-hint">{size(f.size)}</td>
-                <td className="rl-hint">{String(f.at || '').slice(0, 16).replace('T', ' ')}</td>
-                <td className="rl-hint">{f.by || ''}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ))}
+                </span>),
+              of: <button type="button" className="rl-lnk" onClick={() => open(rec)}>{labelOf(rec)}</button>,
+              size: size(f.size),
+              when: String(f.at || '').slice(0, 16).replace('T', ' '),
+              by: f.by || '',
+            }} />
+          ))}
+          {rows.length === 0 && <p className="rl-msg">{tr('up_no_files')}</p>}
+        </RackTable>
+      )}
 
-      {view === 'gallery' && (pictures.length === 0 ? <p className="rl-hint">{tr('up_no_pictures')}</p> : (
-        <div className="rl-gallery">
+      {view === 'gallery' && (pictures.length === 0 ? <p className="rl-msg">{tr('up_no_pictures')}</p> : (
+        <div className="rl-gallery-scroll"><div className="rl-gallery">
           {pictures.map(({ f, rec }, i) => (
             <figure key={f.id} className="rl-gallery-cell">
               <button type="button" onClick={() => setAt(i)}><img src={uploadUrl(f)} alt={f.name} loading="lazy" /></button>
@@ -177,7 +190,7 @@ export function RackFiles({ api, field }) {
               </figcaption>
             </figure>
           ))}
-        </div>
+        </div></div>
       ))}
 
       <Lightbox open={!!shown} src={shown ? uploadUrl(shown.f) : ''} alt={shown?.f.name}
