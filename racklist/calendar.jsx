@@ -27,8 +27,8 @@ import { occurrences, DAYS, dow } from './rrule.js'
  * with nothing under it grows down into the free lanes, its name wrapping onto
  * as many lines as it then has; a todo whose name is longer than its bar moves
  * the todos under it down, while free lanes are left; a bar stacked from the
- * bottom grows up, moving those over it up. A name may run on over the days to
- * its right instead: each week takes what cuts the fewest names (see arrange). A record without a start is not on it.
+ * bottom grows up, moving those over it up. A name still too long then runs on
+ * over the days left free to its right (see arrange). A record without a start is not on it.
  *
  * The week mode folds each week, Monday to Sunday, into two rows of four cells:
  * the week's own (which week of which month, and how many of each kind), Mon
@@ -99,17 +99,14 @@ export const growUp = (placed, s, ownFits) => {
   }
 }
 const clearBelow = (taken, s) => taken[s.lane + s.rows].every(([x, y]) => s.b < x || s.a > y)
-/** The widest week's bars whose name is too long for them that are tried both ways: 2^this layouts. */
-const TRIED = 8
-/** The lanes of a week's bars. A bar whose name is too long for it can take more lanes
- *  (to the point its name fits) or leave it to run on over the free days to its right, and
- *  either may cut another's name: of all those choices, the one that cuts the fewest names,
- *  then runs on the fewest, then takes the fewest lanes. What `fills` says then takes the
- *  free lanes below as well, while that cuts no name. Sets each bar's lane, rows and free.
+/** The lanes of a week's bars. A bar whose name is too long for it first takes more lanes,
+ *  to the point its name fits: the days' own bars come before a name running on to them.
+ *  What `fills` says then takes the free lanes below as well, while that cuts no name, and
+ *  a name still too long runs on over the days left free to its right. Sets each bar's lane,
+ *  rows and free.
  *  fits(s, days): does its name fit in its lanes and so many days to its right.
  *  s.ends: it ends in this week, so its name may run on. */
 export const arrange = (placed, total, count, fits, fills, measured = true) => {
-  const base = placed.map((s) => s.lane)
   const taken = Array.from({ length: total }, () => [])
   const clear = (used, d) => used.every(([x, y]) => d < x || d > y)
   const retake = () => {
@@ -125,40 +122,23 @@ export const arrange = (placed, total, count, fits, fills, measured = true) => {
   const ownFits = (s) => fits(s, 0)
   const whole = (s) => fits(s, freeOf(s))
   const byLane = (list) => [...list].sort((x, y) => x.lane - y.lane)
-  const start = () => {
-    placed.forEach((s, i) => { s.lane = base[i]; s.rows = 1 })
-    retake()
-  }
+  for (const s of placed) s.rows = 1
+  retake()
+  const long = byLane(placed.filter((s) => !ownFits(s)))
   // Each takes the lanes below, moving the todos in them down if it is a todo itself;
   // what stacks from the bottom takes those above, moving what stacks over it up.
-  const lay = (chosen) => {
-    start()
-    for (const s of byLane(chosen)) {
-      while (s.lane + s.rows < total && !ownFits(s)) {
-        const open = clearBelow(taken, s)
-        const moved = open ? [] : typeof s.ev.ext?.done === 'boolean' ? toShove(placed, s, total) : null
-        if (!(open || moved?.length)) break
-        s.rows += 1
-        for (const x of moved) x.lane += 1
-        retake()
-      }
+  for (const s of long) {
+    while (s.lane + s.rows < total && !ownFits(s)) {
+      const open = clearBelow(taken, s)
+      const moved = open ? [] : typeof s.ev.ext?.done === 'boolean' ? toShove(placed, s, total) : null
+      if (!(open || moved?.length)) break
+      s.rows += 1
+      for (const x of moved) x.lane += 1
+      retake()
     }
-    for (const s of byLane(chosen.filter((x) => x.ev.low))) growUp(placed, s, ownFits)
-    retake()
   }
-  const cost = () => placed.reduce((n, s) => n + (ownFits(s) ? 0 : whole(s) ? 1e3 : 1e6) + s.rows, 0)
-  start()
-  const long = byLane(placed.filter((s) => !ownFits(s)))
-  // ponytail: a week with more of them than this has the rest always take lanes.
-  const tried = long.slice(0, TRIED), rest = long.slice(TRIED)
-  let best = long, least = Infinity
-  for (let m = (1 << tried.length) - 1; m >= 0; m--) {
-    const chosen = [...tried.filter((_, i) => m >> i & 1), ...rest]
-    lay(chosen)
-    const c = cost()
-    if (c < least) { least = c; best = chosen }
-  }
-  lay(best)
+  for (const s of byLane(long.filter((x) => x.ev.low))) growUp(placed, s, ownFits)
+  retake()
   for (const s of byLane(placed.filter(fills))) {
     while (s.lane + s.rows < total && clearBelow(taken, s)) {
       const kept = placed.filter((x) => x !== s && whole(x))
@@ -210,12 +190,14 @@ const textW = (t) => widthOf(t || '') + 14 + 16
 // The room the marks before a name take: its box, ↻ or the handed-in file, then the camera.
 const markW = (s) => (typeof s.ev.ext?.done === 'boolean' || s.ev.occ || s.p.key === 'submit' ? 16 : 0) + (s.ev.online && s.p.key !== 'submit' ? 16 : 0)
 const arranged = new Map()
-// The lines a name wraps to in that width, broken at its spaces, after its mark.
+// Where a name may wrap, as the browser does it: at its spaces, and between any two Hangul syllables.
+export const wrapPieces = (t) => (t || '').match(/[가-힣]|[^가-힣\s]+\s*|\s+/g) || []
+// The lines a name wraps to in that width, after its mark.
 const linesOf = (t, w, mark) => {
   let lines = 1, x = mark
-  for (const word of (t || '').split(/(?<= )/)) {
-    const m = widthOf(word)
-    if (x + m > w) { lines += 1; x = 0 }
+  for (const piece of wrapPieces(t)) {
+    const m = widthOf(piece)
+    if (x + widthOf(piece.trimEnd()) > w) { lines += 1; x = 0 }   // a space may hang past the edge
     lines += Math.floor(m / w)
     x += m % w
   }
@@ -231,7 +213,7 @@ const linesOf = (t, w, mark) => {
 const kept = () => { try { return (window.top.__rackCal ||= {}) } catch { return (window.__rackCal ||= {}) } }
 const reloaded = () => performance.getEntriesByType?.('navigation')[0]?.type === 'reload'
 
-export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOpen, onNew, onResize, onCopy, onOccurrence, at }) {
+export function RackCalendar({ def, doc, items, query, ctx, picked, editing, onPick, onOpen, onNew, onResize, onCopy, onOccurrence, at }) {
   const cal = def.calendar
   const idk = def.item.id || 'id'
   const today = fmt(new Date())
@@ -1037,7 +1019,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
           const gap = shownEvents.some((ev) => ev.sb && ev.sb !== ev.to
             && ((ev.sb >= ws && ev.sb <= we) || (ev.to >= ws && ev.to <= we))) ? GAP.wide : GAP.base
           // The lines of a name that so many lanes hold.
-          const linesIn = (rows) => Math.floor((rows * 22 + (rows - 1) * gap - 4) / 15)
+          const linesIn = (rows) => Math.floor((rows * 22 + (rows - 1) * gap - 4) / 14)
           const fitsOver = (s, free) => {
             if (!dayW) return true
             const w = (s.b - s.a + 1 + free) * dayW - 18      // less the bar's margin and the name's padding
@@ -1115,7 +1097,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, onPick, onOp
                   const sIn = own && ev.s >= ws && ev.s <= we, eIn = own && ev.e >= ws && ev.e <= we
                   const skip = skipOf(ev, a, b)
                   return (
-                    <div key={`${ev.id}:${p.key}`} data-ev={ev.id} data-piece={p.key} data-bottom={bottom ? '1' : undefined} className={`rl-cal-bar${ev.paper ? ' paper' : ''}${ev.framed ? ' framed' : ''}${ev.hatch ? ' hatch' : ''}${ev.online ? ' online' : ''}${ev.ext ? ' ext' : ''}${typeof ev.ext?.done === 'boolean' ? ' todo' : ''}${ev.ext?.done ? ' done' : ''}${ev.ext?.urgent && !ev.ext.done ? ' urgent' : ''}${ev.copy ? ' copy' : ''}${free ? ' spill' : ''}${ev.occ ? ' occ' : ''}${picked?.has(ev.base || ev.id) ? ' on' : ''}${p.from < ws ? ' cont-l' : ''}${p.to > we ? ' cont-r' : ''}${rows > 1 ? ' tall' : ''}`}
+                    <div key={`${ev.id}:${p.key}`} data-ev={ev.id} data-piece={p.key} data-bottom={bottom ? '1' : undefined} className={`rl-cal-bar${ev.paper ? ' paper' : ''}${ev.framed ? ' framed' : ''}${ev.hatch ? ' hatch' : ''}${ev.online ? ' online' : ''}${ev.ext ? ' ext' : ''}${typeof ev.ext?.done === 'boolean' ? ' todo' : ''}${ev.ext?.done ? ' done' : ''}${ev.ext?.urgent && !ev.ext.done ? ' urgent' : ''}${ev.copy ? ' copy' : ''}${free ? ' spill' : ''}${ev.occ ? ' occ' : ''}${picked?.has(ev.base || ev.id) ? ' on' : ''}${editing?.has(ev.base || ev.id) ? ' editing' : ''}${p.from < ws ? ' cont-l' : ''}${p.to > we ? ' cont-r' : ''}${rows > 1 ? ' tall' : ''}`}
                       style={{ '--c': ev.color, gridRow: `${lane + 1} / span ${rows}`, gridColumn: `${a + 1 + lead} / ${b + 2 + lead}`, '--lines': linesIn(rows) }} {...barProps(ev)}>
                       <span className="rl-cal-fill">
                         {Array.from({ length: n }, (_, i) => { const d = addDays(ws, a + i); return <i key={i} data-day={d} className={`lv${level(d)}${miss(d) ? ' miss' : ''}`} /> })}

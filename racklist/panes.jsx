@@ -91,6 +91,20 @@ export function useEditorPanes(key) {
     if (!guards.current[id] || await guards.current[id]()) close(id)
     else setHidden(false)
   }, [close])
+  /** A step along a flow: `t` takes tab `id`'s place (or, open already, is
+   *  shown and `id` goes) — once `id` has saved what it had. */
+  const step = useCallback(async (id, t) => {
+    if (id !== t.id && guards.current[id] && !await guards.current[id]()) return
+    setTabs((ts) => {
+      const old = ts.find((x) => x.id === id)
+      if (!old) return ts
+      const had = ts.find((x) => x.id === t.id)
+      const to = had ? had.col : old.col
+      setActive((a) => ({ ...a, [to]: t.id, [FULL]: t.id }))
+      if (had && had !== old) return ts.filter((x) => x !== old).map((x) => (x === had ? { ...x, ...t, col: x.col } : x))
+      return ts.map((x) => (x === old ? { ...t, col: old.col } : x))
+    })
+  }, [])
   /** Every editor, or one column's. */
   const leaveAll = useCallback(async (c) => {
     for (const t of tabs.filter((x) => !c || full || x.col === c)) await leave(t.id)
@@ -130,7 +144,7 @@ export function useEditorPanes(key) {
   }, [inCol, active])
 
   return {
-    tabs, cols, open, close, closeAll, guard, leave, leaveAll, dock, dockAll, keep, inCol, current, setCol,
+    tabs, cols, open, close, closeAll, guard, leave, leaveAll, step, dock, dockAll, keep, inCol, current, setCol,
     pick: (c, id) => setActive((a) => ({ ...a, [c]: id })),
     full, setFull, hidden, setHidden, count: tabs.length, showing: tabs.length > 0 && !hidden,
   }

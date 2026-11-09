@@ -13,11 +13,12 @@ import { RackEditClass } from './classedit.jsx'
 import { FilterBar, FacetRows, useFacetFilter } from './filter.jsx'
 import { RackListing } from './listing.jsx'
 import { RackItemEditor, cloneOf } from './editor.jsx'
+import { chainKey, flowFor } from './chain.js'
 import { useMergeMode, RackMergeButtons, RackMerge, RackMoveTags } from './merge.jsx'
 import { RackBulkEditor } from './bulk.jsx'
 import { useRackList } from './list.js'
 import { useRackKeys, useToggleKey } from './hooks.js'
-import { typeOf } from './types.jsx'
+import { typeOf, NoteEdit } from './types.jsx'
 import { useFolders, RackFolder, RackFilePane, RackSettings, hasRoots } from './files.jsx'
 import { asSorts, bumpSort, bySome, byKeys } from './sort.js'
 import {
@@ -79,11 +80,23 @@ export const RackStar = ({ on, onToggle }) => (
     onClick={(e) => { e.stopPropagation(); onToggle() }}>{STAR}</button>
 )
 
-/** An item editor's "show in calendar": the calendar at the record's first day. */
-const calButton = (def, show) => (def.calendar && show ? (f) => {
-  const d = f[def.calendar.start || 'start']
-  return d ? <button type="button" className="rl-btn" onClick={() => show(d)}>{tr("rk_show_in_calendar")}</button> : null
-} : undefined)
+/** An item editor's own buttons: "show in calendar" (the calendar at the record's first
+ *  day), then each note field's 노트 만들기 / 노트 열기. */
+const itemButtons = (def, ctx, doc) => {
+  const notes = def.item.fields.filter((fl) => fl.type === 'note')
+  const show = def.calendar && ctx.showDate
+  if (!show && !notes.length) return undefined
+  return (f, setF) => {
+    const d = show && f[def.calendar.start || 'start']
+    return (
+      <>
+        {d && <button type="button" className="rl-btn" onClick={() => show(d)}>{tr("rk_show_in_calendar")}</button>}
+        {notes.map((fl) => <NoteEdit key={fl.k} bare field={fl} value={f[fl.k]} rec={f} ctx={{ ...ctx, def, doc, field: fl }}
+          onChange={(v) => setF((s) => ({ ...s, [fl.k]: v }))} />)}
+      </>
+    )
+  }
+}
 
 const NONE = []                       // one empty list, so a hook sees the same one each render
 
@@ -146,7 +159,7 @@ function RackSolo({ def: declared, id }) {
           : <RackItemEditor key={id} def={def} doc={doc} rec={rec} ctx={ctx} onSave={commit} canDelete={isManager()}
             {...(c ? { fields: c.fields, listKey: c.k, noun: c.noun, cls: c } : {})}
             onCancel={() => {}} onDeleted={() => setGone(true)}
-            actions={c ? undefined : calButton(def, showDate)} />}
+            actions={c ? undefined : itemButtons(def, ctx, doc)} />}
       {doc && note && <div className="rl-hint rl-solo-note">{note}</div>}
     </div>
   )
@@ -329,7 +342,8 @@ function RackList({ def: declared, slots = {} }) {
   // named "새 …" for a record that has a name.
   // `seed` fills a new one in (a day picked on the calendar); a draft already
   // open gives way to it.
-  const openItem = useCallback((id, rec, seed) => {
+  // occ: the sitting of a record that repeats it is opened on (its flow steps from there).
+  const openItem = useCallback((id, rec, seed, occ) => {
     const r = rec || (doc?.[def.item.key] || []).find((x) => idOf(x) === id)
     // Bare inside another service's tab: a record opens in THAT page's editors
     // (its openRecord), not in a second row of panes in here.
@@ -349,7 +363,7 @@ function RackList({ def: declared, slots = {} }) {
       return
     }
     if (!id && seed) panes.close('item:new')
-    const open = () => openEdit({ id: `item:${id || 'new'}`, kind: 'item', who: id || null, seed,
+    const open = () => openEdit({ id: `item:${id || 'new'}`, kind: 'item', who: id || null, seed, ...(occ ? { occ } : {}),
       label: r ? labelOf(def, r) : tr("rk_new_x", def.item.noun) })
     if (!id && seed) setTimeout(open, 0); else open()
   }, [doc, def, openEdit, panes])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -375,15 +389,30 @@ function RackList({ def: declared, slots = {} }) {
   const openRecord = useCallback(({ svc, proj, id, label }) => serviceColor(svc).then((color) =>
     openEdit({ id: `rec:${svc}:${id}`, kind: 'frame', label, color,
       src: `/pp/${svc}/${proj}/?solo=${encodeURIComponent(id)}` })), [openEdit])
+  /** A solo editor framed here walked to another record of its own service (a
+   *  note's flow, stepped inside the frame): the TAB follows it. Without this
+   *  the tab still holds the src it was opened with, and the next draw of the
+   *  frame — a refresh, or coming back to this tab — goes back to the record
+   *  that was open the day the tab was made.
+   *
+   *  The tab is found by what it is SHOWING, not by its name: a frame is
+   *  opened as `rec:<svc>:<id>` here and as `note:<id>` by a field, and only
+   *  the src is sure. */
+  const stepFrame = useCallback(({ was, id, label, src }) => {
+    const showing = `solo=${encodeURIComponent(was)}`
+    const t = panes.tabs.find((x) => x.kind === 'frame' && String(x.src || '').includes(showing))
+    if (t) panes.step(t.id, { ...t, id: t.id.split(was).join(id), label: label || t.label, src })
+  }, [panes])
   useEffect(() => {                                     // …and what a bare list or a solo editor framed here asks for
     const take = (e) => {
       if (e.origin !== window.location.origin) return
       if (e.data?.rackOpen) openRecord(e.data.rackOpen)
       if (e.data?.rackFrame) openEdit({ ...e.data.rackFrame, kind: 'frame' })
+      if (e.data?.rackStep) stepFrame(e.data.rackStep)
     }
     window.addEventListener('message', take)
     return () => window.removeEventListener('message', take)
-  }, [openRecord, openEdit])
+  }, [openRecord, openEdit, stepFrame])
 
   /** Open a stored class record by what items call it — what a chip in the
    *  editor does, so a class without a tab of its own (tab: false) is still
@@ -709,8 +738,12 @@ function RackList({ def: declared, slots = {} }) {
       return (
         <RackItemEditor key={etab.id} def={def} doc={doc} rec={rec} seed={etab.seed} ctx={ctx} onSave={commit}
           canDelete={IS_ADMIN} onCancel={() => panes.close(etab.id)} guard={(fn) => panes.guard(etab.id, fn)}
-          onClone={(seed) => openItem(null, null, seed)}
-          actions={def.item.actions ? (f, setF) => def.item.actions(f, setF, ctx) : calButton(def, ctx.showDate)}
+          onClone={(seed) => openItem(null, null, seed)} occ={etab.occ}
+          onStep={(id, occ) => {
+            const r = items.find((x) => idOf(x) === id)
+            if (r) panes.step(etab.id, { id: `item:${id}`, kind: 'item', who: id, occ, label: labelOf(def, r) })
+          }}
+          actions={def.item.actions ? (f, setF) => def.item.actions(f, setF, ctx) : itemButtons(def, ctx, doc)}
           onCreated={(r) => { panes.close(etab.id); openItem(idOf(r), r) }}
           onDeleted={(r) => {
             panes.close(etab.id)
@@ -1177,6 +1210,8 @@ function RackList({ def: declared, slots = {} }) {
 
             {doc && tab?.kind === 'calendar' && (
               <RackCalendar def={def} doc={doc} ctx={ctx} picked={picked} at={calAt}
+                // The records an editor is showing now: their bars outlined.
+                editing={new Set(panes.showing ? panes.cols.map((c) => panes.current(c)).filter((t) => t?.kind === 'item' && t.who).map((t) => t.who) : [])}
                 // The search box narrows the calendar as it does the table.
                 items={query.trim() ? items.filter((r) => search(r, query.trim().toLowerCase())) : items}
                 query={query.trim()}
@@ -1195,7 +1230,7 @@ function RackList({ def: declared, slots = {} }) {
                   const first = String(rec[cal.start]).slice(0, 10)
                   const days = Math.round((Date.parse(occ) - Date.parse(first)) / 864e5)
                   const made = (o) => { let r = { ...cloneOf(def, rec, days), ...o, id: newId(), createdAt: now, updatedAt: now }; if (def.item.fill) r = def.item.fill(r, doc); return r }
-                  if (how === 'all') { openItem(idOf(rec), rec); return }
+                  if (how === 'all') { openItem(idOf(rec), rec, undefined, occ); return }
                   if (how === 'delete') {
                     commit({ [key]: all.map((x) => (x === rec ? { ...x, [R]: { ...rp, ex: [...new Set([...(rp.ex || []), occ])].sort() }, updatedAt: now } : x)) },
                       tr("rk_occurrence_deleted", labelOf(def, rec), occ))
@@ -1219,9 +1254,11 @@ function RackList({ def: declared, slots = {} }) {
                     oldRule = withCount(rp.rule, done)
                     newRule = withCount(rp.rule, Math.max(1, p.count - done))
                   }
-                  const r = made({ [R]: { rule: newRule, ex: (rp.ex || []).filter((d) => d >= occ) } })
+                  // The rest of the series stays in the flow the first part is in.
+                  const ck = chainKey(def), { flow } = flowFor(def, all, rec)
+                  const r = made({ [R]: { rule: newRule, ex: (rp.ex || []).filter((d) => d >= occ) }, ...(ck ? { [ck]: flow } : {}) })
                   const next = all.map((x) => {
-                    if (x === rec) return { ...x, [R]: { rule: oldRule, ex: (rp.ex || []).filter((d) => d < occ) }, updatedAt: now }
+                    if (x === rec) return { ...x, [R]: { rule: oldRule, ex: (rp.ex || []).filter((d) => d < occ) }, ...(ck ? { [ck]: flow } : {}), updatedAt: now }
                     const s2 = x[S]?.id ?? x[S]
                     return s2 === rec.id && String(x[O] || '') >= occ ? { ...x, [S]: { id: r.id }, updatedAt: now } : x
                   })
@@ -1233,7 +1270,10 @@ function RackList({ def: declared, slots = {} }) {
                   const now = new Date().toISOString()
                   let r = { ...cloneOf(def, rec, days), id: newId(), createdAt: now, updatedAt: now }
                   if (def.item.fill) r = def.item.fill(r, doc)
-                  const patch = { [def.item.key]: [r, ...(doc[def.item.key] || [])] }
+                  // The copy goes in its source's flow — the source too, if it was in none.
+                  const all = doc[def.item.key] || [], ck = chainKey(def), { flow, mark } = flowFor(def, all, rec)
+                  if (ck) r[ck] = flow
+                  const patch = { [def.item.key]: [r, ...(mark ? all.map((x) => (x === rec ? { ...x, [ck]: flow, updatedAt: now } : x)) : all)] }
                   Object.assign(patch, def.item.onSave?.(r, null, { ...doc, ...patch }) || {})
                   return commit(patch, tr("rk_copied_x", labelOf(def, r)))
                 }} />

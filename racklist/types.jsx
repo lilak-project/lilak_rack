@@ -5,6 +5,7 @@ import { RackTextRows } from './fields.jsx'
 import { authHeaders, linkProject, openInService, serviceColor, remoteDocOf } from './portal.js'
 import { useSharedTags, spellTag, tagKey, uniqueTags } from './tags.js'
 import { parseRule, describe, withUntil, withCount, withoutEnd, DAYS, dow, nth } from './rrule.js'
+import { flowOf, flowFor } from './chain.js'
 
 /**
  * Field types — what a property of an [항목] IS, said once.
@@ -95,8 +96,19 @@ function GrowText({ value, onChange, field }) {
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
+    // Measuring collapses the box for a moment, and a pane this box is at the
+    // foot of is pulled up with it: whatever had scrolled goes back where it was.
+    const kept = []
+    for (let p = el.parentElement; p; p = p.parentElement) if (p.scrollTop) kept.push([p, p.scrollTop])
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`   // + its borders
+    for (const [p, top] of kept) p.scrollTop = top
+    // Typing at the end: the line just made stays in sight.
+    const pane = el.closest('.rl-edit')
+    if (pane && document.activeElement === el && el.selectionStart === el.value.length) {
+      const over = el.getBoundingClientRect().bottom - pane.getBoundingClientRect().bottom
+      if (over > 0) pane.scrollTop += over
+    }
   }, [value])
   return (
     <textarea ref={ref} className="rl-in rl-grow" rows={field.rows || 2} style={{ width: '100%', minWidth: 260 }}
@@ -820,7 +832,8 @@ function notesOf(svc, proj, fresh) {
   }
   return NOTES.get(k)
 }
-function NoteEdit({ value, onChange, field, rec, ctx }) {
+/** bare: the button alone (노트 만들기 / 노트 열기), for an editor's action bar. */
+export function NoteEdit({ value, onChange, field, rec, ctx, bare }) {
   const svc = field.svc || 'note', proj = linkProject(svc)
   const title = str(field.title ? field.title(rec || {}) : '').trim()
   const [notes, setNotes] = useState(null)
@@ -828,7 +841,8 @@ function NoteEdit({ value, onChange, field, rec, ctx }) {
   useEffect(() => { serviceColor(svc).then(setTone) }, [svc])
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  useEffect(() => { let on = true; notesOf(svc, proj).then((n) => { if (on) setNotes(n) }); return () => { on = false } }, [svc, proj])
+  // Read again when the value changes: the same field's button elsewhere (the action bar) may have made the note.
+  useEffect(() => { let on = true; notesOf(svc, proj).then((n) => { if (on) setNotes(n) }); return () => { on = false } }, [svc, proj, value?.id])
   const found = notes && (notes.find((n) => value?.id && n.id === value.id) || notes.find((n) => title && n.title === title))
   async function make() {
     setBusy(true); setErr('')
@@ -837,25 +851,34 @@ function NoteEdit({ value, onChange, field, rec, ctx }) {
       const r = had ? null : await noteApi(svc, proj, '/notes', { method: 'POST', body: JSON.stringify({ title }) })
       if (r && !r.ok) throw new Error(tr("rk_note_create_failed", r.status))
       let n = had || await r.json()
-      // A new note wears the record's tags, in its text, where a note's tags live.
+      // A new note wears the record's tags, in its text, where a note's tags live —
+      // and its flow (chain.js) and the record's day, so the notes step as the
+      // records do (a note's flow goes by the notes' dates).
       const tags = (rec?.tags || []).map((t) => `#${String(t).trim().replace(/\s+/g, '_')}`).join(' ')
-      if (!had && tags) {
+      const items = ctx?.doc?.[ctx.def?.item.key] || []
+      const flow = ctx?.def ? flowOf(ctx.def, rec, (x) => items.find((r) => String(r[ctx.def.item.id || 'id']) === x)) : ''
+      const day = String(rec?.[ctx?.def?.calendar?.start] || '').slice(0, 10)
+      if (!had && (tags || flow)) {
         const put = await noteApi(svc, proj, `/notes/${encodeURIComponent(n.id)}`,
-          { method: 'PUT', body: JSON.stringify({ baseVersion: n.version, body: `${tags}\n\n` }) })
+          { method: 'PUT', body: JSON.stringify({ baseVersion: n.version, ...(tags ? { body: `${tags}\n\n` } : {}),
+            ...(flow && day ? { date: day } : {}),
+            ...(flow ? { fields: { ...(n.fields || {}), chain: flow } } : {}) }) })
         if (put.ok) n = await put.json()
         else setErr(tr("rk_note_create_failed", put.status))
       }
-      onChange({ id: n.id, title: n.title })
+      // The list first, so the other button for this field finds the note when the value reaches it.
       setNotes(await notesOf(svc, proj, true))
+      onChange({ id: n.id, title: n.title })
     } catch (e) { setErr(String(e.message || e)) } finally { setBusy(false) }
   }
-  if (!notes) return <span className="rl-hint">{tr("rk_note_finding")}</span>
+  if (!notes) return bare ? null : <span className="rl-hint">{tr("rk_note_finding")}</span>
   if (found) {
     // 노트 열기: the note's own editor, as a tab beside this record's. Its
     // name goes to the note service itself.
     const open = () => (ctx?.openFrame
       ? ctx.openFrame({ id: `note:${found.id}`, label: found.title, color: tone, src: `/pp/${svc}/${proj}/?solo=${encodeURIComponent(found.id)}` })
       : openInService(svc, proj, found.id))
+    if (bare) return <button type="button" className="rl-btn" onClick={open}>{tr("rk_note_open")}</button>
     return (
       <>
         <button type="button" className="rl-lnk" title={tr("rk_open_in", svc)}
@@ -864,9 +887,11 @@ function NoteEdit({ value, onChange, field, rec, ctx }) {
       </>
     )
   }
+  const create = <button type="button" className="rl-btn" disabled={!title || busy} onClick={make}>{tr("rk_note_create")}</button>
+  if (bare) return <>{create}{err && <span className="rl-hint rl-warn">{err}</span>}</>
   return (
     <>
-      <button type="button" className="rl-btn" disabled={!title || busy} onClick={make}>{tr("rk_note_create")}</button>
+      {create}
       {title && <span className="rl-hint">{title}</span>}
       {value?.id && <span className="rl-hint rl-warn">{tr("rk_note_gone")}</span>}
       {err && <span className="rl-hint rl-warn">{err}</span>}
@@ -882,6 +907,73 @@ registerType('note', {
   ) : D),
   Edit: (p) => <NoteEdit {...p} />,
   tidy: (v) => (v?.id ? { id: v.id, title: str(v.title) } : null),
+})
+
+// ─── the flow a record follows on in ─────────────────────────────────────
+/** `type: 'chain'` — the flow (흐름, chain.js) the record is in: the id of its
+ *  first record. Shown as what is in it; put in by picking any record of that
+ *  flow (one in none starts one, named after it), taken out by ×. Its steps are
+ *  the editor's ‹ › — not here. */
+function ChainEdit({ value, onChange, rec, ctx }) {
+  const { def, doc } = ctx
+  const key = def.item.key, idk = def.item.id || 'id', start = def.calendar?.start || 'start'
+  const items = useMemo(() => doc?.[key] || [], [doc, key])
+  const byId = useMemo(() => new Map(items.map((r) => [String(r[idk]), r])), [items, idk])
+  const [q, setQ] = useState('')
+  const l = def.item.label
+  const name = (r) => String((typeof l === 'function' ? l(r) : r[l || 'name']) || r[idk])
+  const flow = flowOf(def, rec, (x) => byId.get(x))
+  const self = String(rec?.[idk] ?? '')
+  const inFlow = flow ? items.filter((r) => flowOf(def, r, (x) => byId.get(x)) === flow)
+    .sort((a, b) => String(a[start]).localeCompare(String(b[start]))) : []
+  // Any other record, newest first, as `name · day` (names repeat; days tell them apart).
+  const options = useMemo(() => {
+    const seen = new Map()
+    for (const r of [...items].sort((a, b) => String(b[start]).localeCompare(String(a[start])))) {
+      if (String(r[idk]) === self) continue
+      const o = `${name(r)} · ${String(r[start] || '').slice(0, 10)}`
+      if (!seen.has(o)) seen.set(o, r)
+    }
+    return seen
+  }, [items, self])   // eslint-disable-line react-hooks/exhaustive-deps
+  const put = () => {
+    const t = options.get(q.trim())
+    if (!t) return
+    const { flow: to, mark } = flowFor(def, items, t)
+    // A record in no flow starts one with this: it is given the flow as well.
+    if (mark) ctx.commit?.({ [key]: items.map((x) => (x === t ? { ...x, [ctx.field.k]: to, updatedAt: new Date().toISOString() } : x)) })
+    onChange(to)
+    setQ('')
+  }
+  const id = `rl-chain-${ctx.field.k}`
+  return (
+    <div className="rl-rows rl-chips">
+      <div className="rl-rrow">
+        {flow ? (
+          <span className="rl-tag">
+            {tr('rk_flow_in', name(inFlow[0] || rec), inFlow.length)}
+            {value && <button type="button" className="rl-x" title={tr('rk_flow_out')} onClick={() => onChange('')}>×</button>}
+          </span>
+        ) : <span className="rl-hint">{tr('rk_flow_none')}</span>}
+        {flow && !value && <span className="rl-hint">{tr('rk_flow_repeat')}</span>}
+      </div>
+      {!value && (
+        <div className="rl-rrow">
+          <input className="rl-in" style={{ flex: '1 1 220px', minWidth: 0 }} list={id} value={q}
+            placeholder={tr('rk_flow_pick')} onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); put() } }} />
+          <datalist id={id}>{[...options.keys()].map((o) => <option key={o} value={o} />)}</datalist>
+          <button type="button" className="rl-btn" onClick={put} disabled={!options.has(q.trim())}>{tr('rk_flow_put')}</button>
+        </div>
+      )}
+    </div>
+  )
+}
+registerType('chain', {
+  empty: () => '',
+  text: (v) => str(v),
+  Edit: (p) => <ChainEdit {...p} />,
+  tidy: (v) => str(v),
 })
 
 // ─── a record that repeats ────────────────────────────────────────────────

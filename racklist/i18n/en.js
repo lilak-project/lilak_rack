@@ -384,4 +384,13 @@ export default {
   rk_todo_tick: "Mark done / undone",
   rk_tab_calendar: "calendar",
   rk_tab_settings: "settings",
+  rk_flow: "place in its flow",
+  rk_flow_prev: (a0) => `previous: ${a0}`,
+  rk_flow_next: (a0) => `next: ${a0}`,
+  rk_flow_in: (a0, a1) => `${a1} records from ${a0}`,
+  rk_flow_none: "follows on from nothing",
+  rk_flow_repeat: "follows on by repeating",
+  rk_flow_out: "take out of the flow",
+  rk_flow_put: "put in the flow",
+  rk_flow_pick: "find one to follow (name · day)",
 }

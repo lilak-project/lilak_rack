@@ -8,6 +8,7 @@ import { useRackKeys } from './hooks.js'
 import { newId, openInService, PORTAL_SERVICE } from './portal.js'
 import { useProjects, projectWears } from './tags.js'
 import { tr } from 'lilak-ui/i18n.jsx'
+import { chainKey, flowFor, flowSteps } from './chain.js'
 
 /**
  * The editor for one [항목] — or one stored [클래스] record — built from its
@@ -105,7 +106,7 @@ export function cloneOf(def, rec, days = 0) {
 
 export function RackItemEditor({
   def, doc, rec, fields: fieldsIn, listKey, noun, cls, ctx: extra = {},
-  onSave, onCreated, onDeleted, onRenamed, onCancel, onClone, canDelete = true, actions, seed, guard,
+  onSave, onCreated, onDeleted, onRenamed, onCancel, onClone, canDelete = true, actions, seed, guard, occ, onStep,
 }) {
   const fields = fieldsIn || def.item.fields
   const key = listKey || def.item.key
@@ -258,6 +259,33 @@ export function RackItemEditor({
   const inProjects = isItem && PORTAL_SERVICE.name !== 'project_manager' && Array.isArray(f.tags)
     ? projects.filter((p) => projectWears(p, f.tags)) : []
 
+  // The record's flow (chain.js): the one before and after it, a sitting of a
+  // record that repeats counting as one. Stepping shows it in this tab.
+  const steps = useMemo(() => (isItem && rec && onStep && chainKey(def) ? flowSteps(def, doc[key] || [], rec, occ) : null),
+    [doc, rec, occ])   // eslint-disable-line react-hooks/exhaustive-deps
+  const md = (d) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`
+  const stepTo = (s, dir) => (
+    <button type="button" className="rl-btn" disabled={!s} title={s ? tr(dir < 0 ? 'rk_flow_prev' : 'rk_flow_next', s.day) : ''}
+      onClick={() => onStep(s.id, s.occ)}>{dir < 0 ? '‹' : '›'}</button>
+  )
+  const nav = steps && (
+    <>
+      {stepTo(steps.prev, -1)}
+      <span className="rl-hint" title={tr('rk_flow')}>{steps.total ? `${steps.at}/${steps.total}` : ''}{steps.here.occ ? ` · ${md(steps.here.occ)}` : ''}</span>
+      {stepTo(steps.next, 1)}
+    </>
+  )
+  // A clone goes in its source's flow — the source too, if it was in none.
+  const clone = () => {
+    const c = cloneOf(def, tidy(f)), k = chainKey(def)
+    if (k && rec) {
+      const { flow, mark } = flowFor(def, doc[key] || [], f)
+      c[k] = flow
+      if (mark) setF((s) => ({ ...s, [k]: flow }))
+    }
+    onClone(c)
+  }
+
   return (
     <div className="rl-edit">
       {/* First, and stuck to the top of the pane: the record is as long as it
@@ -267,10 +295,10 @@ export function RackItemEditor({
         hint={why} pending={dirty && !why}
         onClose={onCancel && (async () => { if (await settle.current()) onCancel() })} closeDisabled={dirty && !!why}
         onCancel={onCancel}
-        onClone={onClone && isItem ? () => onClone(cloneOf(def, tidy(f))) : undefined}
+        onClone={onClone && isItem ? clone : undefined}
         onDelete={canDelete ? remove : undefined}
         deleteWarn={own.deleteWarn ? own.deleteWarn(f, doc) : undefined}
-        extra={actions?.(f, setF)} />
+        extra={<>{actions?.(f, setF)}{nav}</>} />
       <div className="rl-rec">
         {segments(shown).map((seg) => {
           // One labelled line per field — or per group of fields that say one

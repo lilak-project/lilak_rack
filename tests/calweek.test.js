@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { weekOfMonth, opensMonth, toShove, toLift, growUp, arrange } from '../racklist/calendar.jsx'
+import { weekOfMonth, opensMonth, toShove, toLift, growUp, arrange, wrapPieces } from '../racklist/calendar.jsx'
 
 describe('a week belongs to the month of its Thursday', () => {
   it('counts the weeks of that month', () => {
@@ -68,7 +68,7 @@ describe('a bar stacked from the bottom grows up', () => {
   })
 })
 
-describe('a week takes the lanes that cut the fewest names', () => {
+describe('a week gives its bars their lanes, then lets names run on', () => {
   // need: the lanes its name wants; wide: the days it wants on one lane.
   const bar = (lane, a, need, wide, low = 0) => ({ ev: { low, ext: low ? undefined : { done: false } }, ends: true, lane, rows: 1, a, b: a, need, wide })
   const fits = (s, days) => s.rows >= s.need || 1 + days >= s.wide
@@ -78,18 +78,21 @@ describe('a week takes the lanes that cut the fewest names', () => {
     lay([s], 3, 3)
     expect([s.rows, s.free]).toEqual([2, 0])
   })
-  it('lets a name run on if taking a lane would cut another', () => {
-    const left = bar(1, 0, 9, 2)                           // runs on over day 1 in lane 1
-    const s = bar(0, 1, 2, 2)                              // day 2 is free: it may run on too
+  it('gives a lane to the day\'s own bar before a name running on to it', () => {
+    const left = bar(1, 0, 9, 2)                           // would run on over day 1 in lane 1
+    const s = bar(0, 1, 2, 2)                              // day 2 is free, but the lane comes first
     lay([left, s], 2, 3)
-    expect([s.rows, s.free]).toEqual([1, 1])
-    expect(left.free).toBe(2)
-  })
-  it('takes the lane if a name is cut either way', () => {
-    const left = bar(1, 0, 9, 2)
-    const s = bar(0, 1, 2, 2)                              // the last day: nowhere to run on to
-    lay([left, s], 2, 2)
     expect([s.rows, s.free]).toEqual([2, 0])
+    expect(left.free).toBe(0)
+  })
+  it('lets a name run on over what the lanes leave free', () => {
+    const left = bar(1, 0, 9, 2)
+    const s = bar(0, 1, 1, 1)                              // its name fits: lane 1 stays free
+    lay([left, s], 2, 3)
+    expect(left.free).toBe(2)
+    const t = bar(0, 0, 2, 2)                              // no lane to take
+    lay([t], 1, 3)
+    expect([t.rows, t.free]).toEqual([1, 2])
   })
   it('moves a todo down, or what is stacked over a bar up', () => {
     const [s, under] = [bar(0, 0, 2, 9), bar(1, 0, 1, 1)]
@@ -106,6 +109,14 @@ describe('a week takes the lanes that cut the fewest names', () => {
     const u = bar(0, 0, 1, 1)
     arrange([u], 3, 1, fits, () => true)
     expect(u.rows).toBe(3)
+  })
+})
+
+describe('where a name may wrap', () => {
+  it('is at spaces, and between Hangul syllables', () => {
+    expect(wrapPieces('atomx 에 파일')).toEqual(['atomx ', '에', ' ', '파', '일'])
+    expect(wrapPieces('CENS meeting (10:00)')).toEqual(['CENS ', 'meeting ', '(10:00)'])
+    expect(wrapPieces('')).toEqual([])
   })
 })
 

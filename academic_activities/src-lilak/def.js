@@ -30,8 +30,10 @@ const noteTodos = async () => {
     const r = await fetch(`${NOTE()}/api/todos`, { headers: authHeaders() })
     if (!r.ok) return []
     const [{ todos = [] }, color] = await Promise.all([r.json(), serviceColor('note')])
-    return todos.filter((t) => t.due).map((t) => ({
-      id: `todo:${t.id}:${t.line}`, feed: tr('aa_todos'), color: color || '#365944',
+    // One that names a person (`@도승경`) is a feed of its own: its colour, its key in the legend.
+    const named = (t) => !!t.authors?.length
+    return todos.filter((t) => t.due).sort((a, b) => named(a) - named(b)).map((t) => ({
+      id: `todo:${t.id}:${t.line}`, feed: tr(named(t) ? 'aa_todos_named' : 'aa_todos'), color: named(t) ? '#a21caf' : color || '#365944',
       title: untagged(t.text), start: t.due, location: t.title, done: t.done, urgent: !!t.urgent,
       toggle: (done) => fetch(`${NOTE()}/api/todos`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -55,7 +57,7 @@ const noteTodos = async () => {
 // 참여 형태; each group allows some of them.
 const ROLES = ['oral', 'poster', 'contribution', 'corresponding author', 'attend', 'online', 'absence', 'chair',
   'spokesperson', 'co-spokesperson', 'core', 'setup', 'shift', 'software']
-const COMMON = ['kind', 'name', 'start', 'startTime', 'end', 'endTime', 'repeat', 'series', 'seriesDate', 'link', 'key', 'folder', 'note', 'comment']
+const COMMON = ['kind', 'name', 'start', 'startTime', 'end', 'endTime', 'repeat', 'series', 'seriesDate', 'chain', 'link', 'key', 'folder', 'note', 'comment']
 const TALK = ['place', 'online', 'onlineLink', 'role', 'title', 'talkDate', 'talkTime', 'host', 'tripKind', 'tripStart', 'tripEnd']
 const GROUPS = [
   { label: tr('aa_g_academic'), color: '#2f6fde', fields: [...TALK, 'papers', 'submitDate'],
@@ -67,10 +69,10 @@ const GROUPS = [
     kinds: [['미팅', 'Meeting']] },
   // A talk you are asked to give, or go to hear.
   { label: 'Talk', color: '#4cb3e6', bottom: 3, framed: true, fields: [...TALK, 'myTalk'],
-    roles: ['oral', 'attend', 'online'],
+    roles: ['oral', 'attend', 'online', 'absence'],
     kinds: [['세미나', 'Seminar'], ['강연', 'Lecture'], ['교육', 'Education']] },
   { label: tr('aa_g_experiment'), color: '#13a06e', fields: ['place', 'role', 'title', 'equipment', 'leads', 'proposal', 'tripKind', 'tripStart', 'tripEnd', 'submitDate'],
-    roles: ['spokesperson', 'co-spokesperson', 'core', 'setup', 'shift', 'software', 'online'],
+    roles: ['spokesperson', 'co-spokesperson', 'core', 'setup', 'shift', 'software', 'online', 'absence'],
     kinds: [['실험', 'Experiment']] },
   // What is handed in by a day (제출 날짜) — and, for a proposal, presented
   // at a PAC afterwards, so a talk and a trip.
@@ -144,6 +146,8 @@ export default {
       { k: 'repeat', label: tr("aa_repeat"), type: 'repeat', start: 'start', when: (r) => !r.series },
       { k: 'series', label: tr("aa_series"), type: 'ref', when: (r) => !!r.series, disabled: () => true },
       { k: 'seriesDate', label: tr("aa_series_date"), type: 'date', when: (r) => !!r.series, disabled: () => true },
+      // The sittings it follows on from and leads to (racklist chain.js): ‹ › in the editor.
+      { k: 'chain', label: tr("aa_chain"), type: 'chain' },
       // The day it went in: an abstract, a proposal, a report, an application.
       { k: 'submitDate', label: tr("aa_submit_date"), type: 'date', same: ['start', 'end'] },
       { k: 'year', label: 'YEAR', type: 'number',

@@ -41,12 +41,17 @@ export function RackActions({
   // paste, a re-scan. It rides with save and cancel, which are also about
   // this record, and never with revert and delete.
   extra,
+  // What rides right after close: not something done to this record but
+  // something done to the TAB — note's flow walks the tab to another note, and
+  // that belongs beside the button that empties it, not among the record's own.
+  after,
 }) {
   const [sure, setSure] = useState(false)
-  const close = () => (
+  const close = () => (<>
     <button type="button" className={`rl-btn${pending ? ' rl-pending' : ''}`} disabled={closeDisabled}
       title={pending ? tr("rk_saving_soon") : tr("rk_close_saves")} onClick={onClose}>close</button>
-  )
+    {after}
+  </>)
   if (draft) {
     return (
       <div className="rl-acts">
