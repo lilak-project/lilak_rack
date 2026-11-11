@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
+import { EditorState } from '@codemirror/state'
 import { missingFiles } from '../note/src-lilak/tools/files.jsx'
 import { leading, table } from '../note/src-lilak/tools/format.jsx'
 import { headings, refMap } from '../note/src-lilak/tools/outline.jsx'
 import { unindent } from '../note/src-lilak/tools/format.jsx'
 import { citeMap, citedIn } from '../note/src-lilak/tools/bib.jsx'
 import { comments } from '../note/src-lilak/comments.js'
-import { backJamo, dueAt, isText, leadIn, moveDay, wonPair } from '../note/src-lilak/liveedit.js'
-import { item, MATH } from '../note/src-lilak/livemd.js'
+import { backJamo, dueAt, isText, leadIn, moveDay, typedBreak, wonPair } from '../note/src-lilak/liveedit.js'
+import { item } from '../note/src-lilak/livemd.js'
+import { MATH, withArrows } from '../note/src-lilak/marks.js'
 
 // 목차 — `#` and `\section` are one tool's two spellings.
 describe('headings', () => {
@@ -315,5 +317,30 @@ describe('unindent', () => {
   })
   it('empties a line that was nothing but space', () => {
     expect(unindent('     ')).toBe('')
+  })
+})
+
+describe('typedBreak', () => {
+  // The browser's own line break (Enter on a syllable being composed) splits
+  // the line before a space: the new line must not begin with it.
+
+  const st = EditorState.create({ doc: '안녕하세요 다음 문장', selection: { anchor: 5 }, extensions: [typedBreak] })
+  it('drops the spaces after a typed break', () => {
+    const t = st.update({ changes: { from: 5, insert: '\n' }, selection: { anchor: 6 }, userEvent: 'input.type.compose' })
+    expect(t.state.doc.toString()).toBe('안녕하세요\n다음 문장')
+    expect(t.state.selection.main.head).toBe(6)
+  })
+  it('leaves a paste alone', () => {
+    const t = st.update({ changes: { from: 5, insert: '\n' }, userEvent: 'input.paste' })
+    expect(t.state.doc.toString()).toBe('안녕하세요\n 다음 문장')
+  })
+})
+
+describe('withArrows', () => {
+  it('draws -> in words only', () => {
+    expect(withArrows('a -> b -> c')).toBe('a → b → c')
+    for (const same of ['`a -> b`', '$a->b$', '<!-- x -->', 'a <-> b', '![[a->b.png]]', '[x](a->b)', '```\na -> b\n```', 'a ->> b']) {
+      expect(withArrows(same)).toBe(same)
+    }
   })
 })

@@ -134,6 +134,9 @@ const look = EditorView.theme({
   '::selection': { background: 'var(--rk-cite)' },
 })
 
+// The line between two slides stands on top of the slide's own height.
+const CUT_LINE = 6
+
 export default function RawArea({ value, onChange, live = false, tex = false, at, fileSrc, onFiles, onOpenNote,
   pins, onPin, onEdit, onGutter, goto: go, openAt = 0, hold, fold = false, deck = null, numbered = false }) {
   const host = useRef(null)
@@ -178,6 +181,8 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
           ...(tex || deck ? [] : [blankField]),
           highlightActiveLineGutter(),
           ...(live && !tex ? [livePreview(fileSrc, onOpenNote, numbered), ...liveLook] : []),
+          // `원문` wraps too: a dictated paragraph is one long line.
+          ...(live || tex ? [] : [EditorView.lineWrapping]),
           highlightActiveLine(),
           history(),
           // Backspace takes the 한글 syllable still being typed apart, jamo by
@@ -191,8 +196,7 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
           ...(tex ? [
             keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
             StreamLanguage.define(stex),
-            // A LaTeX paragraph is written as one long line, so it wraps —
-            // `원문` does not, because there a line is a line. The gutter
+            // A LaTeX paragraph is written as one long line, so it wraps. The gutter
             // still numbers the LINES of the file, not the rows on screen,
             // which is what a compile error names.
             EditorView.lineWrapping,
@@ -334,7 +338,7 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
       if (!v) return
       const gutter = v.dom.querySelector('.cm-gutters')?.offsetWidth || 0
       el.style.setProperty('--nt-deck-h', `${deck.h}px`)
-      el.style.setProperty('--nt-k', Math.min((v.scrollDOM.clientWidth - gutter) / 1000, el.clientHeight / deck.h))
+      el.style.setProperty('--nt-k', Math.min((v.scrollDOM.clientWidth - gutter) / 1000, (el.clientHeight - CUT_LINE) / deck.h))
       v.requestMeasure()
     }
     const ro = new ResizeObserver(fit)

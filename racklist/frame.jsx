@@ -69,7 +69,7 @@ export function RackFrame({ src, label, hold }) {
   return (
     <div className="rl-frame-box" ref={box}>
       <iframe ref={(el) => { frame.current = el; if (hold) hold.current = el }}
-        title={label} src={src} style={spot || undefined} allow="fullscreen"
+        title={label} src={src} style={spot || undefined} allow="fullscreen; microphone"
         className={`rl-frame${spot ? ' rl-frame-over' : ''}`} />
     </div>
   )

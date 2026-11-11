@@ -227,8 +227,9 @@ export function itemSorters(def, doc, extra = {}) {
   for (const f of def.item.fields) {
     const T = typeOf(f)
     const c = ctxFor(def, doc, f, extra)
-    const by = f.sort ? (v) => f.sort(v, c) : (v) => T.sort(v, c)
-    out[f.k] = (r) => by(valueOf(f, r, c))
+    // `f.sort` gets the record too: a column may show less than it sorts by.
+    const by = f.sort ? (v, r) => f.sort(v, c, r) : (v) => T.sort(v, c)
+    out[f.k] = (r) => by(valueOf(f, r, c), r)
     // A record wears several tags, and is filtered by each of them. The same
     // holds for a column of LINKS (책임자, 저자): the filter offers each person
     // rather than the list of them as one string. A field with values of its

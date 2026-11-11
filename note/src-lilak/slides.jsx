@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import { RangeSet, StateEffect, StateField } from '@codemirror/state'
 import { Decoration, EditorView, GutterMarker, WidgetType, gutter } from '@codemirror/view'
 import { Rendered } from './reading.jsx'
-import { cutPages, pageTexts, ruleLines } from './marks.js'
+import { cutPages, pageTexts, ruleLines, blankHeights, figureLine, figureList, tagLine, blankComments, dropComments } from './marks.js'
 import { tr } from 'lilak-ui/i18n.jsx'
 
 /** A markdown note as slides (the `slide` mode).
@@ -76,9 +76,12 @@ export function DeckMeasure({ body, h, onPages }) {
   says.current = onPages
   const room = useRef(0)
   room.current = h - 2 * PAD_Y
+  const drawn = useRef('')
+  drawn.current = text
   const measure = useRef(() => {
     if (!root.current) return
-    const pages = cutPages(blocksOf(root.current), room.current)
+    const src = dropComments(drawn.current).split('\n')
+    const pages = cutPages(blocksOf(root.current).map((b) => ({ ...b, tags: tagLine(src[b.line - 1]) })), room.current)
     const key = JSON.stringify(pages)
     if (key !== told.current) { told.current = key; says.current(pages) }
   }).current
@@ -91,7 +94,7 @@ export function DeckMeasure({ body, h, onPages }) {
   }, [measure])
   return (
     <div className="nt-deck nt-deck-flow" ref={root} aria-hidden="true" style={{ '--nt-deck-h': `${h}px` }}>
-      <Rendered lines>{text}</Rendered>
+      <Rendered lines figures={0}>{text}</Rendered>
     </div>
   )
 }
@@ -153,7 +156,7 @@ class Band extends GutterMarker {
 
 export const setDeck = StateEffect.define()
 
-const NONE = { deco: Decoration.none, nums: RangeSet.empty, rules: Decoration.none, atomic: Decoration.none }
+const NONE = { pages: [], deco: Decoration.none, nums: RangeSet.empty, rules: Decoration.none, atomic: Decoration.none }
 
 const RULE = Decoration.replace({ block: true })
 const WHOLE = Decoration.mark({})
@@ -166,7 +169,7 @@ function hideRules(state) {
   const { doc } = state
   const here = doc.lineAt(state.selection.main.head).number
   const marks = [], atomic = []
-  for (const n of ruleLines(doc.toString())) {
+  for (const n of ruleLines(blankComments(doc.toString()))) {
     if (n === here) continue
     let end = n
     while (end < doc.lines && !doc.line(end + 1).text.trim() && end + 1 !== here) end += 1
@@ -175,6 +178,29 @@ function hideRules(state) {
     atomic.push(WHOLE.range(from, end < doc.lines ? doc.line(end + 1).from : doc.line(end).to))
   }
   return { rules: Decoration.set(marks), atomic: Decoration.set(atomic) }
+}
+
+const SPACE = {
+  gap: Decoration.line({ class: 'nt-deck-gap' }),
+  none: Decoration.line({ class: 'nt-deck-none' }),
+  idle: Decoration.line({ class: 'nt-deck-idle' }),
+  top: Decoration.line({ class: 'nt-deck-top' }),
+  fig: Decoration.line({ class: 'nt-deck-figline' }),
+}
+/** The editor's lines given the heights the renderer gives them, because the
+ *  white under a slide is worked out from the renderer: a line that takes more
+ *  or less here makes that slide a different height from the rest. */
+function spaceLines(state, pages) {
+  const { doc } = state
+  const lines = blankComments(doc.toString()).split('\n')
+  const starts = new Set(pages.slice(1).map((p) => p.from))
+  const marks = []
+  for (const [n, kind] of blankHeights(lines, doc.lineAt(state.selection.main.head).number, starts, pages.length > 0)) {
+    marks.push(SPACE[kind].range(doc.line(n).from))
+  }
+  for (const n of starts) if (n <= doc.lines) marks.push(SPACE.top.range(doc.line(n).from))
+  lines.forEach((t, i) => { if (figureLine(t)) marks.push(SPACE.fig.range(doc.line(i + 1).from)) })
+  return Decoration.set(marks, true)
 }
 
 function drawDeck(state, { pages, title }) {
@@ -188,20 +214,22 @@ function drawDeck(state, { pages, title }) {
     marks.push(Decoration.widget({ widget: new Cut(gapBefore(pages, i + 1)), block: true, side: -1 }).range(at))
     nums.push(new Num(i + 2).range(at))
   })
-  return { deco: Decoration.set(marks, true), nums: RangeSet.of(nums, true) }
+  return { pages, deco: Decoration.set(marks, true), nums: RangeSet.of(nums, true) }
 }
 
 export const deckField = StateField.define({
-  create: (state) => ({ ...NONE, ...hideRules(state) }),
+  create: (state) => ({ ...NONE, ...hideRules(state), space: spaceLines(state, []) }),
   update(v, tr) {
     let next = v
     for (const e of tr.effects) if (e.is(setDeck)) next = { ...next, ...drawDeck(tr.state, e.value) }
     if (next === v && tr.docChanged) next = { ...v, deco: v.deco.map(tr.changes), nums: v.nums.map(tr.changes) }
-    return tr.docChanged || tr.selection ? { ...next, ...hideRules(tr.state) } : next
+    return next !== v || tr.docChanged || tr.selection
+      ? { ...next, ...hideRules(tr.state), space: spaceLines(tr.state, next.pages) } : next
   },
   provide: (f) => [
     EditorView.decorations.from(f, (v) => v.deco),
     EditorView.decorations.from(f, (v) => v.rules),
+    EditorView.decorations.from(f, (v) => v.space),
     EditorView.atomicRanges.of((view) => view.state.field(f).atomic),
   ],
 })
@@ -221,11 +249,12 @@ export const deckGutter = (config) => gutter({
 export const enterFull = () => { document.documentElement.requestFullscreen?.().catch(() => {}) }
 
 export function SlideShow({ title, body, pages, h, start, onClose }) {
-  const slides = useMemo(() => pageTexts(body, pages), [body, pages])
+  const slides = useMemo(() => pageTexts(dropComments(body), pages), [body, pages])
   const total = Math.max(slides.length, 1)
   const fit = () => Math.min(window.innerWidth / W, window.innerHeight / h)
   const [at, setAt] = useState(start)
   const [k, setK] = useState(fit)
+  const before = useMemo(() => figureList(body).filter((f) => f.line < (pages[at]?.from ?? 0)).length, [body, pages, at])
   const last = useRef(0)
   last.current = total - 1
   const move = (by) => setAt((n) => Math.max(0, Math.min(last.current, n + by)))
@@ -260,11 +289,11 @@ export function SlideShow({ title, body, pages, h, start, onClose }) {
   }, [])
   const page = { transform: `translate(-50%, -50%) scale(${k})` }
   return createPortal(
-    <div className="nt-show" style={{ '--nt-deck-h': `${h}px` }} onClick={() => move(-1)}
+    <div className="nt-show" style={{ '--nt-deck-h': `${h}px` }} onClick={(e) => { if (!e.target.closest('a')) move(-1) }}
       onContextMenu={(e) => { e.preventDefault(); move(1) }}>
       <div key={at} className={`nt-deck nt-deck-page${at ? '' : ' nt-deck-cover'}`} style={page}>
         {at ? null : <h1>{title}</h1>}
-        <Rendered>{slides[at] || ''}</Rendered>
+        <Rendered figures={before}>{slides[at] || ''}</Rendered>
         <span className="nt-deck-no">{at + 1} / {total}</span>
       </div>
       <button type="button" className="nt-show-x" aria-label={tr('nt_show_exit')} title={tr('nt_show_exit')}

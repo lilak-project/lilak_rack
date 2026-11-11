@@ -1,5 +1,5 @@
 import { EditorView, Decoration, WidgetType } from '@codemirror/view'
-import { StateEffect, StateField } from '@codemirror/state'
+import { EditorState, StateEffect, StateField } from '@codemirror/state'
 import { autocompletion, completionStatus, CompletionContext, pickedCompletion, startCompletion } from '@codemirror/autocomplete'
 import { keymap } from '@codemirror/view'
 import { authorsFor, choicesFor, citesFor, projectsFor, projText } from './marks.js'
@@ -498,7 +498,26 @@ export const jamoBack = EditorView.domEventHandlers({
   },
 })
 
-export const jamoKeys = [typing, jamoBack]
+/** Enter on a syllable still being composed never reaches the keymap: the
+ *  browser writes the line break itself and CodeMirror reads it as typed text.
+ *  The keymap's Enter drops the spaces after the caret; this one kept them, so
+ *  a line split before a space began with it. Typed line breaks drop them here. */
+export const typedBreak = EditorState.transactionFilter.of((tr) => {
+  if (!tr.docChanged || !tr.isUserEvent('input.type')) return tr
+  let cut = null
+  tr.changes.iterChanges((fromA, toA, fromB, toB, ins) => {
+    if (cut || !ins.toString().endsWith('\n')) return
+    const line = tr.startState.doc.lineAt(toA)
+    const sp = /^[ \t]+/.exec(line.text.slice(toA - line.from))
+    if (sp) cut = { from: toA, to: toA + sp[0].length }
+  })
+  if (!cut) return tr
+  // Sequential: the cut is placed in the document the break already made.
+  return [tr, { changes: { from: tr.changes.mapPos(cut.from, 1), to: tr.changes.mapPos(cut.to, 1) },
+    sequential: true }]
+})
+
+export const jamoKeys = [typing, jamoBack, typedBreak]
 
 // ── a file dropped or pasted lands in the text ──────────────────────────────
 const filesOf = (dt) => (dt ? [...(dt.files || [])] : [])

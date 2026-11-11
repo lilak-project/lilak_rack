@@ -28,6 +28,8 @@ import { flowItems, noteSteps, noteFlow, joinFlow } from './flow.js'
 import { press } from './tools/press.js'
 import Toolbox from './tools/toolbox.jsx'
 import { citedIn, citeMap } from './tools/bib.jsx'
+import { LangPick, RecButton } from './tools/record.jsx'
+import { attach, placeAt, setSay, useRecording } from './recorder.js'
 import { placeBack, placeSave } from './scrolled.js'
 import { clearPins, lastEdit, marksOf, pinned, sawEdit, togglePin } from './pins.js'
 import 'katex/dist/katex.min.css'
@@ -295,7 +297,10 @@ const NOTE_DEF = {
       // When the FILE last changed — first, because it is how you find what you
       // were doing. A whole 2026-08-04 at 15px is 90px wide, and the cell keeps
       // 6 either side.
-      { k: 'updated', label: 'updated', get: updatedOn, col: { w: 106, min: 84 }, tone: 'dim' },
+      // Shown and filtered by the day, sorted by the moment: of today's notes,
+      // the one changed last comes first.
+      { k: 'updated', label: 'updated', get: updatedOn, sort: (_v, _c, n) => Number(n.version) || '', many: updatedOn,
+        col: { w: 106, min: 84 }, tone: 'dim' },
       { k: 'title', label: 'title', get: (n) => n.title || '', col: { w: 260, min: 100 }, tone: 'ink' },
       { k: 'tags', label: 'tags', type: 'tags', bulk: true, col: { w: 170, min: 60 }, tone: 'dim' },
       // Who the note mentions (`@이정우`). Like tags, it lives in the body and
@@ -660,8 +665,8 @@ function Todos({ a, tscope, who, kind, system = false }) {
 const sameNote = (a, b) => a.title === b.title && (a.date || '') === (b.date || '')
   && JSON.stringify(a.fields || {}) === JSON.stringify(b.fields || {})
   && String(a.body || '').trimEnd() === String(b.body || '').trimEnd()
-const putNote = (id, baseVersion, v) => ask(`/notes/${encodeURIComponent(id)}`, {
-  method: 'PUT',
+const putNote = (id, baseVersion, v, o) => ask(`/notes/${encodeURIComponent(id)}`, {
+  ...o, method: 'PUT',
   body: JSON.stringify({ baseVersion, title: v.title, date: v.date, body: v.body,
     fields: v.fields }),
 })
@@ -748,22 +753,50 @@ const MODES = {
   tex: { kind: 'tex', label: () => 'LaTeX', hint: () => tr("nt_tex"), format: 'tex' },
 }
 
+/** The note's mode, chosen from a menu drawn in the page. Not a `<select>`: after
+ *  its native menu closes, the next press on the page did nothing. */
+function ModePick({ mode, onPick }) {
+  const [open, setOpen] = useState(false)
+  const box = useRef(null)
+  useEffect(() => {
+    if (!open) return undefined
+    const shut = () => setOpen(false)
+    const away = (e) => { if (!box.current?.contains(e.target)) shut() }
+    document.addEventListener('pointerdown', away, true)
+    window.addEventListener('blur', shut)
+    return () => {
+      document.removeEventListener('pointerdown', away, true)
+      window.removeEventListener('blur', shut)
+    }
+  }, [open])
+  return (
+    <span className="nt-mode-box" ref={box} onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false) }}>
+      <button type="button" className="rl-in nt-mode" aria-haspopup="listbox" aria-expanded={open}
+        aria-label={tr("nt_mode")} {...press(() => setOpen(!open))}>{MODES[mode].label()} ▾</button>
+      {open ? (
+        <span className="nt-mode-menu" role="listbox" aria-label={tr("nt_mode")}>
+          {Object.entries(MODES).map(([k, m]) => (
+            <button key={k} type="button" role="option" aria-selected={k === mode} title={m.hint?.()}
+              className={`rl-btn${k === mode ? ' on' : ''}`}
+              {...press(() => { setOpen(false); if (k !== mode) onPick(k) })}>{m.label()}</button>
+          ))}
+        </span>
+      ) : null}
+    </span>
+  )
+}
+
 // A next note being made (flow.js): one at a time, whichever editor asked.
 let following = false
 function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpenNote, onPdf, make, flow: notes }) {
   const [n, setN] = useState(null)
   const [f, setF] = useState(null)
   const [where, setWhere] = useState(null)   // the folders, once a tool asks
-  // Which markdown mode: live (the text with the markdown drawn over it) or
-  // raw (the text alone). A tex note is neither — its mode is the format.
-  // Kept with the place (scrolled.js) for the same reason the scroll is:
-  // moving the pane builds this editor again, and coming back to `라이브`
-  // when you were reading is the same lost place by another name.
-  const [picked, setView] = useState(() => placeBack(`${id}:view`) || 'live')
-  // A deck is a fact about the note, written with it (`mode: slide`), so it is
-  // still a deck after a reload and on the next machine.
-  const view = f?.fields?.mode === 'slide' ? 'slide' : picked
-  useEffect(() => { placeSave(`${id}:view`, view) }, [id, view])
+  // Which markdown mode: live (the text with the markdown drawn over it), raw
+  // (the text alone) or slide. Written with the note (`mode: raw|slide`, none
+  // for live), so it is still that mode after a reload and on the next
+  // machine. A tex note is none of these — its mode is the format.
+  const view = MODES[f?.fields?.mode] && !MODES[f.fields.mode].format ? f.fields.mode : 'live'
   // A slide note: where the renderer cut it, and whether it is being shown.
   const [pages, setPages] = useState([])
   const [showing, setShowing] = useState(null)       // the slide it started on
@@ -796,6 +829,17 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
         v.dispatch({ changes: { from: r.from, to: r.to, insert: text },
           selection: { anchor: r.from + text.length }, scrollIntoView: true })
         v.focus()
+      },
+      /** Text after `anchor`, where it last appears (recorder.js) — not at the
+       *  caret, which has gone wherever the user went meanwhile, and which is
+       *  left where it is. No anchor: at the caret. */
+      after(anchor, text) {
+        const v = now()
+        if (!v) return
+        const at = placeAt(v.state.doc.toString(), anchor)
+        if (at >= 0) { v.dispatch({ changes: { from: at, insert: text } }); return }
+        const r = v.state.selection.main
+        v.dispatch({ changes: { from: r.from, to: r.to, insert: text }, selection: { anchor: r.from + text.length } })
       },
       /** Something that is a LINE and not a word — a picture, a file. It goes
        *  on a line of its own under the caret's, and the caret goes PAST it.
@@ -846,6 +890,11 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
       text: () => now()?.state.doc.toString() ?? '',
     }
   }, [])
+  // The microphone is the service's (recorder.js): this editor is its way into
+  // this note while the note is open here.
+  const recording = useRecording()
+  useEffect(() => attach(id, edit), [id, edit])
+  useEffect(() => { setSay(say) }, [say])
   // What is in the note's folder, for the files tab (`/api/files`).
   const [files, setFiles] = useState(null)
   // Lines bookmarked in this note, and the line last typed in (pins.js). Both
@@ -1013,11 +1062,22 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
     return () => clearTimeout(t)
   }, [f, n])   // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Closing the tab inside that moment must not drop the last sentence.
-  useEffect(() => () => {
-    const { f: cur, n: disk } = live.current
-    if (cur && disk && !sameNote(cur, disk)) putNote(id, disk.version, cur).then(() => onSaved?.())
-  }, [id])
+  // Closing the tab inside that moment must not drop the last sentence — nor
+  // reloading the page, which unmounts nothing, so `pagehide` sends it too.
+  // ponytail: keepalive caps the body at 64 KB; a longer note left within the
+  // 0.8 s keeps only what the last autosave wrote.
+  useEffect(() => {
+    const flush = (o) => {
+      const { f: cur, n: disk } = live.current
+      if (cur && disk && !sameNote(cur, disk)) return putNote(id, disk.version, cur, o)
+    }
+    const leave = () => { flush({ keepalive: true })?.catch(() => {}) }
+    window.addEventListener('pagehide', leave)
+    return () => {
+      window.removeEventListener('pagehide', leave)
+      flush()?.then(() => onSaved?.())
+    }
+  }, [id])   // eslint-disable-line react-hooks/exhaustive-deps
   // A note just opened: the caret goes to its title. A name the app chose is
   // selected (type over it); one a person wrote is left alone, caret at the
   // end. In an EFFECT, not in the fetch's `then`: the field does not exist
@@ -1283,6 +1343,7 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
     note: { id, title: f.title, body: f.body, date: f.date, fields: f.fields, tex, dirty },
     setNote: setF,
     edit,
+    recording,
     go: jump,
     print: onPrint,
     say,
@@ -1344,27 +1405,24 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
               other. What it picks is the MODE (see MODES): three of these are
               ways of writing markdown and the fourth says the file is a LaTeX
               document. What the mode can DO is the buttons after it. */}
-          <select className="rl-in nt-mode" value={mode} aria-label={tr("nt_mode")}
-            onChange={(e) => {
-              const v = e.target.value
+          <ModePick mode={mode}
+            onPick={(v) => {
               setF((st) => {
                 const fields = { ...(st.fields || {}) }
                 if (MODES[v].format) fields.format = MODES[v].format
                 else delete fields.format
-                if (v === 'slide') fields.mode = 'slide'
+                if (v === 'slide' || v === 'raw') fields.mode = v
                 else delete fields.mode
                 return { ...st, fields }
               })
-              if (!MODES[v].format) setView(v)
               // A tool belongs to the kind that has it: leaving for a kind
               // without this tool puts the column away rather than leaving it
               // open on something the note no longer is.
               if (tab && !toolsFor(MODES[v].kind).some((t) => t.id === tab)) setTab('')
-            }}>
-            {Object.entries(MODES).map(([k, m]) => (
-              <option key={k} value={k} title={m.hint?.()}>{m.label()}</option>
-            ))}
-          </select>
+            }} />
+          {/* Recording shows only on the note being recorded: another note's bar stays its own. */}
+          {(mode === 'raw' && recording.state === 'idle') || recording.note === id
+            ? <>{recording.state === 'idle' ? <LangPick /> : null}<RecButton note={id} title={f.title} /></> : null}
           {isDeck ? <button type="button" className="rl-btn" title={tr("nt_show_hint")} {...press(startShow)}>{tr("nt_show_btn")}</button> : null}
           {/* Every tool behind ONE button. The dot is the only thing a shut
               toolbox still says: something inside it wants reading. */}

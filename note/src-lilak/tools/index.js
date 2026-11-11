@@ -53,8 +53,9 @@ import outline from './outline.jsx'
 import files from './files.jsx'
 import bib from './bib.jsx'
 import flow from './flow.jsx'
+import record from './record.jsx'
 
-export const TOOLS = [common, format, outline, files, bib, flow]
+export const TOOLS = [common, format, outline, files, bib, flow, record]
 
 /** The tools of a kind of note, in the order they are declared. */
 export const toolsFor = (kind) => TOOLS.filter((t) => t.modes.includes(kind))

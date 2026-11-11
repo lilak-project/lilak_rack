@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("NOTE_DATA_DIR", "/tmp/note-test-data")
 
 from fastapi import HTTPException            # noqa: E402
-from backend.main import (AUTH_RE, BIB_KEY, FILES, PROJ_RE, TAG_RE, TEX_AT,            # noqa: E402
+from backend.main import (AUTH_RE, BIB_KEY, FILES, NOT_WORDS, PROJ_RE, REC_NAME, TAG_RE, TEX_AT,            # noqa: E402
                           _braced, _files, _name_key, _no_code, _proj_key, _rewrite, _safe_rel,
                           _sub_outside_code)
 
@@ -204,9 +204,14 @@ _f.unlink()
 from backend.main import _todo_text   # noqa: E402
 assert _todo_text("보내기 #TAMU » 2026-11-4") == ("보내기 #TAMU", "2026-11-04", "")
 assert _todo_text("끝 » 2026-11-04 ✓ 2026-1-2") == ("끝", "2026-11-04", "2026-01-02")
-# ── `!!` is urgent only as a word of its own ──
 from backend.main import URGENT_RE  # noqa: E402
 assert all(URGENT_RE.search(s) for s in ["!! 보내기", "보내기 !!", "보내기 !! #TAMU"])
 assert not any(URGENT_RE.search(s) for s in ["좋다!!", "!!!", "![[그림]]", "a!! b"])
 
+
+# ── a recording is the only file the note lets you delete ─────────────────
+assert REC_NAME.match("rec-20261110-093000.webm") and REC_NAME.match("rec-20261110-093000-2.m4a")
+for bad in ("pic.png", "../rec-20261110-093000.webm", "rec-20261110-093000.webm/x", "rec-x.webm"):
+    assert not REC_NAME.match(bad), bad
+assert NOT_WORDS.match("[BLANK_AUDIO]") and NOT_WORDS.match("(음악)") and not NOT_WORDS.match("안녕 (웃음)")
 print("note: ok")

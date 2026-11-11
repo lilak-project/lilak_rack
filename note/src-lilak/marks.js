@@ -70,6 +70,39 @@ export const replaceOutsideCode = (text, rule, repl) => {
   return out + src.slice(last)
 }
 
+// ── what a note writes that is not the note ───────────────────────────────
+/** `%% 주석 %%`, over one line or several: for whoever is editing, and for no
+ *  page. A stray pair hides what is between them, which is Obsidian's rule too. */
+const COMMENT_RE = /%%[\s\S]*?%%/g
+/** [[from, to]] of each comment, outside code. */
+export const commentSpans = (text) => [...outsideCode(text).matchAll(COMMENT_RE)].map((m) => [m.index, m.index + m[0].length])
+/** The text with its comments blanked, position for position. */
+export const blankComments = (text) => replaceOutsideCode(text, COMMENT_RE, (c) => blank(c))
+/** The text without them, line for line, as a renderer should read it: blanks
+ *  at the front of a line would turn the rest of it into a code block. */
+export const dropComments = (text) => replaceOutsideCode(text, COMMENT_RE, (c) => c.replace(/[^\n]/g, ''))
+
+/** `$x^2$` and `$$…$$` on one line. No space just inside the dollars, which is
+ *  what keeps "$5 and $10" out of it — what is between those two ends with a
+ *  space. Money is the only thing a lone `$` is for. */
+export const MATH = /(\$\$?)(?!\s)((?:[^$\n\\]|\\.)+?)(?<!\s)\1(?!\$)/g
+/** `==형광==`: on one line, nothing but `=` and words touching its marks, so
+ *  `a == b` and a `=====` underline stay what they are. */
+const HIGHLIGHT_RE = /(?<!=)==(?![=\s])[^\n]*?(?<![=\s])==(?!=)/g
+// Where `==` is somebody else's: a formula, and an address (`?t=abc==`).
+const NOT_PROSE = /\[[^\]\n]*\]\([^)\n]*\)|https?:\/\/\S+/g
+/** [[from, to]] of each highlight, marks included. */
+export const highlightSpans = (text) => [...prose(text).matchAll(HIGHLIGHT_RE)].map((m) => [m.index, m.index + m[0].length])
+/** Where the words are: the same length, everything else blanked. */
+const prose = (text) => outsideCode(blankComments(text)).replace(MATH, blank).replace(NOT_PROSE, blank)
+
+/** `->` read as an arrow. Paint, like the marks: the file keeps the two
+ *  characters. Not `-->` or `<->`, and not a `[[file name]]`, which has to
+ *  stay the name it is. */
+const ARROW_RE = /(?<![-<])->(?!>)/g
+export const arrowSpans = (text) => [...prose(text).replace(/\[\[[^\]\n]*\]\]/g, blank).matchAll(ARROW_RE)].map((m) => m.index)
+export const withArrows = (text) => arrowSpans(text).reduceRight((s, a) => `${s.slice(0, a)}→${s.slice(a + 2)}`, text)
+
 /** A line without what has a column of its own — its tags and the people it
  *  names. A list of a hundred todos reads better when the sentence is the
  *  sentence, and the note keeps every word either way: this is what a table
@@ -84,6 +117,13 @@ export const untagged = (text) => replaceOutsideCode(
 /** `![[name.png]]` — Obsidian's embed, which is not markdown. */
 export const EMBED_RE = /!\[\[([^\]]+)\]\]/g
 
+/** Either way a note writes a picture: `![[a.png|400]]`, or markdown's own
+ *  `![설명|400](a.png)`. */
+export const FIGURE_RE = /!\[\[([^\]]+)\]\]|!\[([^\]]*)\]\(([^)\s]+)\)/g
+const ONE_FIGURE = new RegExp(`^(?:${FIGURE_RE.source})$`)
+/** A line holding one and nothing else. */
+export const figureLine = (t) => ONE_FIGURE.test(t.trim())
+
 /** The day a todo is due, and the day it was done. `»` and `✓` are what this
  *  app writes; `📅` and `✅` (Obsidian Tasks) are still read, because the
  *  notes that came from a vault are full of them. */
@@ -91,21 +131,52 @@ export const DUE_RE = /(?:»|📅)\s*(\d{4}-\d{1,2}-\d{1,2})/g
 export const DONE_RE = /(?:✓|✅)\s*(\d{4}-\d{1,2}-\d{1,2})/g
 /** `!!`, a word of its own on a todo's line: it is urgent. */
 export const URGENT_RE = /(^|\s)!!(?=\s|$)/g
+/** A due day (as written, `2026-1-5` too) that has gone by. */
+export const overdue = (day) => day.replace(/-(\d)(?!\d)/g, '-0$1') < new Date().toISOString().slice(0, 10)
 
 /** A name a browser can draw. Anything else — a pdf, a sheet, a document — is
  *  a file you open, not a picture to put on the page. */
 export const isImage = (name) =>
   /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i.test(String(name || ''))
 
+/** An address that says what it is: a picture by its name, or a link with no
+ *  file name at all (`https://…/img`), which a browser can only try to draw.
+ *  A name of ours with no extension is a file to open. */
+export const isPicture = (src) => {
+  const path = String(src || '').split(/[?#]/)[0]
+  return isImage(path) || (/^https?:/i.test(path) && !/\.[a-z0-9]{1,5}$/i.test(path))
+}
+
+/** The markup of one picture, read: what it names, how wide it asks to be, and
+ *  the same markup at another width (`sized(0)` drops it). */
+export function figureOf(markup) {
+  const [, spec, alt, src] = ONE_FIGURE.exec(markup) || []
+  const [text, w] = embedSpec(spec ?? alt)
+  const name = spec ? text : src
+  const width = (px) => (px ? `|${Math.round(px)}` : '')
+  return {
+    name, w,
+    picture: spec ? isImage(name) : isPicture(name),
+    url: (fileSrc) => {
+      if (spec) return fileSrc(name)
+      if (/^([a-z][\w+.-]*:|\/)/i.test(src)) return src
+      try { return fileSrc(decodeURI(src)) } catch { return fileSrc(src) }
+    },
+    sized: (px) => (spec ? `![[${name}${width(px)}]]` : `![${text}${width(px)}](${src})`),
+  }
+}
+
+/** A sound a page can play: a recording (tools/record.jsx) or any other. */
+export const isAudio = (src) => /\.(webm|m4a|mp3|ogg|wav|aac)$/i.test(String(src || '').split(/[?#]/)[0])
+
 /** The pictures a note embeds, in order, numbered from the top: `그림 1`,
  *  `그림 2` … — `{ at, line, name, spec, n }`, `at` where the markup starts,
  *  `line` the (1-based) line it is on. Files that are not pictures (a pdf, a
- *  .tex) are embeds too, but not figures, and get no number.
- *
- *  ponytail: an embed inside a code fence is counted. Nobody writes one. */
+ *  .tex) are embeds too, but not figures, and get no number. */
 /** A note cut into slides. `blocks` are what the renderer drew, top to bottom:
- *  { line, top, bottom, rule, h1 }. The first is the title slide's one line of
- *  content, and only it. After that a slide ends at a `---` (`rule`, on neither
+ *  { line, top, bottom, rule, h1, tags }. The first line, after any that are just
+ *  the note's tags, is the title slide's one line of content, and only it; empty
+ *  or a `#` heading, the title stands alone and that content opens the next slide. After that a slide ends at a `---` (`rule`, on neither
  *  side), before a `#` heading, or before a block that would run past `room`
  *  — one too tall for any slide is left alone at the top of its own, to be cut.
  *  → [{ from, to, spare }], source lines, 1-based and inclusive, and how much of
@@ -113,8 +184,10 @@ export const isImage = (name) =>
  *  when a `---` came first. */
 export function cutPages(blocks, room) {
   const pages = []
-  let page = null, top = 0
+  let page = null, top = 0, first = 1
   for (const b of blocks) {
+    if (b.tags && !pages.length) { first = b.line + 1; continue }
+    if (!pages.length && !b.rule && (b.line !== first || b.h1)) pages.push({ from: 0, to: -1, spare: 0 })
     if (b.rule) {
       if (page) page.to = b.line - 1
       else if (!pages.length) pages.push({ from: 0, to: -1, spare: 0 })
@@ -177,6 +250,77 @@ export function numberHeadings(body) {
 }
 
 /** The text of each of those slides. */
+/** A line of nothing but tags, which is about the note and not in it. */
+export const tagLine = (t) => !!t?.trim() && !t.replace(TAG_RE, '$1').trim()
+
+/** The ``` blocks: [[line it opens on, line it closes on]], 1-based. One nobody
+ *  closed closes past the end of the note. */
+export function fenceLines(lines) {
+  const out = []
+  let open = '', from = 0
+  lines.forEach((l, i) => {
+    const m = FENCE.exec(l)
+    if (open) {
+      if (m && m[1][0] === open[0] && m[1].length >= open.length) { out.push([from, i + 1]); open = '' }
+    } else if (m) { open = m[1]; from = i + 1 }
+  })
+  if (open) out.push([from, lines.length + 1])
+  return out
+}
+
+/** The `$$` blocks written over several lines: the same pairs. Unclosed is not
+ *  one: the renderer's rule would take the rest of the note, and that is a
+ *  formula still being typed. */
+export function mathFences(body) {
+  const out = []
+  let from = 0
+  outsideCode(body).split('\n').forEach((l, i) => {
+    if (!/^ {0,3}\$\$\s*$/.test(l)) return
+    if (from) { out.push([from, i + 1]); from = 0 } else from = i + 1
+  })
+  return out
+}
+
+/** The lines of a slide that take less room than a line, because the renderer
+ *  sees none there. An empty line is the gap between two paragraphs ('gap'), or
+ *  nothing ('none') beside a heading, which brings its own margin, after another
+ *  empty line, and at the end of a slide. A ``` is nothing, or the margin between
+ *  the block and a line written straight against it. The tags that open a note
+ *  (`cover`: the title slide knows to pass them) are nothing.
+ *  The caret's own empty line is left out, it has to be there to type on, or
+ *  'idle', drawn only while typing, where it would be nothing; so is a ``` or
+ *  those tags the caret is among. */
+export function blankHeights(lines, caret, starts, cover = false) {
+  const rules = new Set(ruleLines(lines.join('\n')))
+  const head = (t) => /^#{1,6}[ \t]/.test(t)
+  const out = new Map()
+  const fences = fenceLines(lines)
+  lines.forEach((t, i) => {
+    const n = i + 1
+    if (t.trim() || fences.some(([a, b]) => n > a && n < b)) return
+    const prev = i ? lines[i - 1].trim() : ''
+    let m = n + 1
+    while (m <= lines.length && !lines[m - 1].trim()) m += 1
+    const end = m > lines.length || starts.has(m) || rules.has(m)
+    const nothing = !prev || end || head(prev) || head(lines[m - 1])
+    if (n !== caret) out.set(n, nothing ? 'none' : 'gap')
+    else if (nothing) out.set(n, 'idle')
+  })
+  for (const [a, b] of fences) {
+    const here = caret >= a && caret <= b
+    const prev = lines[a - 2]?.trim()
+    out.set(a, here ? 'idle' : prev && !head(prev) ? 'gap' : 'none')
+    if (b > lines.length) continue
+    const next = lines[b]?.trim()
+    out.set(b, here ? 'idle' : next && !starts.has(b + 1) && !rules.has(b + 1) ? 'gap' : 'none')
+  }
+  if (cover && tagLine(lines[0])) {
+    let end = 1
+    while (end < lines.length && (tagLine(lines[end]) || !lines[end].trim())) end += 1
+    for (let n = 1; n <= end; n += 1) out.set(n, caret <= end ? 'idle' : 'none')
+  }
+  return out
+}
 export function pageTexts(body, pages) {
   const lines = String(body || '').split('\n')
   return pages.map((p) => lines.slice(p.from - 1, p.to).join('\n'))
@@ -186,12 +330,12 @@ export function figureList(body) {
   const text = String(body || '')
   const out = []
   let line = 1, seen = 0
-  for (const m of text.matchAll(EMBED_RE)) {
-    const [name] = embedSpec(m[1])
-    if (!isImage(name)) continue
+  for (const m of outsideCode(blankComments(text)).matchAll(FIGURE_RE)) {
+    const { name, picture } = figureOf(m[0])
+    if (!picture) continue
     for (let i = seen; i < m.index; i += 1) if (text.charCodeAt(i) === 10) line += 1
     seen = m.index
-    out.push({ at: m.index, line, name, spec: m[1], n: out.length + 1 })
+    out.push({ at: m.index, line, name, spec: m[1] ?? m[2], markup: m[0], n: out.length + 1 })
   }
   return out
 }

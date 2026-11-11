@@ -296,6 +296,15 @@ body.nt-paper #root { height: auto; min-height: 100%; }
    so this service no longer dresses its own. */
 /* Reading, the sheet carries the title itself — and `display: flex` here would
    otherwise outrank the `hidden` that says so. */
+/* The mode menu (ModePick). */
+.nt-mode-box { position: relative; display: inline-flex; }
+.nt-mode { cursor: pointer; white-space: nowrap; }
+.nt-mode-menu {
+  position: absolute; top: 100%; left: 0; z-index: 30;
+  display: flex; flex-direction: column; min-width: 100%;
+  background: var(--rk-panel); border: 1px solid var(--rk-edge);
+}
+.nt-mode-menu .rl-btn { border: 0; text-align: left; white-space: nowrap; }
 .nt-titlerow[hidden] { display: none; }
 .nt-titlerow {
   flex: 0 0 auto;
@@ -685,17 +694,17 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 .nt-cm-link, .nt-cm-wiki { color: var(--rk-cite-t); text-decoration: underline; text-underline-offset: 2px; }
 /* Drawn as a link, so it opens like one — except on the line being edited. */
 .nt-cm-link { cursor: pointer; }
-.nt-cm-quote { border-left: 2px solid var(--rk-edge); color: var(--rk-dim); }
+.nt-cm-quote, .nt-deck blockquote { border-left: 2px solid var(--rk-edge); color: var(--rk-dim); }
 /* A ``` block: the same box the sheet and the PDF draw, laid on line by line
    because the lines are the file's own. The fence stays visible — it is the
    only thing that says where the block ends. */
-.nt-cm-code { background: var(--rk-gut); border-left: 2px solid var(--rk-edge); }
+.nt-cm-code, .nt-deck pre { background: var(--rk-gut); border-left: 2px solid var(--rk-edge); }
 /* The dashes of a `---` are the rule itself: the line is drawn, they are not
    (the highlighter colours them, so the span has to be told too). */
 .nt-cm-rule, .nt-cm-rule span { color: transparent; }
 .nt-cm-rule { border-bottom: 1px solid var(--rk-edge); }
 /* `code`, with the chip the other two views draw. */
-.nt-code {
+.nt-code, .nt-deck :not(pre) > code {
   font-family: var(--rk-mono); font-size: .95em;
   background: var(--rk-gut); border: 1px solid var(--rk-mute); color: var(--rk-ink);
   padding: 2px 5px; margin: 0 3px;
@@ -723,6 +732,7 @@ body.nt-paper #root { height: auto; min-height: 100%; }
    that it sits in the line like a word does, and a `$$` one gets its own. */
 .nt-cm-math .katex { font-size: 1.05em; }
 .nt-cm-math-block { display: inline-block; width: 100%; text-align: center; }
+.nt-cm-math-flow { display: block; }
 
 /* Where the words begin: nothing to see, nothing to measure — the caret
    stands on it (see livemd.js). */
@@ -730,14 +740,24 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 /* A table, drawn as a table — while the caret is somewhere else. The lines it
    covers are still in the file, and pressing it puts the caret back in them. */
 .nt-cm-table {
-  border-collapse: collapse; margin: 2px 0 6px;
+  margin: 2px 0 6px;
   font-size: calc(var(--rk-fs) - 1px);
 }
-.nt-cm-table :where(th, td) {
+.nt-cm-table, .nt-deck table { border-collapse: collapse; }
+:is(.nt-cm-table, .nt-deck table) :where(th, td) {
   border: 1px solid var(--rk-mute); padding: 3px 8px; vertical-align: middle;
 }
-.nt-cm-table th { background: var(--rk-gut); font-weight: 600; }
+:is(.nt-cm-table, .nt-deck table) th { background: var(--rk-gut); font-weight: 600; }
 .nt-cm-table tr { cursor: text; }
+/* 녹음 (tools/record.jsx), and a recording in the note. */
+.nt-rec { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; }
+.nt-rec-row { display: flex; align-items: center; gap: 8px; }
+.nt-rec-on { color: var(--rk-danger, #b91c1c); border-color: var(--rk-danger, #b91c1c); }
+.nt-rec-item { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.nt-rec-item audio, audio.nt-audio { height: 28px; max-width: 100%; vertical-align: middle; }
+/* `==형광==`, and `%% 주석 %%` while the caret is in it. */
+.nt-hl { background: #fef08a; color: #111; }
+.nt-cm-comment { color: var(--rk-mute); }
 /* A task's box, drawn where `[ ]` stands in the text. */
 .nt-cm-box {
   display: inline-block; vertical-align: -3px;
@@ -881,14 +901,39 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 .nt-deck-no { position: absolute; right: 20px; bottom: 12px; font-size: .6em; color: #64748b; }
 .nt-deck-flow { position: fixed; left: -20000px; top: 0; visibility: hidden; }
 .nt-deck > :first-child { margin-top: 0; }
-.nt-deck h1, .nt-deck h2, .nt-deck h3, .nt-deck h4 { margin: .5em 0 .3em; font-weight: 600; color: #000; }
+.nt-deck h1, .nt-deck h2, .nt-deck h3, .nt-deck h4, .nt-deck h5, .nt-deck h6 { margin: .5em 0 .3em; font-weight: 600; color: #000; }
 .nt-deck h1 { font-size: 1.45em; }
 .nt-deck h2 { font-size: 1.22em; }
 .nt-deck h3 { font-size: 1.07em; }
-.nt-deck h4 { font-size: 1em; }
+.nt-deck h4, .nt-deck h5, .nt-deck h6 { font-size: 1em; }
 .nt-deck p, .nt-deck ul, .nt-deck ol, .nt-deck blockquote, .nt-deck pre, .nt-deck table { margin: 0 0 .5em; }
 .nt-deck ul, .nt-deck ol { padding-left: 1.4em; }
-.nt-deck img { display: block; max-width: 100%; max-height: calc(var(--nt-deck-h) - 80px); width: auto; height: auto; object-fit: contain; }
+.nt-deck img { display: block; max-width: 100%; max-height: calc(var(--nt-deck-h) - 80px - 1em); width: auto; height: auto; object-fit: contain; }
+/* A picture's number, under it. Only a slide numbers them out loud. */
+.nt-fig-cap { display: none; }
+.nt-deck .nt-fig-wrap { display: block; }
+.nt-deck .nt-fig-cap, .nt-raw.nt-slide .nt-fig-cap { display: block; margin-top: .2em; font-size: .6em; line-height: 1.45; color: #64748b; }
+/* The rest of what the editor draws on a slide, drawn the same here: the box
+   and margins below are the editor's, in `em` so both scale with the page. */
+.nt-deck blockquote { padding-left: .6em; }
+.nt-deck blockquote > :last-child { margin-bottom: 0; }
+.nt-deck pre { padding: 0 .5em; font-family: var(--rk-mono); white-space: break-spaces; word-break: break-word; overflow-wrap: anywhere; }
+.nt-deck pre code { font: inherit; }
+.nt-deck li > :is(ul, ol) { margin-bottom: 0; }
+.nt-deck li.task-list-item { list-style: none; }
+.nt-deck li.task-list-item > input, .nt-deck li.task-list-item > p > input,
+.nt-raw.nt-slide .nt-cm-box {
+  appearance: none; display: inline-block; box-sizing: border-box; vertical-align: -.125em;
+  font-size: inherit; width: .625em; height: .625em; margin: 0 .125em 0 0;
+  border: 1px solid var(--rk-dim); border-radius: 2px; background: var(--rk-panel);
+}
+.nt-deck li.task-list-item input:checked, .nt-raw.nt-slide .nt-cm-box.on { border-color: var(--rk-cite-t); background: var(--rk-cite-t); }
+.nt-deck li.task-list-item input:checked::after, .nt-raw.nt-slide .nt-cm-box.on::after {
+  content: ''; display: block; margin: .125em 0 0 .125em; width: .29em; height: .17em;
+  border-left: .075em solid #fff; border-bottom: .075em solid #fff; transform: rotate(-45deg);
+}
+.nt-deck .katex-display { margin: 0 0 .5em; }
+.nt-deck p > .katex-display:last-child { margin-bottom: 0; }
 /* Slide 1: the note's title and the line under it, in the middle of the page. */
 .nt-deck-cover { display: flex; flex-direction: column; align-items: center; text-align: center; }
 .nt-deck-cover h1, .nt-deck-cover-ed h1 { margin: 0; font-size: 2.2em; font-weight: 600; color: #000; }
@@ -908,8 +953,38 @@ body.nt-paper #root { height: auto; min-height: 100%; }
   background: #fff;
   font-size: calc(var(--nt-deck-fs) * var(--nt-k, 1));
 }
-.nt-raw.nt-slide .cm-line { padding: calc(3px * var(--nt-k, 1)) 0; }
-.nt-raw.nt-slide .nt-embed-box { margin-left: 0; }
+/* Line for line the heights `.nt-deck` gives, or the white under a slide, worked
+   out from the renderer, makes each slide a different height. */
+.nt-raw.nt-slide .cm-content { line-height: 1.45; }
+.nt-raw.nt-slide .cm-line { padding: 0; }
+.nt-raw.nt-slide .cm-line:is(.nt-cm-h1, .nt-cm-h2, .nt-cm-h3, .nt-cm-h4, .nt-cm-h5, .nt-cm-h6) { padding: .5em 0 .3em; }
+.nt-raw.nt-slide .cm-line.nt-deck-top { padding-top: 0; }
+.nt-raw.nt-slide .cm-line.nt-deck-gap { height: .5em; line-height: .5em; overflow: hidden; }
+.nt-raw.nt-slide .cm-line.nt-deck-none,
+.nt-raw.nt-slide .cm-editor:not(.cm-focused) .cm-line.nt-deck-idle { height: 0; line-height: 0; overflow: hidden; }
+.nt-raw.nt-slide .cm-line.nt-cm-code { padding: 0 .5em; font-family: var(--rk-mono); }
+.nt-raw.nt-slide .cm-line.nt-deck-gap.nt-cm-code { background: none; border-left-color: transparent; }
+.nt-raw.nt-slide .cm-line.nt-deck-gap > * { visibility: hidden; }
+.nt-raw.nt-slide :is(.nt-cm-h4, .nt-cm-h5, .nt-cm-h6) * { font-weight: inherit; }
+.nt-raw.nt-slide .cm-line.nt-cm-quote { padding-left: .6em; }
+.nt-raw.nt-slide .nt-cm-table { margin: 0; }
+.nt-raw.nt-slide .nt-cm-math .katex { font-size: 1.21em; }
+.nt-raw.nt-slide .katex-display { margin: 0; }
+/* What the show draws for a list's marker: `•` `◦` `▪`, or nothing beside a box. */
+.nt-raw.nt-slide .nt-cm-mark:is(.nt-cm-b0, .nt-cm-b1, .nt-cm-b2, .nt-cm-bx),
+.nt-raw.nt-slide .nt-cm-mark:is(.nt-cm-b0, .nt-cm-b1, .nt-cm-b2, .nt-cm-bx) * { color: transparent; }
+.nt-raw.nt-slide .nt-cm-mark:is(.nt-cm-b0, .nt-cm-b1, .nt-cm-b2)::before { position: absolute; left: 0; color: #111; }
+.nt-raw.nt-slide .nt-cm-b0::before { content: '•'; }
+.nt-raw.nt-slide .nt-cm-b1::before { content: '◦'; }
+.nt-raw.nt-slide .nt-cm-b2::before { content: '▪'; }
+.nt-raw.nt-slide .nt-embed-box { margin-left: 0; padding-bottom: 0; }
+.nt-raw.nt-slide .nt-embed-grip { bottom: 1em; }
+/* A picture's bar takes no room on a slide: it comes up just above the picture. */
+.nt-raw.nt-slide .cm-line.nt-deck-figline:has(.nt-fig-bar) { position: relative; z-index: 2; height: 0; }
+.nt-raw.nt-slide .nt-deck-figline .nt-fig-bar { position: absolute; left: 0; bottom: 0; opacity: 0; transition: opacity .12s; }
+.nt-raw.nt-slide .cm-line.nt-deck-figline:has(+ .nt-embed-box:hover) .nt-fig-bar,
+.nt-raw.nt-slide .nt-deck-figline .nt-fig-bar:hover,
+.nt-raw.nt-slide .nt-deck-figline .nt-fig-bar:focus-within { opacity: 1; }
 .nt-raw.nt-slide .cm-editor:not(.cm-focused) .cm-activeLine,
 .nt-raw.nt-slide .cm-editor:not(.cm-focused) .cm-activeLineGutter { background: none; }
 /* The note's own smaller sub-items and tables are fixed sizes for a screen. A
@@ -919,7 +994,7 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 .nt-raw.nt-slide .nt-cm-mark { left: calc(var(--nt-d) * 1.4em + .4em) !important; }
 .nt-raw.nt-slide img.nt-embed {
   width: calc(var(--nt-w, var(--nt-n, 1000)) * var(--nt-k, 1) * 1px) !important;
-  max-height: calc((var(--nt-deck-h) - 80px) * var(--nt-k, 1)) !important;
+  max-height: calc((var(--nt-deck-h) - 80px) * var(--nt-k, 1) - 1em) !important;
 }
 .nt-deck-cover-ed {
   box-sizing: border-box; width: calc(1000px * var(--nt-k, 1)); height: calc(var(--nt-deck-h) * .66 * var(--nt-k, 1));

@@ -18,7 +18,7 @@ import { useMergeMode, RackMergeButtons, RackMerge, RackMoveTags } from './merge
 import { RackBulkEditor } from './bulk.jsx'
 import { useRackList } from './list.js'
 import { useRackKeys, useToggleKey } from './hooks.js'
-import { typeOf, NoteEdit, syncNoteFlows } from './types.jsx'
+import { typeOf, NoteEdit } from './types.jsx'
 import { useFolders, RackFolder, RackFilePane, RackSettings, hasRoots } from './files.jsx'
 import { asSorts, bumpSort, bySome, byKeys } from './sort.js'
 import {
@@ -52,7 +52,6 @@ import { RackTagged, RackTaggedTab, TAGGED_COLS, TAGGED_SORTERS, useTaggedRows }
  *   slots.keepOn                 that filter holds something back (the menu says so, shut)
  *   slots.keepTools(api)         its controls in the open menu, where barTools gives way
  *   slots.tabs                   [{ id, label, render(api) }] — tabs of the service's own
- *                                (`lead: true` puts one before the items and opens on it)
  *   slots.settings(api)          more of the settings tab, under the kit's (a manager's)
  *   slots.views                  { view: (tab, api) => node } — tabs of its own opened on
  *                                demand: api.openTab({ id, kind: 'view', view, label, who? });
@@ -166,7 +165,7 @@ function RackSolo({ def: declared, id }) {
         : gone || !rec ? <p className="rl-msg">{tr("rk_open_target_missing")}</p>
           : <RackItemEditor key={id} def={def} doc={doc} rec={rec} ctx={ctx} onSave={commit} canDelete={isManager()}
             {...(c ? { fields: c.fields, listKey: c.k, noun: c.noun, cls: c } : {})}
-            onCancel={() => { if (inPane) toPage({ rackClose: { was: id } }) }} onDeleted={() => setGone(true)}
+            onCancel={() => {}} onDeleted={() => setGone(true)}
             actions={c ? undefined : itemButtons(def, ctx, doc)} />}
       {doc && note && <div className="rl-hint rl-solo-note">{note}</div>}
     </div>
@@ -177,26 +176,22 @@ function RackList({ def: declared, slots = {} }) {
   const def = useMemo(() => (declared.docKeys ? declared : defineRack(declared)), [declared])
   const [doc, setDoc] = useState(null)
   const [outOpen, setOutOpen] = useState(false)
-  // A record's flow carries its note along (types.jsx): checked as the records change.
-  useEffect(() => { if (doc && !BARE) syncNoteFlows(def, doc) }, [doc, def])
   const remote = useRemoteDocs(def)
   const [folders, reloadFolders] = useFolders(def)
   const folderField = useMemo(() => def.item.fields.find((f) => f.type === 'folder'), [def])
   const IS_ADMIN = useMemo(() => isManager(), [])
   const ME = useMemo(() => portalUser()?.email || '', [])
-  const FIRST = (slots.tabs || []).find((t) => t.lead)?.id || itemTabId(def)
+  const FIRST = itemTabId(def)
 
   const FIXED = useMemo(() => {
     const [all, ...classTabs] = fixedTabs(def)
-    const slot = (t) => ({ id: t.id, kind: 'slot', label: t.label })
     return [
-      ...(slots.tabs || []).filter((t) => t.lead).map(slot),
       all,
       // A month of the items, when they have dates (def.calendar) — the items
       // again, so beside them.
       ...(def.calendar ? [{ id: 'calendar', kind: 'calendar', label: tr("rk_tab_calendar") }] : []),
       ...classTabs,
-      ...(slots.tabs || []).filter((t) => !t.lead).map(slot),
+      ...(slots.tabs || []).map((t) => ({ id: t.id, kind: 'slot', label: t.label })),
       // What was deleted, and the way back — a manager's, as deleting is.
       // Where the service may read the disk is a manager's to say.
       ...(IS_ADMIN && (hasRoots(def) || slots.settings) ? [{ id: 'settings', kind: 'settings', label: tr("rk_tab_settings") }] : []),
@@ -411,25 +406,21 @@ function RackList({ def: declared, slots = {} }) {
    *  The tab is found by what it is SHOWING, not by its name: a frame is
    *  opened as `rec:<svc>:<id>` here and as `note:<id>` by a field, and only
    *  the src is sure. */
-  const frameShowing = useCallback((was) => panes.tabs.find((x) => x.kind === 'frame'
-    && new URLSearchParams(String(x.src || '').split('?')[1] || '').get('solo') === String(was)), [panes])
   const stepFrame = useCallback(({ was, id, label, src }) => {
-    const t = frameShowing(was)
+    const showing = `solo=${encodeURIComponent(was)}`
+    const t = panes.tabs.find((x) => x.kind === 'frame' && String(x.src || '').includes(showing))
     if (t) panes.step(t.id, { ...t, id: t.id.split(was).join(id), label: label || t.label, src })
-  }, [panes, frameShowing])
-  // …and its close is this tab's (it has saved what it had first).
-  const closeFrame = useCallback(({ was }) => { const t = frameShowing(was); if (t) panes.close(t.id) }, [panes, frameShowing])
+  }, [panes])
   useEffect(() => {                                     // …and what a bare list or a solo editor framed here asks for
     const take = (e) => {
       if (e.origin !== window.location.origin) return
       if (e.data?.rackOpen) openRecord(e.data.rackOpen)
       if (e.data?.rackFrame) openEdit({ ...e.data.rackFrame, kind: 'frame' })
       if (e.data?.rackStep) stepFrame(e.data.rackStep)
-      if (e.data?.rackClose) closeFrame(e.data.rackClose)
     }
     window.addEventListener('message', take)
     return () => window.removeEventListener('message', take)
-  }, [openRecord, openEdit, stepFrame, closeFrame])
+  }, [openRecord, openEdit, stepFrame])
 
   /** Open a stored class record by what items call it — what a chip in the
    *  editor does, so a class without a tab of its own (tab: false) is still

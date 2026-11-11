@@ -15,6 +15,7 @@ Concurrency: a note carries the file's mtime as its version. A PUT sends the
 `baseVersion` it read; if the file moved on, it is rejected with 409 and the
 current note, rather than overwriting someone's paragraph.
 """
+import array
 import io
 import os
 import re
@@ -23,6 +24,8 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
+import wave
 import unicodedata
 import zipfile
 from datetime import date, datetime, timezone
@@ -30,7 +33,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import yaml
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -865,6 +868,143 @@ def _rewrite(body: str, moved: dict) -> tuple[str, int]:
                     body = body.replace(pre + a, b)
                     n += 1
     return body, n
+
+
+# ── 녹음: what was said, written down ───────────────────────────────────────
+# whisper.cpp on this machine (`brew install whisper-cpp`) and one model file;
+# ffmpeg to finish a kept recording.
+# Nothing leaves the host. A server without them says so (`GET /api/record`).
+WHISPER_MODEL = Path(os.environ.get(
+    "NOTE_WHISPER_MODEL", DATA.resolve().parent.parent / "models" / "ggml-large-v3-turbo.bin"))
+REC_KINDS = (".webm", ".m4a", ".mp4", ".ogg", ".wav")
+# The only files `DELETE /api/record` may take: ones this endpoint named.
+REC_NAME = re.compile(r"^rec-\d{8}-\d{6}(?:-\d+)?\.(?:webm|m4a|mp4|ogg|wav)$")
+
+
+def _tool(name: str) -> str | None:
+    """A program on PATH, or where Homebrew puts it: the portal starts this
+    service with whatever PATH it was given."""
+    return shutil.which(name) or shutil.which(name, path="/opt/homebrew/bin:/usr/local/bin")
+
+
+LANGS = ("auto", "ko", "en", "ja")
+# What whisper writes for a stretch with no words in it: `[BLANK_AUDIO]`, `(음악)`.
+NOT_WORDS = re.compile(r"^[\[(（].*[\])）]$")
+
+
+def _whisper(wav: Path, lang: str = "auto", prompt: str = "") -> str:
+    """A 16 kHz mono wav, written down. `prompt` is what was said just before,
+    so a sentence cut in two still reads as one."""
+    whisper = _tool("whisper-cli")
+    if not (whisper and WHISPER_MODEL.is_file()):
+        raise HTTPException(501, "이 서버에는 받아쓰기(whisper)가 준비되어 있지 않습니다.")
+    cmd = [whisper, "-m", str(WHISPER_MODEL), "-f", str(wav), "-l", lang if lang in LANGS else "auto", "-nt", "-np"]
+    # Only with the language chosen: left to guess, whisper takes the language of
+    # what was said before for this one too, and TRANSLATES into it.
+    if prompt.strip() and lang in LANGS[1:]:
+        cmd += ["--prompt", prompt.strip()[-200:]]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+    if r.returncode:
+        raise HTTPException(500, "받아쓰기에 실패했습니다.")
+    lines = (line.strip() for line in r.stdout.splitlines())
+    return " ".join(line for line in lines if line and not NOT_WORDS.match(line))
+
+
+@app.get("/api/record")
+def record_ready(_: dict = Depends(signed_in)) -> dict:
+    return {"ready": bool(_tool("whisper-cli") and _tool("ffmpeg") and WHISPER_MODEL.is_file())}
+
+
+# A recording kept as a file grows as it is made: a few seconds at a time, so
+# a closed browser costs seconds of it. 512 MB is days at 32 kbit/s.
+REC_MAX = 512 << 20
+
+
+def _rec(name: str) -> Path:
+    if not REC_NAME.match(name):
+        raise HTTPException(400, "녹음 파일이 아닙니다.")
+    p = FILES / name
+    if not p.is_file():
+        raise HTTPException(404, "그 녹음이 없습니다.")
+    return p
+
+
+@app.post("/api/record/begin")
+def record_begin(ext: str = ".webm", _: dict = Depends(signed_in)) -> dict:
+    """A name for a recording about to begin, its file made (empty) so the
+    name is taken. The page writes it into the note before a word is said."""
+    ext = ext if ext in REC_KINDS else ".webm"
+    FILES.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    name, n = f"rec-{stamp}{ext}", 1
+    while (FILES / name).exists():
+        name, n = f"rec-{stamp}-{n}{ext}", n + 1
+    (FILES / name).touch()
+    return {"name": name}
+
+
+@app.post("/api/record/chunk/{name}")
+async def record_chunk(name: str, request: Request, _: dict = Depends(signed_in)) -> dict:
+    """The next seconds of it, in order, on the end of the file."""
+    p = _rec(name)
+    raw = await request.body()
+    if p.stat().st_size + len(raw) > REC_MAX:
+        raise HTTPException(413, "녹음이 너무 깁니다.")
+    with open(p, "ab") as f:
+        f.write(raw)
+    return {"bytes": p.stat().st_size}
+
+
+@app.post("/api/record/finish/{name}")
+def record_finish(name: str, _: dict = Depends(signed_in)) -> dict:
+    """The recording, ended. A browser's recording does not say how long it is
+    (it did not know until it stopped), so a player cannot seek in it: copied
+    once through ffmpeg, it does."""
+    p = _rec(name)
+    ffmpeg = _tool("ffmpeg")
+    if ffmpeg and p.stat().st_size:
+        fixed = p.with_name(f".fix-{p.name}")
+        r = subprocess.run([ffmpeg, "-nostdin", "-loglevel", "error", "-y", "-i", str(p), "-c", "copy", str(fixed)],
+                           capture_output=True, timeout=600)
+        if r.returncode == 0 and fixed.is_file() and fixed.stat().st_size:
+            fixed.replace(p)
+        else:
+            fixed.unlink(missing_ok=True)
+    return {"name": name}
+
+
+# A live piece is a few seconds of 16 kHz 16-bit mono: a minute is plenty.
+LIVE_MAX = 16000 * 2 * 60
+
+
+@app.post("/api/record/live")
+def record_live(f: UploadFile = File(...), lang: str = Form("auto"), prompt: str = Form(""),
+                _: dict = Depends(signed_in)) -> dict:
+    """A few seconds of what is being said, as raw PCM, written down while the
+    recording goes on. The browser cuts the pieces where the speaker pauses."""
+    raw = f.file.read(LIVE_MAX + 1)
+    if len(raw) > LIVE_MAX:
+        raise HTTPException(413, "조각이 너무 깁니다.")
+    # Near silence: whisper makes words up for it ("you", "감사합니다").
+    pcm = array.array("h", raw[: len(raw) // 2 * 2])
+    if not pcm or max(abs(v) for v in pcm) < 600:
+        return {"text": ""}
+    with tempfile.TemporaryDirectory() as tmp:
+        wav = Path(tmp) / "a.wav"
+        with wave.open(str(wav), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes(raw)
+        return {"text": _whisper(wav, lang, prompt)}
+
+
+@app.delete("/api/record/{name}")
+def drop_record(name: str, _: dict = Depends(signed_in)) -> dict:
+    if not REC_NAME.match(name):
+        raise HTTPException(400, "녹음 파일이 아닙니다.")
+    (FILES / name).unlink(missing_ok=True)
+    return {"ok": True}
 
 
 @app.post("/api/import/{note_id}")

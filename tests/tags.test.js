@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mergeTags, spellTag, uniqueTags, sharedTagRows, tagWithin, tagTree, tagMoves, tagRenames, projectWears } from '../racklist/tags.js'
 import { choicesFor, setTagChoices } from '../note/src-lilak/marks.js'
 import { facetOf, passesFilter, NOT } from '../racklist/sort.js'
-import { defineRack, classRows, wears } from '../racklist/schema.js'
+import { defineRack, classRows, wears, itemSorters } from '../racklist/schema.js'
 
 describe('shared tags', () => {
   it('one tag whatever its case, named by the spelling used most', () => {
@@ -97,5 +97,20 @@ describe('filtering by tags', () => {
     expect(facetOf([{ k: 'a/b' }], plain)).toEqual([{ v: 'a/b', count: 1 }])
     expect(passesFilter({ k: 'a/b' }, { k: ['a'] }, { k: plain })).toBe(false)
     expect(passesFilter({ k: 'a' }, { [NOT('k')]: ['a'] }, { k: plain })).toBe(false)
+  })
+})
+
+describe('a column that shows less than it sorts by', () => {
+  const day = (r) => r.at.slice(0, 10)
+  const def = { item: { key: 'items', id: 'id', fields: [
+    { k: 'updated', get: day, sort: (_v, _c, r) => Date.parse(r.at), many: day },
+  ] } }
+  const early = { id: 'a', at: '2026-11-09T01:00:00Z' }, late = { id: 'b', at: '2026-11-09T23:00:00Z' }
+  const get = itemSorters(def, { items: [early, late] }).updated
+  it('sorts by the moment, though the cell says the day', () => {
+    expect(get(late)).toBeGreaterThan(get(early))
+  })
+  it('is filtered by the day', () => {
+    expect(facetOf([early, late], get)).toEqual([{ v: '2026-11-09', count: 2 }])
   })
 })
