@@ -53,6 +53,7 @@ import { RackTagged, RackTaggedTab, TAGGED_COLS, TAGGED_SORTERS, useTaggedRows }
  *   slots.keepTools(api)         its controls in the open menu, where barTools gives way
  *   slots.tabs                   [{ id, label, render(api) }] — tabs of the service's own
  *   slots.settings(api)          more of the settings tab, under the kit's (a manager's)
+ *                                (`lead: true` puts one before the items and opens on it)
  *   slots.views                  { view: (tab, api) => node } — tabs of its own opened on
  *                                demand: api.openTab({ id, kind: 'view', view, label, who? });
  *                                kept like any opened tab (who: the item it is for)
@@ -181,17 +182,19 @@ function RackList({ def: declared, slots = {} }) {
   const folderField = useMemo(() => def.item.fields.find((f) => f.type === 'folder'), [def])
   const IS_ADMIN = useMemo(() => isManager(), [])
   const ME = useMemo(() => portalUser()?.email || '', [])
-  const FIRST = itemTabId(def)
+  const FIRST = (slots.tabs || []).find((t) => t.lead)?.id || itemTabId(def)
 
   const FIXED = useMemo(() => {
     const [all, ...classTabs] = fixedTabs(def)
     return [
       all,
       // A month of the items, when they have dates (def.calendar) — the items
+    const slot = (t) => ({ id: t.id, kind: 'slot', label: t.label })
       // again, so beside them.
+      ...(slots.tabs || []).filter((t) => t.lead).map(slot),
       ...(def.calendar ? [{ id: 'calendar', kind: 'calendar', label: tr("rk_tab_calendar") }] : []),
       ...classTabs,
-      ...(slots.tabs || []).map((t) => ({ id: t.id, kind: 'slot', label: t.label })),
+      ...(slots.tabs || []).filter((t) => !t.lead).map(slot),
       // What was deleted, and the way back — a manager's, as deleting is.
       // Where the service may read the disk is a manager's to say.
       ...(IS_ADMIN && (hasRoots(def) || slots.settings) ? [{ id: 'settings', kind: 'settings', label: tr("rk_tab_settings") }] : []),
