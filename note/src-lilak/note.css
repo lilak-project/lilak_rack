@@ -101,19 +101,19 @@
 }
 
 /* A project — `+STARK` — drawn as RACK's project nameplate (kit .rl-proj):
-   no fill but a dark head cut on a slant, a screw at each end. */
+   no fill but a band along its foot, a screw at each end. */
 .nt-proj-in, .nt-proj {
   display: inline-block; position: relative;
-  padding: 0 calc(.35em + 7px) 0 calc(.35em + 9px);
+  padding: 0 calc(.35em + 7px) 3px;
   border: 1px solid var(--rk-proj, #0f766e); color: var(--rk-proj, #0f766e);
   font-weight: 700; font-size: .92em;
-  background: linear-gradient(105deg, var(--rk-proj, #0f766e) 0 12px, transparent 12px);
+  background: linear-gradient(var(--rk-proj, #0f766e), var(--rk-proj, #0f766e)) bottom / 100% 3px no-repeat;
 }
 .nt-proj-in::before, .nt-proj::before, .nt-proj-in::after, .nt-proj::after {
-  content: ''; position: absolute; top: 50%; width: 3px; height: 3px; margin-top: -1.5px;
+  content: ''; position: absolute; top: 50%; width: 3px; height: 3px; margin-top: -3px;
   border-radius: 50%; background: var(--rk-proj, #0f766e);
 }
-.nt-proj-in::before, .nt-proj::before { left: 4px; background: #fff; }
+.nt-proj-in::before, .nt-proj::before { left: 4px; }
 .nt-proj-in::after, .nt-proj::after { right: 4px; }
 
 /* A tag, where a note is read: the same blue the rest of RACK cites with. */
