@@ -5,7 +5,7 @@ import { RackTextRows } from './fields.jsx'
 import { authHeaders, linkProject, openInService, serviceColor, remoteDocOf } from './portal.js'
 import { useSharedTags, spellTag, tagKey, uniqueTags } from './tags.js'
 import { parseRule, describe, withUntil, withCount, withoutEnd, DAYS, dow, nth } from './rrule.js'
-import { flowOf, flowFor } from './chain.js'
+import { chainKey, flowOf, flowFor } from './chain.js'
 
 /**
  * Field types — what a property of an [항목] IS, said once.
@@ -898,6 +898,34 @@ export function NoteEdit({ value, onChange, field, rec, ctx, bare }) {
     </>
   )
 }
+/** A record in a flow takes its note into that flow: notes step as their records
+ *  do. The record's flow wins over what the note says; the note of a record in
+ *  no flow is left as it is. Run when the records change — what each note should
+ *  be in is compared with the last run first, so an edit elsewhere costs no read. */
+const NOTE_FLOWS = new Map()
+export async function syncNoteFlows(def, doc) {
+  const k = chainKey(def), idk = def.item.id || 'id'
+  const items = doc?.[def.item.key] || []
+  const byId = new Map(items.map((r) => [String(r[idk]), r]))
+  for (const fl of k ? def.item.fields.filter((f) => f.type === 'note') : []) {
+    const svc = fl.svc || 'note', proj = linkProject(svc)
+    const want = new Map()
+    for (const r of items) {
+      const id = r[fl.k]?.id, flow = id && flowOf(def, r, (x) => byId.get(x))
+      if (flow) want.set(id, flow)
+    }
+    const key = JSON.stringify([...want]), at = `${def.key}:${fl.k}`
+    if (!want.size || NOTE_FLOWS.get(at) === key) continue
+    NOTE_FLOWS.set(at, key)
+    const off = (await notesOf(svc, proj, true)).filter((n) => want.has(n.id) && (n.fields?.chain || '') !== want.get(n.id))
+    for (const n of off) {
+      await noteApi(svc, proj, `/notes/${encodeURIComponent(n.id)}`, { method: 'PUT',
+        body: JSON.stringify({ baseVersion: n.version, fields: { ...(n.fields || {}), chain: want.get(n.id) } }) }).catch(() => {})
+    }
+    if (off.length) notesOf(svc, proj, true)
+  }
+}
+
 registerType('note', {
   empty: () => null,
   text: (v) => str(v?.title),

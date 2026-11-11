@@ -18,7 +18,7 @@ import { useMergeMode, RackMergeButtons, RackMerge, RackMoveTags } from './merge
 import { RackBulkEditor } from './bulk.jsx'
 import { useRackList } from './list.js'
 import { useRackKeys, useToggleKey } from './hooks.js'
-import { typeOf, NoteEdit } from './types.jsx'
+import { typeOf, NoteEdit, syncNoteFlows } from './types.jsx'
 import { useFolders, RackFolder, RackFilePane, RackSettings, hasRoots } from './files.jsx'
 import { asSorts, bumpSort, bySome, byKeys } from './sort.js'
 import {
@@ -166,7 +166,7 @@ function RackSolo({ def: declared, id }) {
         : gone || !rec ? <p className="rl-msg">{tr("rk_open_target_missing")}</p>
           : <RackItemEditor key={id} def={def} doc={doc} rec={rec} ctx={ctx} onSave={commit} canDelete={isManager()}
             {...(c ? { fields: c.fields, listKey: c.k, noun: c.noun, cls: c } : {})}
-            onCancel={() => {}} onDeleted={() => setGone(true)}
+            onCancel={() => { if (inPane) toPage({ rackClose: { was: id } }) }} onDeleted={() => setGone(true)}
             actions={c ? undefined : itemButtons(def, ctx, doc)} />}
       {doc && note && <div className="rl-hint rl-solo-note">{note}</div>}
     </div>
@@ -177,6 +177,8 @@ function RackList({ def: declared, slots = {} }) {
   const def = useMemo(() => (declared.docKeys ? declared : defineRack(declared)), [declared])
   const [doc, setDoc] = useState(null)
   const [outOpen, setOutOpen] = useState(false)
+  // A record's flow carries its note along (types.jsx): checked as the records change.
+  useEffect(() => { if (doc && !BARE) syncNoteFlows(def, doc) }, [doc, def])
   const remote = useRemoteDocs(def)
   const [folders, reloadFolders] = useFolders(def)
   const folderField = useMemo(() => def.item.fields.find((f) => f.type === 'folder'), [def])
@@ -409,21 +411,25 @@ function RackList({ def: declared, slots = {} }) {
    *  The tab is found by what it is SHOWING, not by its name: a frame is
    *  opened as `rec:<svc>:<id>` here and as `note:<id>` by a field, and only
    *  the src is sure. */
+  const frameShowing = useCallback((was) => panes.tabs.find((x) => x.kind === 'frame'
+    && new URLSearchParams(String(x.src || '').split('?')[1] || '').get('solo') === String(was)), [panes])
   const stepFrame = useCallback(({ was, id, label, src }) => {
-    const showing = `solo=${encodeURIComponent(was)}`
-    const t = panes.tabs.find((x) => x.kind === 'frame' && String(x.src || '').includes(showing))
+    const t = frameShowing(was)
     if (t) panes.step(t.id, { ...t, id: t.id.split(was).join(id), label: label || t.label, src })
-  }, [panes])
+  }, [panes, frameShowing])
+  // …and its close is this tab's (it has saved what it had first).
+  const closeFrame = useCallback(({ was }) => { const t = frameShowing(was); if (t) panes.close(t.id) }, [panes, frameShowing])
   useEffect(() => {                                     // …and what a bare list or a solo editor framed here asks for
     const take = (e) => {
       if (e.origin !== window.location.origin) return
       if (e.data?.rackOpen) openRecord(e.data.rackOpen)
       if (e.data?.rackFrame) openEdit({ ...e.data.rackFrame, kind: 'frame' })
       if (e.data?.rackStep) stepFrame(e.data.rackStep)
+      if (e.data?.rackClose) closeFrame(e.data.rackClose)
     }
     window.addEventListener('message', take)
     return () => window.removeEventListener('message', take)
-  }, [openRecord, openEdit, stepFrame])
+  }, [openRecord, openEdit, stepFrame, closeFrame])
 
   /** Open a stored class record by what items call it — what a chip in the
    *  editor does, so a class without a tab of its own (tab: false) is still

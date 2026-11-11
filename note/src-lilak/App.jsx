@@ -678,7 +678,11 @@ export function SoloNote({ id }) {
   useProjectChoices()
   const [said, say] = useState('')
   const [gone, setGone] = useState(false)
-  const closed = () => { ask(`/notes/${encodeURIComponent(id)}`).catch(() => setGone(true)) }
+  // Framed in another service, close is that service's tab closing (rackClose).
+  const closed = () => {
+    if (window.parent !== window) window.parent.postMessage({ rackClose: { was: id } }, window.location.origin)
+    ask(`/notes/${encodeURIComponent(id)}`).catch(() => setGone(true))
+  }
   // Its flow is read from the list here (there is no list beside it); a step
   // is this page showing the other note.
   const [notes, setNotes] = useState(null)
@@ -1142,6 +1146,7 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
     // Only what is on disk: `f` is what is being typed, and a save that lands
     // mid-sentence must not take the caret back with it.
     setN(body)
+    live.current = { ...live.current, n: body }   // a close right after: nothing left for the last save
     onSaved?.()
   }
   /** The note, typeset. It compiles what is ON DISK, so what is being typed
@@ -1331,7 +1336,9 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
       {/* The note saves itself, and closing it keeps what is there. */}
       <RackActions key={id}
         pending={dirty}
-        onClose={() => onClosed?.(id)} closeLast
+        // Saved first: a note framed in another service closes with its frame,
+        // and a page that is gone sends nothing.
+        onClose={async () => { if (dirty) await saveNote(); onClosed?.(id) }} closeLast
         extra={<>
           {/* One choice, not a row of buttons that have to agree with each
               other. What it picks is the MODE (see MODES): three of these are
