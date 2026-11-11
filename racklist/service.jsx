@@ -52,8 +52,8 @@ import { RackTagged, RackTaggedTab, TAGGED_COLS, TAGGED_SORTERS, useTaggedRows }
  *   slots.keepOn                 that filter holds something back (the menu says so, shut)
  *   slots.keepTools(api)         its controls in the open menu, where barTools gives way
  *   slots.tabs                   [{ id, label, render(api) }] — tabs of the service's own
- *   slots.settings(api)          more of the settings tab, under the kit's (a manager's)
  *                                (`lead: true` puts one before the items and opens on it)
+ *   slots.settings(api)          more of the settings tab, under the kit's (a manager's)
  *   slots.views                  { view: (tab, api) => node } — tabs of its own opened on
  *                                demand: api.openTab({ id, kind: 'view', view, label, who? });
  *                                kept like any opened tab (who: the item it is for)
@@ -188,12 +188,12 @@ function RackList({ def: declared, slots = {} }) {
 
   const FIXED = useMemo(() => {
     const [all, ...classTabs] = fixedTabs(def)
+    const slot = (t) => ({ id: t.id, kind: 'slot', label: t.label })
     return [
+      ...(slots.tabs || []).filter((t) => t.lead).map(slot),
       all,
       // A month of the items, when they have dates (def.calendar) — the items
-    const slot = (t) => ({ id: t.id, kind: 'slot', label: t.label })
       // again, so beside them.
-      ...(slots.tabs || []).filter((t) => t.lead).map(slot),
       ...(def.calendar ? [{ id: 'calendar', kind: 'calendar', label: tr("rk_tab_calendar") }] : []),
       ...classTabs,
       ...(slots.tabs || []).filter((t) => !t.lead).map(slot),
