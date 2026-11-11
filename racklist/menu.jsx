@@ -57,8 +57,8 @@ export function RackRail({ open, children }) {
  *  `count`: a number on it (what is picked). `lit`: something tucked in it
  *  is on (a filter). `onToggle` stands in for the button's own (another page's
  *  menu opened from here). `bare`: no button, only the strip with `children`.
- *  `beside`: what stands right of the button. */
-export function RackMenu({ m, label = '⋯', count = 0, lit = false, bare = false, onToggle, beside = null, children }) {
+ *  `beside`: what stands right of the button. `off`: the tab has no use for it. */
+export function RackMenu({ m, label = '⋯', count = 0, lit = false, bare = false, off = false, onToggle, beside = null, children }) {
   const box = m.open && (
     <div className="rl-menu" onClick={(e) => { if (e.target.closest('button') && !e.target.closest('[data-keep]')) m.setOpen(false) }}>
       {children}
@@ -68,7 +68,7 @@ export function RackMenu({ m, label = '⋯', count = 0, lit = false, bare = fals
   return (
     <>
       <button type="button" className={`rl-btn rl-more${m.open ? ' on' : ''}${lit ? ' rl-lit' : ''}`}
-        title={tr("rk_more_hint")} aria-expanded={m.open} onClick={onToggle || (() => m.setOpen((o) => !o))}>
+        title={tr("rk_more_hint")} aria-expanded={m.open} disabled={off} onClick={onToggle || (() => m.setOpen((o) => !o))}>
         <span className="rl-more-l">{label}</span>
         {count > 0 && <span className="rl-more-n">{count}</span>}
         <span className="rl-more-c">{m.open ? '◂' : '▸'}</span></button>

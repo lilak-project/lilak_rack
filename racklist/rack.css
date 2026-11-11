@@ -277,6 +277,8 @@ body.rl-page {
 .rl-mod {
   position: relative;
   --rl-hatch: repeating-linear-gradient(-45deg, transparent 0 5px, color-mix(in srgb, var(--rk-cite-t) 16%, transparent) 5px 6px);
+  /* The left column's own grey: the menu's, and the calendar's head. */
+  --rl-side: color-mix(in srgb, var(--rk-edge) 35%, #fff);
 }
 .rl-btn.rl-more { padding: 0 7px; gap: 4px; }
 .rl-more-n {
@@ -299,29 +301,41 @@ body.rl-page {
 .rl-menu-btns { display: contents; }
 .rl-menu-t { display: none; }
 .rl-mod-rail {
+  /* As wide as the calendar's head (.rl-cal below): 10px of its padding and two
+     of its 23 shares, never under 120px. */
+  container-type: inline-size; --rl-rail: calc(10px + max(120px, (100cqw - 20px) * 2 / 23));
   display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
 }
 .rl-mod-rail > .rl-bar { grid-column: 1 / -1; }
 .rl-mod-rail > .rl-body, .rl-mod-rail > .rl-foot { grid-column: 2; min-width: 0; }
 .rl-rail {
   grid-column: 1; grid-row: 2 / -1; width: 0; min-height: 0; overflow: hidden; visibility: hidden;
-  background: var(--rk-panel); transition: width .16s ease, visibility 0s .16s;
+  background: var(--rl-side); transition: width .16s ease, visibility 0s .16s;
 }
 .rl-rail.on { width: var(--rl-rail); visibility: visible; border-right: 1px solid var(--rk-edge); transition: width .16s ease; }
 .rl-rail-in { flex-flow: column nowrap; align-items: stretch; gap: 0; box-sizing: border-box; width: var(--rl-rail); height: 100%; overflow-y: auto; }
-.rl-rail .rl-menu-row { display: block; flex: none; padding: 8px 8px 9px; border-left: 0; border-bottom: 1px solid var(--rk-line); }
+.rl-rail .rl-menu-row { display: block; flex: none; padding: 8px 6px 9px 8px; border-left: 0; border-bottom: 1px solid var(--rk-line); }
 /* The service itself, at the foot of the column. */
 .rl-rail .rl-menu-row:last-child { margin-top: auto; border-top: 1px solid var(--rk-line); border-bottom: 0; }
 .rl-rail .rl-menu-t { display: block; margin-bottom: 5px; font-weight: 400; font-size: var(--fs-tiny); color: var(--rk-dim); }
-.rl-rail .rl-menu-btns { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 6px; }
+.rl-rail .rl-menu-btns { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+/* One button a line, as wide as the column, like the calendar's head. */
+.rl-rail .rl-menu-btns .rl-btn { justify-content: center; text-align: center; }
+/* Narrow as it is, a long label takes a second line rather than leaving the column. */
+.rl-rail .rl-menu-btns .rl-btn { white-space: normal; height: auto; min-height: 22px; padding-block: 2px; line-height: 1.2; }
+/* Two that go together share a line, half each (‹ ›). */
+.rl-pair { display: contents; }
+.rl-rail .rl-pair { display: flex; gap: 4px; }
+.rl-rail .rl-pair > .rl-btn { flex: 1 1 0; justify-content: center; }
 .rl-rail .rl-hint { flex-basis: 100%; }
-/* One of a few, all in sight. */
+/* One of a few, all in sight: side by side in a strip, one a line in the column. */
 .rl-seg { display: flex; flex-basis: 100%; }
+.rl-rail .rl-seg { flex-direction: column; }
+.rl-rail .rl-seg .rl-btn + .rl-btn { margin: -1px 0 0; }
 /* Always equal shares. `min-width: 0`: without it a long word keeps its button
    wider than the others. */
 .rl-seg .rl-btn { flex: 1 1 0; min-width: 0; justify-content: center; padding-inline: 2px; }
-/* A word too long for a third of the 190px menu: "Summary" is 59px at 15px, 51px
-   here, and 52px is what there is inside the borders. */
+/* A word too long for a third of a strip: "Summary" is 59px at 15px, 51px here. */
 .rl-seg .rl-btn.rl-seg-long { font-size: var(--fs-body); }
 .rl-seg .rl-btn + .rl-btn { margin-left: -1px; }
 .rl-seg .rl-btn.on { position: relative; z-index: 1; }
@@ -361,10 +375,13 @@ body.rl-page {
 }
 .rl-bar .rl-btn.rl-more:not(.on):hover, .rl-bar .rl-btn.rl-new:hover { background: color-mix(in srgb, #fff 28%, transparent); }
 /* Open, it is the tab of the column under it: the same white, running into it. */
-.rl-btn.rl-more.on, .rl-btn.rl-more.on:hover { position: relative; background: var(--rk-panel); border-color: var(--rk-panel); color: var(--rk-ink); }
+.rl-btn.rl-more.on, .rl-btn.rl-more.on:hover { position: relative; background: var(--rl-side); border-color: var(--rl-side); color: var(--rk-ink); }
 .rl-bar:not(.rl-bar-all) > .rl-btn.rl-more.on::after {
-  content: ''; position: absolute; top: 100%; left: -1px; right: -1px; height: 10px; background: var(--rk-panel);
+  content: ''; position: absolute; top: 100%; left: -1px; right: -1px; height: 10px; background: var(--rl-side);
 }
+/* A tab with nothing for it (the calendar has its own column). */
+.rl-bar .rl-btn.rl-more:disabled { opacity: .45; }
+.rl-bar .rl-btn.rl-more:disabled:hover { background: color-mix(in srgb, #fff 16%, transparent); }
 /* Shut, with a filter on in it: it wears the mark of a filtered column. */
 .rl-bar .rl-btn.rl-more.rl-lit:not(.on) {
   background: var(--rl-hatch), color-mix(in srgb, var(--rk-cite-t) 14%, #fff);
@@ -1005,7 +1022,7 @@ button.rl-auth { cursor: pointer; }
 /* Month, the arrows that move it, today, then the legend, one key a line. A key too
    long for the column is cut short; it says its name on hover. */
 .rl-cal-head { grid-row: 1 / span 2; min-width: 0; overflow: hidden auto; display: flex; flex-direction: column; align-items: stretch; gap: 10px;
-  margin: -4px 0 0 -10px; padding: 10px 6px 8px 8px; background: color-mix(in srgb, var(--rk-edge) 35%, #fff); border-right: 1px solid var(--rk-edge); }
+  margin: -4px 0 0 -10px; padding: 10px 6px 8px 8px; background: var(--rl-side); border-right: 1px solid var(--rk-edge); }
 .rl-cal-head > :not(.rl-sp) { flex: none; }
 .rl-cal-head > .rl-sp { display: none; }
 /* As wide as the legend under them: the two arrows half each, today the whole. */

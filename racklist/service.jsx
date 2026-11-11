@@ -110,7 +110,9 @@ const NONE = []                       // one empty list, so a hook sees the same
 const SOLO = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('solo') : null
 // ?bare=1: the list without its bar and tab strip — one tab of it (#open=tab:…)
 // shown inside another service's tab (a group's authors under a project).
-const MENU_W = 190
+// The menu's column, as wide as the calendar's head (rack.css .rl-mod-rail sets the
+// width; this is the same sum on the window, for the columns the table gives up).
+const menuWidth = () => (typeof window === 'undefined' ? 0 : 10 + Math.max(120, (window.innerWidth - 20) * 2 / 23))
 const BARE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('bare')
 // A save anywhere on this page's service and project (a solo editor in another
 // service's pane, the list itself) tells every open list of it to read again.
@@ -228,7 +230,7 @@ function RackList({ def: declared, slots = {} }) {
   const IDK = def.item.id || 'id'
   const idOf = useCallback((r) => r?.[IDK], [IDK])
   const menuState = useRackMenu(BARE ? undefined : projectKey(def.key, 'menu'))
-  const L = useRackList({ idOf, spare: !BARE && menuState.open ? MENU_W : 0,
+  const L = useRackList({ idOf, spare: !BARE && menuState.open ? menuWidth() : 0,
     key: BARE ? `${def.key}.bare` : def.key, fixed: FIXED, firstTab: FIRST, scopeOf, search,
     sorters: sortersFor, cols: colSets, clsSort: def.classSort || { k: 'count', dir: -1 },
   })
@@ -941,8 +943,10 @@ function RackList({ def: declared, slots = {} }) {
   // Where the tab being shown stands in the strip, for the two buttons that
   // walk it (−1 when the list has no tab of its own to be on).
   const tabAt = tabs.findIndex((t) => t.id === tab?.id)
-  // A frame tab's menu is the page inside it, so this column stays out of the way.
-  const railOpen = menuState.open && tab?.kind !== 'frame'
+  // A frame tab's menu is the page inside it, so this column stays out of the way;
+  // the calendar has a column of its own, and its menu is shut and faint there.
+  const noMenu = tab?.kind === 'calendar'
+  const railOpen = menuState.open && tab?.kind !== 'frame' && !noMenu
 
   // What this tab can do, in the column the menu opens: a section per kind of
   // thing — making, the selection, merging, what is shown. +new stands on the
@@ -1040,10 +1044,12 @@ function RackList({ def: declared, slots = {} }) {
           <MenuRow title={tr("rk_menu_tabs")}>
             {/* Along the strip without aiming at it: the tabs are small, and
                 the one you want is usually the one beside the one you are on. */}
-            <button type="button" data-keep className="rl-btn" title={tr("rk_tab_prev")}
-              disabled={tabAt <= 0} onClick={() => L.setActive(tabs[tabAt - 1].id)}>‹</button>
-            <button type="button" data-keep className="rl-btn" title={tr("rk_tab_next")}
-              disabled={tabAt < 0 || tabAt >= tabs.length - 1} onClick={() => L.setActive(tabs[tabAt + 1].id)}>›</button>
+            <span className="rl-pair">
+              <button type="button" data-keep className="rl-btn" title={tr("rk_tab_prev")}
+                disabled={tabAt <= 0} onClick={() => L.setActive(tabs[tabAt - 1].id)}>‹</button>
+              <button type="button" data-keep className="rl-btn" title={tr("rk_tab_next")}
+                disabled={tabAt < 0 || tabAt >= tabs.length - 1} onClick={() => L.setActive(tabs[tabAt + 1].id)}>›</button>
+            </span>
             <button type="button" data-spread className={`rl-btn${spread.all ? ' on' : ''}`} disabled={!spread.all && !spread.over}
               aria-expanded={spread.all} onClick={() => spread.setAll((a) => !a)}>{tr(spread.all ? "rk_tabs_one_row" : "rk_tabs_all")}</button>
             <button type="button" className="rl-btn" disabled={!L.opened} title={tr("rk_close_tabs_hint")} onClick={L.closeOpened}>{tr("rk_close_tabs")}</button>
@@ -1064,7 +1070,7 @@ function RackList({ def: declared, slots = {} }) {
   )
   const menuButton = (
     <RackMenu m={railOpen ? menuState : { ...menuState, open: false }} label={tr("rk_menu")} count={tab?.kind === 'frame' ? 0 : picked.size}
-      lit={!!(fNow?.mode || fNow?.on || quick.length || slots.keepOn)}
+      lit={!!(fNow?.mode || fNow?.on || quick.length || slots.keepOn)} off={noMenu}
       onToggle={tab?.kind === 'frame' ? () => toFrame({ rackMenu: 'toggle' }) : undefined}
       beside={tab?.kind !== 'frame' && newButton}>{menuRows}</RackMenu>
   )
@@ -1135,7 +1141,7 @@ function RackList({ def: declared, slots = {} }) {
 
   return (
     <div className="rl" style={brandStyle()}>
-      <section className={`rl-mod${BARE ? '' : ' rl-mod-rail'}`} style={BARE ? undefined : { '--rl-rail': `${MENU_W}px` }}>
+      <section className={`rl-mod${BARE ? '' : ' rl-mod-rail'}`}>
         {!BARE && <RackBar box={barBox} spread={spread} menu={menuButton} open={railOpen} tabCount={barTabs.length}
           onCloseTabs={L.closeOpened} canCloseTabs={L.opened > 0} beforeReload={slots.barTools?.(api)}
           tools={panes.count > 0 && panes.hidden && <RackPaneTools panes={panes} />}
