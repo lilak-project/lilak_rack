@@ -437,4 +437,7 @@ export default {
   rk_proj_delete_warn: (a0) => `Cannot be undone. Project +${a0} goes with it.`,
   rk_proj_tags: "Tags",
   rk_proj_folder: "Folder",
+  rk_tag_scope: "Scope",
+  rk_tag_scope_here: "This service",
+  rk_tag_scope_set: "Whole set",
 }

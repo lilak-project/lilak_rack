@@ -279,6 +279,11 @@ function RackList({ def: declared, slots = {} }) {
   const cls = tab?.kind === 'classes' ? def.classes.find((c) => c.k === tab.of) : null
   // Names worn through a plain field (tags) can be folded into one another.
   const clsField = cls ? wornBy(def, cls) : null
+  // A tags tab reads this service (its own tags), or the whole share set — every
+  // service's tags, renamed and deleted in all of them, as project_manager's was.
+  const [setWide, setSetWide] = useState(() => !!load(projectKey(def.key, 'tagwide'), false))
+  useEffect(() => { save(projectKey(def.key, 'tagwide'), setWide) }, [def.key, setWide])
+  const sharedOf = (c) => !!c?.shared || (setWide && PROJECT_LINKED && !!c && !c.stored && caseFree(wornBy(def, c)))
   const mergeable = !!cls && ((!cls.stored && !!clsField && !isRef(clsField) && !typeOf(clsField).keys)
     || (cls.stored && !!cls.merge))
   const merge = useMergeMode(mergeable)
@@ -587,7 +592,7 @@ function RackList({ def: declared, slots = {} }) {
       }
       // A project's tag is listed wherever the tab is, worn here or not.
       all = sharedTagRows(tagSources, { svc: own, tags: worn })
-        .filter((t) => cls.shared || here.has(t.key) || besides.has(t.key) || !!projOf(t.name))
+        .filter((t) => sharedOf(cls) || here.has(t.key) || besides.has(t.key) || !!projOf(t.name))
         .map((t) => ({ ...(here.get(t.key) || { key: t.key, name: t.name, count: 0 }),
           per: { ...besides.get(t.key), ...Object.fromEntries(t.by.filter((b) => b.svc !== own).map((b) => [`svc:${b.svc}`, b.n])),
             ...(projOf(t.name) ? { 'pj:tags': projOf(t.name).tags.join(' '), 'pj:folder': projFolderOf(projOf(t.name)) } : {}) } }))
@@ -603,7 +608,7 @@ function RackList({ def: declared, slots = {} }) {
     // (the tags tab's name, in the inbox) leaves it in the order it is kept.
     if (clsSort.k === 'count' || clsCols.some((x) => x.k === clsSort.k)) all.sort(bySome(get, clsSort.dir))
     return !cls.stored && caseFree(clsField) ? [...all.filter((r) => isFavTag(r.name)), ...all.filter((r) => !isFavTag(r.name))] : all
-  }, [cls, clsCols, clsField, def, doc, query, clsSort, extra, tagSources, isFavTag, projOf, projFolders])   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cls, clsCols, clsField, def, doc, query, clsSort, extra, tagSources, isFavTag, projOf, projFolders, setWide])   // eslint-disable-line react-hooks/exhaustive-deps
   // A class tab (the tags) filters as the items tab does: by its columns' values.
   const clsSorters = useMemo(() => {
     if (!cls) return {}
@@ -728,7 +733,7 @@ function RackList({ def: declared, slots = {} }) {
   })
   // Every tag in use, wherever this tab reaches.
   const tagNames = (c) => uniqueTags([...classRows(def, doc, c, extra).map((r) => r.name),
-    ...tagSources.filter((s) => c.shared || s.svc === PORTAL_SERVICE.name).flatMap((s) => Object.keys(s.tags || {}))])
+    ...tagSources.filter((s) => sharedOf(c) || s.svc === PORTAL_SERVICE.name).flatMap((s) => Object.keys(s.tags || {}))])
   /** Several renames in turn, through the same door a rename from elsewhere
    *  comes in by: each service's own /api/tags/rename, this one's included. */
   const renameTags = async (c, moves) => {
@@ -737,7 +742,7 @@ function RackList({ def: declared, slots = {} }) {
     for (const { from, to } of moves) {
       const here = await renameTagHere([from], to)
       if (here) bad.push(`${PORTAL_SERVICE.name} (${here})`)
-      if (c.shared && PROJECT_LINKED) {
+      if (sharedOf(c) && PROJECT_LINKED) {
         const res = await renameTagEverywhere([from], to, { skip: PORTAL_SERVICE.name, wearing: true })
         bad.push(...res.filter((r) => r.error).map((r) => `${r.label} (${r.error})`))
       }
@@ -876,7 +881,7 @@ function RackList({ def: declared, slots = {} }) {
           movedWhy={field.movedWhy}
           onMerge={async (gone, to) => {
             // A shared tag is merged in every other service too.
-            if (c.shared && PROJECT_LINKED) {
+            if (sharedOf(c) && PROJECT_LINKED) {
               const res = await renameTagEverywhere(gone, to, { skip: PORTAL_SERVICE.name })
               const bad = res.filter((r) => r.error).map((r) => `${r.label} (${r.error})`)
               if (bad.length) setNote(tr('rk_rename_failed_in', bad.join(' · ')))
@@ -895,7 +900,7 @@ function RackList({ def: declared, slots = {} }) {
       if (!c) return null
       return (
         <RackMoveTags names={etab.names || []} all={tagNames(c)}
-          scope={tr(c.shared && PROJECT_LINKED ? 'rk_move_everywhere' : 'rk_move_here')}
+          scope={tr(sharedOf(c) && PROJECT_LINKED ? 'rk_move_everywhere' : 'rk_move_here')}
           onMove={async (moves) => { if (await renameTags(c, moves)) { panes.close(etab.id); merge.off() } }}
           onCancel={() => panes.close(etab.id)} />
       )
@@ -926,7 +931,7 @@ function RackList({ def: declared, slots = {} }) {
       const hasKids = (g) => caseFree(field) && tagNames(c).some((n) => tagKey(n) !== tagKey(g) && tagWithin(n, g))
       // A project's own tag renamed everywhere: its name (`+name`) follows, the
       // tag's last part; deleted everywhere, the project goes with it.
-      const pj = c.shared && caseFree(field) ? projOf(etab.who) : null
+      const pj = sharedOf(c) && caseFree(field) ? projOf(etab.who) : null
       const projFollows = async (to) => {
         if (!pj) return
         const name = to ? to.slice(to.lastIndexOf('/') + 1) : ''
@@ -948,7 +953,7 @@ function RackList({ def: declared, slots = {} }) {
               return
             }
             // A shared tag is renamed (or merged) in every other service too.
-            if (c.shared && PROJECT_LINKED) {
+            if (sharedOf(c) && PROJECT_LINKED) {
               const res = await renameTagEverywhere(gone, to, { skip: PORTAL_SERVICE.name })
               const bad = res.filter((r) => r.error).map((r) => `${r.label} (${r.error})`)
               if (bad.length) setNote(tr('rk_rename_failed_in', bad.join(' · ')))
@@ -961,7 +966,7 @@ function RackList({ def: declared, slots = {} }) {
           onCancel={() => panes.close(etab.id)}
           onDelete={IS_ADMIN && !hasKids(etab.who) ? async () => {
             // A shared tag goes from every other service too (an empty new name).
-            if (c.shared && PROJECT_LINKED) {
+            if (sharedOf(c) && PROJECT_LINKED) {
               const res = await renameTagEverywhere([etab.who], '', { skip: PORTAL_SERVICE.name })
               const bad = res.filter((r) => r.error).map((r) => `${r.label} (${r.error})`)
               if (bad.length) setNote(tr('rk_rename_failed_in', bad.join(' · ')))
@@ -969,13 +974,13 @@ function RackList({ def: declared, slots = {} }) {
             }
             const ok = await commit({ [def.item.key]: foldNames(field, [etab.who], '') }, tr("rk_removed_name", etab.who))
             await projFollows('')
-            if (ok || c.shared) panes.close(etab.id)
+            if (ok || sharedOf(c)) panes.close(etab.id)
           } : null}
           deleteWarn={pj ? tr('rk_proj_delete_warn', pj.name) : undefined}>
           {/* A tag may be a project: its description, period and what else it gathers. */}
           {caseFree(field) && <RackTagProject tag={etab.who} projects={projects} onChanged={projChanged} say={setNote} />}
           {/* A shared tag: what wears it in the other services, each opening in a pane here. */}
-          {c.shared && <RackTagged names={[etab.who]} skip={PORTAL_SERVICE.name} onOpen={openRecord} />}
+          {sharedOf(c) && <RackTagged names={[etab.who]} skip={PORTAL_SERVICE.name} onOpen={openRecord} />}
         </RackEditClass>
       )
     }
@@ -1154,6 +1159,15 @@ function RackList({ def: declared, slots = {} }) {
         )}
         {slots.pick?.(api)}
       </MenuRow>
+      {/* A tags tab: this service's tags, or the set's (every service in it). */}
+      {outline && !cls.shared && PROJECT_LINKED && (
+        <MenuRow title={tr('rk_tag_scope')}>
+          <div className="rl-seg">
+            <button type="button" className={`rl-btn${!setWide ? ' on' : ''}`} onClick={() => setSetWide(false)}>{tr('rk_tag_scope_here')}</button>
+            <button type="button" className={`rl-btn${setWide ? ' on' : ''}`} onClick={() => setSetWide(true)}>{tr('rk_tag_scope_set')}</button>
+          </div>
+        </MenuRow>
+      )}
       <MenuRow extra title={tr("rk_menu_merge")}>
         {mergeable && (
           <RackMergeButtons merge={merge} noun={cls.stored ? cls.noun : (clsField.label || cls.noun)}
@@ -1355,7 +1369,7 @@ function RackList({ def: declared, slots = {} }) {
                           : outline && projOf(r.name) ? openTab({ id: `tagged:+${tagKey(projOf(r.name).name)}`, kind: 'tagged',
                             names: projOf(r.name).tags, match: projOf(r.name).match, label: `+${projOf(r.name).name}` })
                           // A shared tag: everything wearing it, in every service.
-                          : cls.shared ? openTab({ id: `tagged:${r.key || r.name}`, kind: 'tagged', names: [r.name], label: `#${r.name}` })
+                          : sharedOf(cls) ? openTab({ id: `tagged:${r.key || r.name}`, kind: 'tagged', names: [r.name], label: `#${r.name}` })
                           : openTab({ id: `${cls.k}:${r.key || r.name}`, kind: 'items', of: cls.k,
                             key: r.key || r.name, name: r.name, label: rowLabel(cls, r) || r.name }))}
                       onContextMenu={(e) => {

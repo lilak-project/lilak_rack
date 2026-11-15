@@ -437,4 +437,7 @@ export default {
   rk_proj_delete_warn: (a0) => `되돌릴 수 없습니다. 프로젝트 +${a0} 도 함께 지워집니다.`,
   rk_proj_tags: "태그",
   rk_proj_folder: "폴더",
+  rk_tag_scope: "범위",
+  rk_tag_scope_here: "이 서비스",
+  rk_tag_scope_set: "세트 전체",
 }
