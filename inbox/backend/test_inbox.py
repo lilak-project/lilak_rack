@@ -183,6 +183,20 @@ class Decide(unittest.TestCase):
         self.c.post("/api/inbox/j/decide", json={"action": "approve"})
         self.assertEqual(self.status("j")["made"]["id"], "j1")
 
+    def test_a_second_yes_while_the_first_is_making_it_is_refused(self):
+        seen = []
+        slow = ap.call
+
+        def during(auth, method, path, body=None):
+            if path.endswith("/api/notes") and method == "POST":      # the first yes is in the middle of making it
+                seen.append(self.c.post("/api/inbox/n/decide", json={"action": "approve"}).status_code)
+            return slow(auth, method, path, body)
+        ap.call = during
+        self.assertEqual(self.c.post("/api/inbox/n/decide", json={"action": "approve"}).status_code, 200)
+        self.assertEqual(seen, [409])
+        self.assertEqual(sum(1 for m, p, _ in self.calls if m == "POST" and p.endswith("/api/notes")), 1)
+        self.assertEqual(main._MAKING, set())
+
     def test_what_cannot_be_done_is_refused(self):
         self.assertEqual(self.c.post("/api/inbox/bad/decide", json={"action": "approve"}).status_code, 502)
         self.assertEqual(self.c.post("/api/inbox/c/decide", json={"action": "approve"}).status_code, 409)   # only [확인]

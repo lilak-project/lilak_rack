@@ -19,7 +19,13 @@
     "multi_project": true,
     "import_export": true,
     "tags": false,
-    "inbox": true
+    "inbox": true,
+    "delegates": [
+      "note",
+      "academic_activities",
+      "jobboard",
+      "project_manager"
+    ]
   },
   "icon": "tray",
   "color": "#b45309",

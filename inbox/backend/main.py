@@ -193,6 +193,7 @@ def inbox_detail(cid: str, request: Request, _: dict = Depends(signed_in)) -> di
 
 
 DECISION = {"check": "checked", "discard": "discarded", "restore": "waiting"}
+_MAKING: set = set()      # candidates being made right now (one backend per project, so in memory is enough)
 
 
 @app.post("/api/inbox/{cid}/decide")
@@ -203,24 +204,34 @@ def decide(cid: str, request: Request, body: dict = Body(...), _: dict = Depends
     if act not in ap.actions(c):
         raise HTTPException(409, "이 후보에 지금 할 수 없는 일입니다.")
     now = datetime.now().astimezone().isoformat(timespec="seconds")
-    if act in ("approve", "update"):
-        try:
-            # ponytail: made outside the lock (a service call may take seconds); two people
-            # approving the same candidate at once could make it twice.
-            change = {"status": "approved", "decidedAt": now, "made": ap.approve(c, request.headers.get("authorization", ""))}
-        except ap.Refused as e:
-            raise HTTPException(502, str(e)) from None
-    else:
-        change = {"status": DECISION[act], "decidedAt": "" if act == "restore" else now,
-                  **({"made": None} if act == "restore" else {})}
-    with DOC.lock:
-        cur = DOC.read()
-        inbox = copy.deepcopy(cur.get("inbox") or [])
-        for x in inbox:
-            if str(x.get("id")) == cid:
-                x.update(change)
-                c = x
-        DOC.write({**cur, "inbox": _order(inbox)}, "inbox", replaces=cur)
+    making = act in ("approve", "update")
+    if making:
+        # Made outside the document's lock (a service call may take seconds), so the candidate
+        # is claimed first: a second yes while the first is still making it is refused, and one
+        # that arrives after it was decided finds it no longer waiting.
+        with DOC.lock:
+            if cid in _MAKING or _one(cid).get("status", "waiting") != "waiting":
+                raise HTTPException(409, "이 후보는 이미 처리되었거나 지금 처리되고 있습니다.")
+            _MAKING.add(cid)
+    try:
+        if making:
+            try:
+                change = {"status": "approved", "decidedAt": now, "made": ap.approve(c, request.headers.get("authorization", ""))}
+            except ap.Refused as e:
+                raise HTTPException(502, str(e)) from None
+        else:
+            change = {"status": DECISION[act], "decidedAt": "" if act == "restore" else now,
+                      **({"made": None} if act == "restore" else {})}
+        with DOC.lock:
+            cur = DOC.read()
+            inbox = copy.deepcopy(cur.get("inbox") or [])
+            for x in inbox:
+                if str(x.get("id")) == cid:
+                    x.update(change)
+                    c = x
+            DOC.write({**cur, "inbox": _order(inbox)}, "inbox", replaces=cur)
+    finally:
+        _MAKING.discard(cid)            # released only once the decision is written
     return ap.card(c)
 
 
