@@ -5,7 +5,7 @@ is the inbox service's, still one project per set (the set's `inbox` member), op
 whoever is in the set; a candidate says which project of its target service
 approving makes it in (`destProj`). This, once per portal:
   - registers the inbox service (its seed manifest, as an install of the rack bundle
-    would) and hides its card — the portal's Home and account menu show the inbox,
+    would) — the portal's Home and account menu show the inbox,
   - gives every set with a project_manager project P and no inbox one: `inbox` for the
     main projects' set, else P's own name; copies P's candidates (each stamped with the
     set's project of the service it goes to), its mail drop and its feedback log,
@@ -101,14 +101,9 @@ def register(apply: bool) -> None:
 
 
 def settle() -> None:
-    """The card hidden; the manifest saying what the cover reads it for, out of the tag sets,
-    its main project the main set's."""
-    p = registry.config.DATA_ROOT / "_portal" / "home.json"
-    d = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
-    if IB not in d.setdefault("hidden_services", []):
-        d["hidden_services"].append(IB)
-        registry._atomic_write_text(p, json.dumps(d, ensure_ascii=False, indent=2))
-        print("  ✓ 받은편지함 카드 숨김")
+    """The manifest saying what the cover reads it for, out of the tag sets, its main project
+    the main set's. The card is not hidden here: a portal-wide hide (home.json) is one no
+    account can undo in its own bar; each account hides the card there if it wants."""
     m = registry.read_manifest(IB)
     was = json.dumps(m, sort_keys=True)
     m.setdefault("capabilities", {}).update(inbox=True, tags=False)
