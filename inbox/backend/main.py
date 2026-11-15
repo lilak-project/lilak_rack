@@ -1,0 +1,152 @@
+"""inbox backend — the candidates waiting for a person's yes, one shared
+document per portal project (a share set has its own: manage's, research's).
+
+Something automatic proposes; a person decides. The Claude mail task drops
+one file per candidate into `<project data>/inbox-drop/`:
+    {id, createdAt, target: "note"|"activity", fields: {...},
+     source: {from, subject, date, threadId, attachments: [names], text}, remark}
+and every minute (and at start) they are taken in as records of the `inbox`
+list — flat, so the kit's table and editor read them as any record: the
+fields beside `target`, `status` (waiting | approved | checked | discarded),
+`from`, `date`, `subject`, `remark` (the file goes to `inbox-drop/imported/`).
+The portal's MCP posts its proposals (a note, an activity, a job) straight in
+as records. The page approves one by making it in the service it belongs to
+and saving the record with `status`, `decidedAt` and `made` ({svc, proj, id}).
+A discard is dropped after DISCARD_KEEP_DAYS. The list is kept undecided first,
+then newest mail.
+
+The mail's text stays in the imported file, out of the document every page load
+carries; a manager's page asks for it (GET /api/inbox/{id}/mail).
+
+A manager may write `feedback` on a candidate: how such a mail should have been
+handled. Once decided it goes, with the candidate as it stood, onto
+`inbox-feedback.jsonl`, which outlives the discards; the mail task learns from it.
+
+Until 2026-11 this lived in project_manager; migrate.py moves a project's.
+"""
+import copy
+import json
+import os
+import re
+import shutil
+import threading
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
+
+from fastapi import Depends, FastAPI, HTTPException
+from lilak_portal_auth import manager
+
+from rackstore.store import Document, mount_spa
+
+DATA = Path(os.environ.get("INBOX_DATA_DIR", "./data"))
+PROJECT = os.environ.get("PORTAL_PROJECT", "")
+DIST = Path(os.environ.get("INBOX_DIST_DIR", "./dist"))
+DROP = DATA / "inbox-drop"
+FEEDBACK = DATA / "inbox-feedback.jsonl"
+DISCARD_KEEP_DAYS = 10
+
+DOC = Document(DATA / "data.json", keys=("inbox", "settings",), keep_days=30)
+
+app = FastAPI(title="inbox")
+DOC.mount(app, project=PROJECT)
+
+
+def _flat(c: dict) -> dict:
+    """A candidate as the file has it → a record: its fields beside its target
+    (a note's tags as `noteTags`), its mail's sender, date and subject as
+    `from`, `date`, `subject`."""
+    if "fields" not in c and "source" not in c:
+        return c
+    out = {k: v for k, v in c.items() if k not in ("fields", "source")}
+    for k, v in (c.get("fields") or {}).items():
+        out["noteTags" if k == "tags" else k] = " ".join(v) if isinstance(v, list) else v
+    src = c.get("source") or {}
+    out.update({k: src.get(k) or "" for k in ("from", "date", "subject", "threadId")})
+    out["attachments"] = [str(a) for a in src.get("attachments") or []]
+    out.setdefault("status", "waiting")
+    return out
+
+
+def _order(inbox: list) -> list:
+    """What is still to be decided first; within that and the rest, the newest
+    mail first (no mail date: the day it came in)."""
+    def when(c: dict) -> tuple:
+        return (str(c.get("date") or c.get("createdAt") or "")[:10], str(c.get("createdAt") or ""), str(c.get("id")))
+    return sorted(sorted(inbox, key=when, reverse=True), key=lambda c: c.get("status", "waiting") != "waiting")
+
+
+def _log_feedback(inbox: list) -> None:
+    """Each decided candidate's feedback onto the log, once per wording."""
+    worded = [c for c in inbox if str(c.get("feedback") or "").strip() and c.get("status", "waiting") != "waiting"]
+    if not worded:
+        return
+    lines = FEEDBACK.read_text(encoding="utf-8").splitlines() if FEEDBACK.exists() else []
+    logged = {(o.get("id"), o.get("feedback")) for o in map(json.loads, lines)}
+    new = [c for c in worded if (c.get("id"), c.get("feedback")) not in logged]
+    if new:
+        FEEDBACK.parent.mkdir(parents=True, exist_ok=True)
+        with FEEDBACK.open("a", encoding="utf-8") as f:
+            for c in new:
+                f.write(json.dumps(c, ensure_ascii=False) + "\n")
+
+
+def tick() -> bool:
+    """Take in what was dropped, flatten what came in before, drop old
+    discards, keep the order. True when the document changed."""
+    cutoff = (datetime.now().astimezone() - timedelta(days=DISCARD_KEEP_DAYS)).isoformat(timespec="seconds")
+    files = sorted(DROP.glob("*.json")) if DROP.is_dir() else []
+    with DOC.lock:
+        cur = DOC.read()
+        inbox = [_flat(c) for c in copy.deepcopy(cur.get("inbox") or [])]   # never edit cur in place
+        have = {str(c.get("id")) for c in inbox}
+        for f in files:
+            try:
+                c = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:
+                continue                   # half-written: the next tick takes it
+            if isinstance(c, dict) and re.fullmatch(r"[A-Za-z0-9_-]{1,80}", str(c.get("id") or "")) \
+                    and c.get("target") in ("note", "activity") and str(c["id"]) not in have:
+                inbox.append(_flat(c))
+                have.add(str(c["id"]))
+            (DROP / "imported").mkdir(parents=True, exist_ok=True)
+            shutil.move(str(f), str(DROP / "imported" / f.name))
+        _log_feedback(inbox)
+        inbox = _order([c for c in inbox if not (c.get("status") == "discarded" and str(c.get("decidedAt") or "") < cutoff)])
+        if inbox == (cur.get("inbox") or []):
+            return False
+        DOC.write({**cur, "inbox": inbox}, "inbox", replaces=cur)
+        return True
+
+
+def _ticker() -> None:
+    while True:
+        try:
+            tick()
+        except Exception as e:             # noqa: BLE001 — a bad file must not stop the inbox
+            print(f"[inbox] tick failed: {e}", flush=True)
+        time.sleep(60)
+
+
+if os.environ.get("INBOX_TIMER", "1") != "0":
+    threading.Thread(target=_ticker, daemon=True, name="inbox").start()
+
+
+@app.get("/api/badge")
+def badge(_: dict = Depends(manager)) -> dict:
+    """The number on this service's icon: the candidates still to be decided."""
+    return {"count": sum(1 for c in DOC.read().get("inbox") or [] if c.get("status", "waiting") == "waiting")}
+
+
+@app.get("/api/inbox/{cid}/mail")
+def inbox_mail(cid: str, _: dict = Depends(manager)) -> dict:
+    """The mail a candidate came from, as the task copied it ('' from before it did)."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", cid):
+        raise HTTPException(404, "그 후보가 없습니다.")
+    p = DROP / "imported" / f"{cid}.json"
+    src = json.loads(p.read_text(encoding="utf-8")).get("source") or {} if p.is_file() else {}
+    return {"text": str(src.get("text") or "")}
+
+
+# Must stay last: the catch-all would shadow /api/*.
+mount_spa(app, DIST, name="inbox")

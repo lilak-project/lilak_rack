@@ -1,7 +1,7 @@
-"""project_manager's inbox: dropped candidates taken in once and flattened
+"""The inbox: dropped candidates taken in once and flattened
 into records of the `inbox` class, kept undecided first then newest mail, an old discard dropped.
 
-    service_manager/.venv/bin/python project_manager/backend/test_inbox.py
+    service_manager/.venv/bin/python inbox/backend/test_inbox.py
 """
 import copy
 import json
@@ -14,9 +14,9 @@ from pathlib import Path
 TMP = Path(tempfile.mkdtemp())
 os.environ["PORTAL_SECRET_KEY"] = "test-secret"
 os.environ["PORTAL_DATA_ROOT"] = str(TMP / "root")
-os.environ["PROJECT_MANAGER_DATA_DIR"] = str(TMP / "data")
-os.environ["PROJECT_MANAGER_DIST_DIR"] = str(TMP / "dist")
-os.environ["PM_INBOX_TIMER"] = "0"             # ticked by hand here
+os.environ["INBOX_DATA_DIR"] = str(TMP / "data")
+os.environ["INBOX_DIST_DIR"] = str(TMP / "dist")
+os.environ["INBOX_TIMER"] = "0"             # ticked by hand here
 os.environ.pop("PORTAL_PORT", None)
 (TMP / "dist").mkdir()
 (TMP / "dist" / "index.html").write_text("<html></html>")
@@ -52,7 +52,6 @@ class Inbox(unittest.TestCase):
             main.DOC.write(n, replaces=d)
         main.tick()
         self.assertEqual([(c["id"], c["status"]) for c in main.DOC.read()["inbox"]], [("b", "approved")])
-        self.assertEqual(main.DOC.read()["projects"], [])
 
     def test_mail_stays_out_of_the_document_and_is_asked_for(self):
         main.DROP.mkdir(parents=True, exist_ok=True)

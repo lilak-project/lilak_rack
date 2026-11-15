@@ -15,7 +15,6 @@
     "link_by": "email"
   },
   "capabilities": {
-    "badge": true,
     "multi_project": true,
     "import_export": true,
     "tags": true

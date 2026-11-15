@@ -11,6 +11,7 @@ kept as dense tables (racks) that share one set of tags.
 | `asset_manager2/` | equipment and assets |
 | `note/` | notes and to-dos (markdown, `#tags`, `+projects`) |
 | `project_manager/` | projects: a set of tags gathered across every service |
+| `inbox/` | candidates (mail, agents' proposals, jobs) waiting for a person's yes before they are made |
 | `racklist/` | the frame every service above is drawn with (table, editors, calendar, tags, trash) |
 | `rackstore/` | the backend they share: one record per file, trash, tags, folders (`pip install -e rackstore`) |
 | `seed/` | each service's portal manifest |

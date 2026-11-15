@@ -613,7 +613,7 @@ class Document:
         @app.post("/api/records")
         def add_record(body: dict = Body(...), me: dict = Depends(signed_in)) -> dict:
             """One record added to the top of `key` — what another service makes
-            here (an inbox candidate approved in project_manager). It gets an
+            here (an inbox candidate approved in the inbox service). It gets an
             id and its times when it has none; a name for a class record is
             stored as that record's id, as a PUT's is."""
             import copy
@@ -638,7 +638,7 @@ class Document:
         @app.post("/api/records/update")
         def update_record(body: dict = Body(...), me: dict = Depends(signed_in)) -> dict:
             """`fields` laid over the record `id` of `key` — what another service
-            changes here (an inbox update approved in project_manager). id and
+            changes here (an inbox update approved in the inbox service). id and
             createdAt stay; updatedAt moves."""
             import copy
             k, rid, fields = str(body.get("key") or ""), str(body.get("id") or ""), body.get("fields")

@@ -1,10 +1,10 @@
 import './strings.js'
 import { useEffect, useState } from 'react'
 import { tr } from 'lilak-ui/i18n.jsx'
-import { authHeaders, linkProject, PORTAL_BASE } from 'racklist'
+import { authHeaders, linkProject, loadProjects, PORTAL_BASE, useProjects } from 'racklist'
 
 /**
- * The inbox class's moving parts (def.jsx declares its fields): what approving
+ * The inbox's moving parts (def.jsx declares its fields): what approving
  * makes, and the buttons — in the table's last column and in the editor's
  * bar. Yes makes the record in the service it belongs to — an activity
  * through academic_activities' POST /api/records, a note through note's own
@@ -19,7 +19,7 @@ import { authHeaders, linkProject, PORTAL_BASE } from 'racklist'
 const ACTIVITY = ['name', 'kind', 'start', 'startTime', 'end', 'endTime', 'place', 'link', 'comment']
 // an update may also touch the trip/talk side of an existing activity
 const UPDATABLE = [...ACTIVITY, 'tripKind', 'tripStart', 'tripEnd', 'role', 'title', 'host', 'talkDate', 'talkTime']
-const SVC = { activity: 'academic_activities', note: 'note' }
+const SVC = { activity: 'academic_activities', note: 'note', job: 'jobboard' }
 // As the backend keeps it (_order): what is still to be decided, then the newest mail.
 const when = (c) => `${String(c.date || c.createdAt || '').slice(0, 10)}|${c.createdAt || ''}|${c.id}`
 const decided = (c) => (c.status || 'waiting') !== 'waiting'
@@ -37,8 +37,9 @@ const call = (path, opts = {}) => fetch(path, { ...opts,
 const post = (path, body) => call(path, { method: 'POST', body: JSON.stringify(body) })
 const projOf = async (svc) => linkProject(svc)
 
-/** The tags the candidate's project brings (its `project` is a link to one). */
-const projectTags = (r, doc) => (doc?.projects || []).find((p) => p.id === (r.project?.id ?? r.project))?.tags || []
+/** The tags the candidate's project brings (its `project` is a link to one of
+ *  project_manager's; `projects` as racklist's loadProjects gives them). */
+const projectTags = (r, projects) => (projects || []).find((p) => p.id === (r.project?.id ?? r.project))?.tags || []
 
 const today = () => new Date().toLocaleDateString('sv')   // YYYY-MM-DD
 const GMAIL = 'https://mail.google.com/mail/u/0/'
@@ -50,7 +51,7 @@ const fromLine = (r) => [r.from, r.date].filter(Boolean).join(', ') + (r.subject
 function changes(r) {
   if (r.target === 'activity') return Object.fromEntries(UPDATABLE.filter((k) => String(r[k] || '')).map((k) => [k, String(r[k])]))
   const from = fromLine(r)
-  return { add: `\n\n## ${tr('pm_ib_update_head', today())}\n\n${String(r.body || '').trim()}\n${from ? `\n출처: ${from}\n` : ''}` }
+  return { add: `\n\n## ${tr('ib_update_head', today())}\n\n${String(r.body || '').trim()}\n${from ? `\n출처: ${from}\n` : ''}` }
 }
 
 /** The record a match points at, as its service has it now. */
@@ -59,13 +60,21 @@ async function current(r) {
   if (r.target === 'note') return call(`/pp/${svc}/${p}/api/notes/${encodeURIComponent(r.match.id)}`)
   const d = await call(`/pp/${svc}/${p}/api/data`)
   const rec = (d.activities || []).find((x) => String(x.id) === String(r.match.id))
-  if (!rec) throw new Error(tr('pm_ib_gone'))
+  if (!rec) throw new Error(tr('ib_gone'))
   return rec
 }
 
-/** What approving makes: { record } for an activity, { title, text } for a note. */
-export function makes(r, doc) {
-  const tags = projectTags(r, doc)
+/** A job candidate's parameters, as the agent wrote them (JSON); null when they do not read. */
+const jobParams = (r) => { try { const p = JSON.parse(r.params || '{}'); return p && typeof p === 'object' && !Array.isArray(p) ? p : null } catch { return null } }
+
+/** What approving makes: { record } for an activity, { title, text } for a note,
+ *  { job } — what jobrun is asked to run — for a job an agent wants to submit. */
+export function makes(r, projects) {
+  if (r.target === 'job') {
+    return { job: { recipe: String(r.recipe || ''), project: String(r.jobProject || ''), params: jobParams(r) || {},
+      ...(r.server ? { server: String(r.server) } : {}) } }
+  }
+  const tags = projectTags(r, projects)
   if (r.target === 'activity') {
     const rec = Object.fromEntries(ACTIVITY.map((k) => [k, String(r[k] || '')]))
     return { record: { ...rec, repeat: null, ...(tags.length ? { tags } : {}) } }
@@ -75,20 +84,25 @@ export function makes(r, doc) {
   return { title: String(r.title || '').trim(),
     text: `${all}\n\n${String(r.body || '').trim()}\n${from ? `\n출처: ${from}\n` : ''}` }
 }
-const missing = (r, out) => (r.mode === 'update'
-  ? (r.target === 'activity' ? (Object.keys(changes(r)).length ? '' : tr('pm_ib_need_change')) : (String(r.body || '').trim() ? '' : tr('pm_ib_need_change')))
+const missing = (r, out) => (r.target === 'job'
+  ? (!out.job.recipe || !out.job.project || !jobParams(r) ? tr('ib_need_job') : '')
+  : r.mode === 'update'
+  ? (r.target === 'activity' ? (Object.keys(changes(r)).length ? '' : tr('ib_need_change')) : (String(r.body || '').trim() ? '' : tr('ib_need_change')))
   : r.target === 'activity'
-  ? (!out.record.name || !/^\d{4}-\d{2}-\d{2}$/.test(out.record.start) ? tr('pm_ib_need_activity') : '')
-  : (!out.title ? tr('pm_ib_need_note') : ''))
+  ? (!out.record.name || !/^\d{4}-\d{2}-\d{2}$/.test(out.record.start) ? tr('ib_need_activity') : '')
+  : (!out.title ? tr('ib_need_note') : ''))
 
 /** The editor's read-only field: exactly what approving will make. */
-export function MakesField({ rec: r, ctx }) {
+export function MakesField({ rec: r }) {
+  const projects = useProjects()
   if (r.mode === 'update' && r.match?.id) return <UpdateField r={r} />
-  const out = makes(r, ctx.doc)
+  const out = makes(r, projects)
   const bad = missing(r, out)
   if (bad) return <span className="rl-warn">{bad}</span>
   return (
-    <div className="rl-mono" style={{ whiteSpace: 'pre-wrap' }}>{r.target === 'activity'
+    <div className="rl-mono" style={{ whiteSpace: 'pre-wrap' }}>{r.target === 'job'
+      ? `${out.job.recipe}${out.job.server ? ` @ ${out.job.server}` : ''}\nproject: ${out.job.project}\n${JSON.stringify(out.job.params, null, 2)}`
+      : r.target === 'activity'
       ? Object.entries(out.record).filter(([, v]) => v && v.length !== 0).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join('\n')
       : `${out.title}\n\n${out.text}`}</div>
   )
@@ -114,16 +128,16 @@ export function MailField({ rec: r }) {
   const ask = (e) => {
     if (!e.target.open || text !== null) return
     call(`${PORTAL_BASE}/api/inbox/${encodeURIComponent(r.id)}/mail`)
-      .then((d) => setText(d.text || tr('pm_ib_mail_none')), (err) => setText(String(err.message || err)))
+      .then((d) => setText(d.text || tr('ib_mail_none')), (err) => setText(String(err.message || err)))
   }
   const link = mailLink(r)
   const find = `${GMAIL}#search/${encodeURIComponent(`subject:"${r.subject || ''}"`)}`
   return (
     <div>
-      <a className="rl-lnk" href={link || find} target="_blank" rel="noreferrer">{tr(link ? 'pm_ib_mail_open' : 'pm_ib_mail_find')}</a>
-      {r.attachments?.length > 0 && <span className="rl-dim"> · 📎 {tr('pm_ib_attach', r.attachments.join(', '))}</span>}
+      <a className="rl-lnk" href={link || find} target="_blank" rel="noreferrer">{tr(link ? 'ib_mail_open' : 'ib_mail_find')}</a>
+      {r.attachments?.length > 0 && <span className="rl-dim"> · 📎 {tr('ib_attach', r.attachments.join(', '))}</span>}
       <details onToggle={ask}>
-        <summary>{tr('pm_ib_mail_text')}</summary>
+        <summary>{tr('ib_mail_text')}</summary>
         <div className="rl-mono" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 360, overflow: 'auto' }}>{text ?? '…'}</div>
       </details>
     </div>
@@ -166,7 +180,7 @@ const save = (ctx, r, change, said) => ctx.commit({
 }, said)
 
 async function approve(r, ctx) {
-  const out = makes(r, ctx.doc)
+  const out = makes(r, await loadProjects())
   const svc = SVC[r.target], p = await projOf(svc)
   let id
   if (r.mode === 'update') {
@@ -178,6 +192,9 @@ async function approve(r, ctx) {
       await call(`/pp/${svc}/${p}/api/notes/${encodeURIComponent(id)}`,
         { method: 'PUT', body: JSON.stringify({ baseVersion: n.version, body: n.body.trimEnd() + changes(r).add }) })
     }
+  } else if (r.target === 'job') {
+    // Submitted as the person approving: the job is theirs, the agent only asked.
+    id = (await post(`/pp/${svc}/${p}/api/submit`, out.job)).id
   } else if (r.target === 'activity') {
     id = (await post(`/pp/${svc}/${p}/api/records`, { key: 'activities', record: out.record })).record.id
   } else {
@@ -187,7 +204,7 @@ async function approve(r, ctx) {
     id = n.id
   }
   const change = { status: 'approved', decidedAt: now(), made: { svc, proj: p, id } }
-  await save(ctx, r, change, tr('pm_ib_approved', r.target === 'note' ? r.title : r.name))
+  await save(ctx, r, change, tr('ib_approved', r.target === 'note' ? r.title : r.name))
   return change
 }
 
@@ -195,19 +212,18 @@ const openMade = async (r, ctx) => ctx.openRecord?.({
   ...(r.made || { svc: SVC[r.target], proj: await projOf(SVC[r.target]), id: r.match?.id }),
   label: r.target === 'note' ? r.title : r.name })
 
-/** In the inbox's menu: every candidate still to be decided, each in an editor
+/** In the menu: every candidate still to be decided, each in an editor
  *  (the first in front, as the list has them), so they can be gone through
  *  without a right click on each. */
-const editorId = (r) => `class:inbox:${r.id}`
-export function OpenWaiting({ api: { doc, tab, openEdit } }) {
-  if (tab?.of !== 'inbox') return null
+const editorId = (r) => `item:${r.id}`
+export function OpenWaiting({ api: { doc, openEdit } }) {
   const waiting = (doc?.inbox || []).filter((r) => !decided(r))
   if (!waiting.length) return null
-  const edit = (r) => openEdit({ id: editorId(r), kind: 'class', of: 'inbox', stored: true, who: r.id,
+  const edit = (r) => openEdit({ id: editorId(r), kind: 'item', who: r.id,
     label: (r.target === 'note' ? r.title : r.name) || r.subject || r.id })
   return (
     <button type="button" className="rl-btn" onClick={() => { waiting.forEach(edit); edit(waiting[0]) }}>
-      {tr('pm_ib_open_waiting', waiting.length)}</button>
+      {tr('ib_open_waiting', waiting.length)}</button>
   )
 }
 
@@ -235,18 +251,18 @@ export function InboxActions({ r, ctx, after, row, close }) {
       }
     } catch (err) { ctx.say?.(String(err.message || err)) }
   }
-  const out = makes(r, ctx.doc)
+  const out = makes(r, [])          // the project's tags change what is made, never whether it can be
   const bad = missing(r, out)
   const open = (r.made || r.match?.id)
-    ? <button type="button" className="rl-btn" onClick={(e) => { stop(e); openMade(r, ctx) }}>{tr('pm_ib_open')}</button> : null
+    ? <button type="button" className="rl-btn" onClick={(e) => { stop(e); openMade(r, ctx) }}>{tr('ib_open')}</button> : null
   if (r.status === 'approved' || r.status === 'checked') return open
   if (r.status === 'discarded') {
     return (
       <button type="button" className="rl-btn" onClick={run(async () => {
         const ch = { status: 'waiting', decidedAt: '', made: null }
-        await save(ctx, r, ch, tr('pm_ib_restored'))
+        await save(ctx, r, ch, tr('ib_restored'))
         return ch
-      })}>{tr('pm_ib_restore')}</button>
+      })}>{tr('ib_restore')}</button>
     )
   }
   return (
@@ -254,16 +270,16 @@ export function InboxActions({ r, ctx, after, row, close }) {
       {r.mode === 'checked'
         ? <button type="button" className="rl-btn rl-go" onClick={run(async () => {
             const ch = { status: 'checked', decidedAt: now() }
-            await save(ctx, r, ch, tr('pm_ib_checked'))
+            await save(ctx, r, ch, tr('ib_checked'))
             return ch
-          }, true)}>{tr('pm_ib_check')}</button>
+          }, true)}>{tr('ib_check')}</button>
         : <button type="button" className="rl-btn rl-go" disabled={!!bad} title={bad || undefined}
-            onClick={run(() => approve(r, ctx), true)}>{tr(r.mode === 'update' ? 'pm_ib_update' : 'pm_ib_approve')}</button>}
+            onClick={run(() => approve(r, ctx), true)}>{tr(r.mode === 'update' ? 'ib_update' : 'ib_approve')}</button>}
       {r.mode !== 'checked' && <button type="button" className="rl-btn rl-danger" onClick={run(async () => {
         const ch = { status: 'discarded', decidedAt: now() }
-        await save(ctx, r, ch, tr('pm_ib_discarded'))
+        await save(ctx, r, ch, tr('ib_discarded'))
         return ch
-      }, true)}>{tr('pm_ib_discard')}</button>}
+      }, true)}>{tr('ib_discard')}</button>}
       {r.match?.id && !row && open}
     </span>
   )

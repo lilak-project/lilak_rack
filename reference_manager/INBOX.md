@@ -1,6 +1,6 @@
 # reference_manager — 받은 것을 들이는 길 (계획)
 
-새 reference를 만드는 일과 이미 있는 것과 합치는 일을 **project_manager의 inbox**로
+새 reference를 만드는 일과 이미 있는 것과 합치는 일을 **inbox 서비스**로
 보내자는 계획. 아직 만들지 않았다. 설계 노트이지 할 일 목록이 아니다.
 
 ## 왜 inbox인가
@@ -12,7 +12,7 @@
 - note의 zip import — 공저자 원고의 `reference.bib`에서 **키 개수만 센다.**
 - 손으로 입력 — 라이브러리를 눈으로 뒤져보고 없으면 새로 만든다.
 
-inbox는 이 모양을 이미 갖고 있다 (`project_manager/src-lilak/inbox.jsx`): **후보**
+inbox는 이 모양을 이미 갖고 있다 (`inbox/src-lilak/inbox.jsx`, 2026-11까지 project_manager 안에 있었다): **후보**
 레코드 하나에 `target`(어느 서비스), `match: {id}`(이미 있는 레코드를 가리키면),
 `mode`(`update` · `checked`), 상태(`waiting` → `approved` · `checked` · `discarded`).
 버튼은 [예]가 그 서비스의 API로 **만들고**, [업데이트]가 채워진 칸만 **덮고**,
@@ -86,7 +86,7 @@ why     aliases | handle | 같은 성과 머리글자
 **둘.** note의 zip import가 `reference.bib`를 읽어 `sameWork`로 가른다:
 "15개 중 11개는 이미 있습니다(DOI 일치) · 4개 새로". 아직 inbox는 없이, 보고만.
 
-**셋.** 그 4개를 **inbox 후보로** 넣는다. 여기서 project_manager의 `target`에
+**셋.** 그 4개를 **inbox 후보로** 넣는다. 여기서 inbox의 `target`에
 `reference`가 는다.
 
 **넷.** 저자 — `ref` 없는 철자를 세는 화면, 그 다음 같은 inbox의 `target: 'author'`.

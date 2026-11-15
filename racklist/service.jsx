@@ -751,7 +751,12 @@ function RackList({ def: declared, slots = {} }) {
             const r = items.find((x) => idOf(x) === id)
             if (r) panes.step(etab.id, { id: `item:${id}`, kind: 'item', who: id, occ, label: labelOf(def, r) })
           }}
-          actions={def.item.actions ? (f, setF) => def.item.actions(f, setF, ctx) : itemButtons(def, ctx, doc)}
+          // As a class editor's (below): the document, the record, and a close that may show another editor instead.
+          actions={def.item.actions ? (f, setF) => def.item.actions(f, setF, { ...ctx, doc, rec, close: (then) => {
+            panes.close(etab.id)
+            const t = panes.tabs.find((x) => x.id === then)
+            if (t) panes.open(t)
+          } }) : itemButtons(def, ctx, doc)}
           onCreated={(r) => { panes.close(etab.id); openItem(idOf(r), r) }}
           onDeleted={(r) => {
             panes.close(etab.id)
