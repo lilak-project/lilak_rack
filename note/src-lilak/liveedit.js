@@ -2,7 +2,7 @@ import { EditorView, Decoration, WidgetType } from '@codemirror/view'
 import { EditorState, StateEffect, StateField } from '@codemirror/state'
 import { autocompletion, completionStatus, CompletionContext, pickedCompletion, startCompletion } from '@codemirror/autocomplete'
 import { keymap } from '@codemirror/view'
-import { authorsFor, choicesFor, citesFor, projectsFor, projText } from './marks.js'
+import { authorsFor, choicesFor, citesFor, jobsFor, projectsFor, projText } from './marks.js'
 
 /** What typing does in the source editor.
  *
@@ -72,11 +72,26 @@ const imeKeep = EditorView.updateListener.of((u) => {
   if (u.transactions.some((tr) => !tr.docChanged && tr.isUserEvent('select'))) setTimeout(() => startCompletion(u.view), 0)
 })
 
+/** `::` and a letter offers jobboard's jobs by recipe, title or id; the short
+ *  id goes in. It waits for the letter: `a[::2]` and `TH1::` never ask, and a
+ *  bare `::` is not yet a question. */
+const JOB_HEAD = /(?:^|[\s(])::[^\s()[\]{}'"]+$/
+const jobs = (ctx) => {
+  const before = ctx.matchBefore(JOB_HEAD)
+  if (!before) return null
+  const where = before.text.indexOf('::')
+  const options = jobsFor(before.text.slice(where + 2)).map((j) => ({
+    label: j.name || j.short, apply: j.short, type: 'keyword', detail: [j.short, j.at, j.title].filter(Boolean).join(' · '),
+  }))
+  return options.length ? { from: before.from + where + 2, options, filter: false, update: (_c, _f, _t, c) => jobs(c) } : null
+}
+
 const SOURCES = [
   (ctx) => names(ctx, TAG_HEAD, '#', choicesFor, true),
   // a project is offered by its name and written as one word (projText)
   (ctx) => names(ctx, PROJ_HEAD, '+', projectsFor, false, projText),
   people,
+  jobs,
 ]
 
 /** Enter on a syllable still being composed: Safari spends the key on
@@ -263,7 +278,19 @@ class Calendar extends WidgetType {
       e.preventDefault()
       e.stopPropagation()
     })
-    setTimeout(() => box.focus(), 0)
+    // Focus gone somewhere else on the page (the title, a tool) — the question
+    // was left unanswered, so it goes. Later, not here: this also fires as the
+    // widget is taken down mid-update, and a dispatch there throws.
+    box.addEventListener('focusout', (e) => {
+      if (!e.relatedTarget || spot.contains(e.relatedTarget)) return
+      setTimeout(() => { if (view.state.field(calendar, false)) view.dispatch({ effects: askDate.of(null) }) }, 0)
+    })
+    setTimeout(() => {
+      // Past the editor's right edge (a `>>` at the end of a long line, a
+      // narrow pane): open to the left of the spot instead.
+      if (box.getBoundingClientRect().right > view.scrollDOM.getBoundingClientRect().right) box.classList.add('nt-cal-left')
+      box.focus()
+    }, 0)
     return spot
   }
   ignoreEvent() { return true }
@@ -273,8 +300,14 @@ const calendar = StateField.define({
   create: () => null,
   update(spot, tr) {
     for (const e of tr.effects) if (e.is(askDate)) return e.value
-    if (spot == null) return null
-    return tr.docChanged ? null : spot
+    if (spot == null || tr.docChanged) return null
+    // The caret leaving it (a press or a key somewhere else in the note) shuts it
+    // too: an edit elsewhere is not an answer, and it would otherwise hang there.
+    if (tr.selection) {
+      const head = tr.selection.main.head
+      if (head < spot.at || head > spot.to) return null
+    }
+    return spot
   },
   provide: (f) => EditorView.decorations.from(f, (spot) => (spot == null ? Decoration.none
     : Decoration.set([Decoration.widget({

@@ -34,10 +34,10 @@ export function useRackMenu(key) {
 }
 
 /** One section of the menu — one kind of thing — or nothing when it has none. */
-export function MenuRow({ title, children }) {
+export function MenuRow({ title, extra = false, children }) {
   const any = [children].flat(Infinity).some((c) => c !== false && c != null && c !== '')
   return any ? (
-    <div className="rl-menu-row">
+    <div className={`rl-menu-row${extra ? ' rl-menu-extra' : ''}`}>
       {title && <b className="rl-menu-t">{title}</b>}
       <div className="rl-menu-btns">{children}</div>
     </div>

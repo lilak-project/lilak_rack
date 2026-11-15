@@ -46,9 +46,9 @@ describe('the figure bar', () => {
     expect(bars(v)).toBe(1)
     v.destroy()
   })
-  it('gives the text back through 편집 alone, and folds it again when the caret leaves', () => {
+  it('gives the text back through its figure number alone, and folds it again when the caret leaves', () => {
     const v = view(DOC)
-    press(button(v, 'nt-fig-edit'))
+    press(button(v, 'nt-fig-n'))
     expect(bars(v)).toBe(0)
     expect(v.state.selection.main.head).toBe(DOC.indexOf(']]') + 2)
     // the picture is still under the line while the text is being edited

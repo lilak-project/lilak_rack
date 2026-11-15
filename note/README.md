@@ -136,6 +136,23 @@ cd ~/web_service/note
 LILAK_UI_PATH=~/web_service/lilak_ui npx vite build
 ```
 
+## 녹음 → 받아쓰기
+
+도구 → 녹음 탭과 원문 막대의 `● 녹음`. 말하는 동안 몇 초마다 끊어서 이 호스트의
+whisper.cpp(large-v3-turbo)로 받아쓰고, 노트에 이어서 넣는다. 음성은 호스트 밖으로
+나가지 않는다.
+
+받아쓰기에 필요한 것은 **코드와 같이 오지 않는다**: whisper.cpp(`whisper-cli`),
+ffmpeg, 모델 파일(1.6GB). 기기마다 한 번 실행한다.
+
+```bash
+sh note/setup-whisper.sh            # 데이터 폴더가 다르면: sh note/setup-whisper.sh /path/to/data
+```
+
+맥은 Homebrew로 설치하고 모델을 `data/note/models/`에 받는다. 리눅스는 무엇을
+설치할지 알려 준다. 모델이 다른 곳에 있으면 `NOTE_WHISPER_MODEL`. 준비가 안 된
+서버에서는 녹음 버튼이 꺼지고, 녹음 탭이 빠진 것과 이 명령을 보여 준다.
+
 ## 아직 없는 것
 
 - 한 화면에 몇 개까지 볼지 / 페이지 넘기기 (지금은 전부 한 표에 — 조밀해서 수백

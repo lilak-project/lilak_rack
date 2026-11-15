@@ -16,7 +16,14 @@ A discard is dropped after DISCARD_KEEP_DAYS. The list is kept undecided first,
 then newest mail.
 
 The mail's text stays in the imported file, out of the document every page load
-carries; a manager's page asks for it (GET /api/inbox/{id}/mail).
+carries; a page asks for it (GET /api/inbox/{id}/mail).
+
+What shows the inbox elsewhere (the portal's Home and account menu) knows no
+candidate's fields: GET /api/pending gives each waiting one as a card (approve.py),
+GET /api/inbox/{id} what opening it shows, and POST /api/inbox/{id}/decide takes
+the decision — making the record is done here, for the person deciding. Each
+share set has an inbox project of its own, open to whoever is in the set
+(the portal's permissions.follows_its_set).
 
 A manager may write `feedback` on a candidate: how such a mail should have been
 handled. Once decided it goes, with the candidate as it stood, onto
@@ -34,8 +41,10 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
-from lilak_portal_auth import manager
+from fastapi import Body, Depends, FastAPI, HTTPException, Request
+from lilak_portal_auth import signed_in
+
+import approve as ap
 
 from rackstore.store import Document, mount_spa
 
@@ -133,19 +142,86 @@ if os.environ.get("INBOX_TIMER", "1") != "0":
 
 
 @app.get("/api/badge")
-def badge(_: dict = Depends(manager)) -> dict:
+def badge(_: dict = Depends(signed_in)) -> dict:
     """The number on this service's icon: the candidates still to be decided."""
     return {"count": sum(1 for c in DOC.read().get("inbox") or [] if c.get("status", "waiting") == "waiting")}
 
 
+def _mail(cid: str) -> str:
+    p = DROP / "imported" / f"{cid}.json"
+    src = json.loads(p.read_text(encoding="utf-8")).get("source") or {} if p.is_file() else {}
+    return str(src.get("text") or "")
+
+
+def _one(cid: str) -> dict:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", cid):
+        raise HTTPException(404, "그 후보가 없습니다.")
+    hit = next((c for c in DOC.read().get("inbox") or [] if str(c.get("id")) == cid), None)
+    if not hit:
+        raise HTTPException(404, "그 후보가 없습니다.")
+    return copy.deepcopy(hit)
+
+
 @app.get("/api/inbox/{cid}/mail")
-def inbox_mail(cid: str, _: dict = Depends(manager)) -> dict:
+def inbox_mail(cid: str, _: dict = Depends(signed_in)) -> dict:
     """The mail a candidate came from, as the task copied it ('' from before it did)."""
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", cid):
         raise HTTPException(404, "그 후보가 없습니다.")
-    p = DROP / "imported" / f"{cid}.json"
-    src = json.loads(p.read_text(encoding="utf-8")).get("source") or {} if p.is_file() else {}
-    return {"text": str(src.get("text") or "")}
+    return {"text": _mail(cid)}
+
+
+@app.get("/api/pending")
+def pending(_: dict = Depends(signed_in)) -> dict:
+    """The candidates still to be decided, oldest decision first as the list keeps them, as cards."""
+    waiting = [c for c in DOC.read().get("inbox") or [] if c.get("status", "waiting") == "waiting"]
+    return {"count": len(waiting), "items": [ap.card(c) for c in waiting]}
+
+
+@app.get("/api/decided")
+def decided(limit: int = 50, _: dict = Depends(signed_in)) -> dict:
+    """What was decided, the latest decision first, as cards (a discard keeps DISCARD_KEEP_DAYS)."""
+    done = [c for c in DOC.read().get("inbox") or [] if c.get("status", "waiting") != "waiting"]
+    done.sort(key=lambda c: str(c.get("decidedAt") or ""), reverse=True)
+    return {"count": len(done), "items": [ap.card(c) for c in done[:max(1, min(limit, 500))]]}
+
+
+@app.get("/api/inbox/{cid}")
+def inbox_detail(cid: str, request: Request, _: dict = Depends(signed_in)) -> dict:
+    """One candidate opened: its card, and what it makes (an update: before and after), the remark, the mail."""
+    c = _one(cid)
+    return {**ap.card(c), "sections": ap.detail(c, request.headers.get("authorization", ""), _mail(cid))}
+
+
+DECISION = {"check": "checked", "discard": "discarded", "restore": "waiting"}
+
+
+@app.post("/api/inbox/{cid}/decide")
+def decide(cid: str, request: Request, body: dict = Body(...), _: dict = Depends(signed_in)) -> dict:
+    """approve / update (make it where it goes), check, discard or restore — what the card's actions offered."""
+    act = str(body.get("action") or "")
+    c = _one(cid)
+    if act not in ap.actions(c):
+        raise HTTPException(409, "이 후보에 지금 할 수 없는 일입니다.")
+    now = datetime.now().astimezone().isoformat(timespec="seconds")
+    if act in ("approve", "update"):
+        try:
+            # ponytail: made outside the lock (a service call may take seconds); two people
+            # approving the same candidate at once could make it twice.
+            change = {"status": "approved", "decidedAt": now, "made": ap.approve(c, request.headers.get("authorization", ""))}
+        except ap.Refused as e:
+            raise HTTPException(502, str(e)) from None
+    else:
+        change = {"status": DECISION[act], "decidedAt": "" if act == "restore" else now,
+                  **({"made": None} if act == "restore" else {})}
+    with DOC.lock:
+        cur = DOC.read()
+        inbox = copy.deepcopy(cur.get("inbox") or [])
+        for x in inbox:
+            if str(x.get("id")) == cid:
+                x.update(change)
+                c = x
+        DOC.write({**cur, "inbox": _order(inbox)}, "inbox", replaces=cur)
+    return ap.card(c)
 
 
 # Must stay last: the catch-all would shadow /api/*.

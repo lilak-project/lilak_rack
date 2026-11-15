@@ -378,6 +378,28 @@ export const setProjChoices = (names) => {
   heard.forEach((fn) => fn())
 }
 
+// ── `::219c0f` — a job (jobboard's), by the last six hex of its id ─────────
+// Not the tag rule: an id can be all digits (`::220405`), and `::` sits in
+// C++ names (`TH1::Fill`) and slices (`a[::2]`), which the space in front and
+// the six hex after keep out. Only a job jobboard has is one.
+export const JOB_RE = /(^|[\s(])::([0-9a-f]{6})(?![0-9A-Za-z])/g
+let JOBS = new Map()
+const jobsHeard = new Set()
+export const onJobChoices = (fn) => { jobsHeard.add(fn); return () => jobsHeard.delete(fn) }
+/** [{ id, name, title, at }] — the short id is the end of the id, as jobboard's ticket shows it. */
+export const setJobChoices = (list) => {
+  JOBS = new Map((list || []).map((j) => [String(j.id).split('-').pop().slice(-6), j]))
+  jobsHeard.forEach((fn) => fn())
+}
+export const jobOf = (short) => JOBS.get(short) || null
+/** What `::ihm` offers: jobs whose recipe, title or short id has it, latest first. */
+export const jobsFor = (q) => {
+  const k = String(q).toLowerCase()
+  return [...JOBS].filter(([short, j]) => [short, j.name, j.title].some((x) => String(x || '').toLowerCase().includes(k)))
+    .sort(([, a], [, b]) => String(b.at || '').localeCompare(String(a.at || '')))
+    .slice(0, 8).map(([short, j]) => ({ short, ...j }))
+}
+
 // ── who `@` offers ────────────────────────────────────────────────────────
 // A person is offered by BOTH their names and shown with the other one and
 // their address, so two people of one name are still told apart on the menu.

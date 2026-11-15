@@ -16,6 +16,8 @@ import { tr } from 'lilak-ui/i18n.jsx'
  *       key: 'activities', noun: '활동',          // the document's list, and what one is called
  *       label: 'title',                           // a field name, or (rec) => string
  *       order: { k: 'date', dir: -1 },            // before a column is pressed
+ *       clone: false,                             // no clone button (records made elsewhere)
+ *       lock: (rec) => !!rec.jobId,               // these cannot be deleted here, alone or picked
  *       fields: [
  *         { k: 'title', label: '제목', type: 'text', col: 320 },
  *         { k: 'date',  label: '날짜', type: 'date', col: 96 },

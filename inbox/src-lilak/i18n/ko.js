@@ -1,4 +1,5 @@
 export default {
+  ib_not_saved: "고친 내용을 먼저 저장하지 못했습니다",
   ib_title_col: "제목",
   ib_unit: "건",
   ib_title: "받은편지함",

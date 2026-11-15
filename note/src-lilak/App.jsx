@@ -11,18 +11,19 @@
  * rackstore), the editor, a PDF, the to-dos tab, daily · templates · print.
  */
 import './strings.js'
-import { api, ask, fileSrc, kb, noteQ, openTab, putFile } from './api.js'
+import { api, ask, fileSrc, kb, noteQ, openTab, openWindow, putFile } from './api.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  RackService, RackTable, RackRow, RackActions, useRackKeys, FAV, bumpSort, byKeys, PORTAL_BASE, brandStyle,
+  RackService, RackTable, RackRow, RackActions, useRackKeys, useReloadKey, FAV, bumpSort, byKeys, PORTAL_BASE, brandStyle,
   projectKey, load, authHeaders, tagKey, tagWithin, mergeTags as tagCounts, useTagSources, uniqueTags, useProjects,
   useReferences, useAuthors, save, addReference, referenceDoc, bibText,
 } from 'racklist'
-import { numberHeadings, TAG_RE, TAG_COMMENT, URGENT_RE, outsideCode, replaceOutsideCode, untagged, setTagChoices, setProjChoices, setCiteChoices, setAuthorChoices, authorShow } from './marks.js'
+import { linkProject, remoteDocOf } from 'racklist/portal.js'
+import { numberHeadings, TAG_RE, TAG_COMMENT, URGENT_RE, outsideCode, replaceOutsideCode, untagged, setTagChoices, setProjChoices, setCiteChoices, setAuthorChoices, setJobChoices, authorShow } from './marks.js'
 import SourceArea from './SourceArea.jsx'
 import { wrapSel } from './liveedit.js'
 import { Rendered } from './reading.jsx'
-import { DeckMeasure, SlideShow, enterFull, gapBefore, slideH } from './slides.jsx'
+import { DeckMeasure, SlidePrint, SlideShow, enterFull, gapBefore, slideH } from './slides.jsx'
 import { toolsFor } from './tools/index.js'
 import { flowItems, noteSteps, noteFlow, joinFlow } from './flow.js'
 import { press } from './tools/press.js'
@@ -140,9 +141,9 @@ const late = (t) => !t.done && !!t.due && t.due < new Date().toISOString().slice
 const isSystemTodo = (t) => (t.tags || []).some((x) => tagKey(x) === 'system')
 
 const TODO_SCOPES = [
-  { k: 'open', label: tr("nt_open"), is: (t) => !t.done },
-  { k: 'all', label: tr("nt_all"), is: () => true },
-  { k: 'done', label: tr("nt_finished"), is: (t) => t.done },
+  { k: 'open', short: () => tr("nt_open"), hint: () => tr("nt_todo_open_hint"), is: (t) => !t.done },
+  { k: 'all', short: () => tr("nt_all"), hint: () => tr("nt_todo_all_hint"), is: () => true },
+  { k: 'done', short: () => tr("nt_finished"), hint: () => tr("nt_todo_done_hint"), is: (t) => t.done },
 ]
 
 
@@ -154,6 +155,13 @@ function useProjectChoices() {
   const people = useAuthors()
   useMemo(() => setProjChoices(projects.map((p) => p.name)), [projects])
   useMemo(() => setAuthorChoices(people), [people])
+  // jobboard's jobs, for `::219c0f`: once per page, from its main project.
+  useEffect(() => {
+    const proj = linkProject('jobboard')
+    if (proj) remoteDocOf('jobboard', proj)
+      .then((d) => setJobChoices((d?.jobs || []).map((j) => ({ id: j.id, name: j.recipe || j.title || '', title: j.title || '', at: `${j.date || ''} ${j.time || ''}`.trim() }))))
+      .catch(() => {})
+  }, [])
 }
 
 /** The tags `#` offers: every service's that shares them (note's own among
@@ -376,21 +384,21 @@ const hasTag = (tag) => (n) => tagsOf(n).some((t) => tagWithin(t, tag))
 const isAgentNote = hasTag('agent')
 const WHO_ICON = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.3, strokeLinejoin: 'round', strokeLinecap: 'round' }
 const WHO = [
-  { k: 'all', is: () => true, label: () => tr("nt_who_all"), short: () => tr("nt_all"),
+  { k: 'all', is: () => true, label: () => tr("nt_who_all"), short: () => tr("nt_all"), hint: () => tr("nt_who_all_hint"),
     icon: <path d="M5 7.5v6.5H2V7.5zM5 7.5 8.2 1.8c1 0 1.8.8 1.8 1.9V6.5h3.2c.9 0 1.5.8 1.3 1.7l-1 4.5c-.2.8-.8 1.3-1.6 1.3H5" /> },
-  { k: 'people', is: (n) => !isAgentNote(n), label: () => tr("nt_who_people"), short: () => tr("nt_people"),
+  { k: 'people', is: (n) => !isAgentNote(n), label: () => tr("nt_who_people"), short: () => tr("nt_people"), hint: () => tr("nt_who_people_hint"),
     icon: <><circle cx="8" cy="5" r="3" /><path d="M2.5 14.5C3.1 11.5 5.3 10 8 10s4.9 1.5 5.5 4.5" /></> },
-  { k: 'agent', is: isAgentNote, label: () => tr("nt_who_agent"), short: () => tr("nt_short_agent"),
+  { k: 'agent', is: isAgentNote, label: () => tr("nt_who_agent"), short: () => tr("nt_short_agent"), hint: () => tr("nt_who_agent_hint"),
     icon: <><rect x="1.5" y="2.5" width="13" height="9" rx="1" /><path d="M8 11.5v3M5 14.5h6" /></> },
 ]
 /** What kind of note, the same way round: everything, the `#daily`, the `#summary`.
  *  It adds to whose: a `#summary` is `#agent/summary` too, so "the person's" hides it. */
 const KIND = [
-  { k: 'all', is: () => true, label: () => tr("nt_kind_all"), short: () => tr("nt_all"),
+  { k: 'all', is: () => true, label: () => tr("nt_kind_all"), short: () => tr("nt_all"), hint: () => tr("nt_kind_all_hint"),
     icon: <><path d="M3 1.5h7l3 3v10H3z" /><path d="M10 1.5v3h3" /></> },
-  { k: 'daily', is: hasTag('daily'), label: () => tr("nt_kind_daily"), short: () => tr("nt_short_daily"),
+  { k: 'daily', is: hasTag('daily'), label: () => tr("nt_kind_daily"), short: () => tr("nt_short_daily"), hint: () => tr("nt_kind_daily_hint"),
     icon: <><rect x="1.5" y="3" width="13" height="11.5" rx="1" /><path d="M1.5 6.5h13M5 1.5V4M11 1.5V4" /></> },
-  { k: 'summary', is: hasTag('summary'), label: () => tr("nt_kind_summary"), short: () => tr("nt_short_summary"),
+  { k: 'summary', is: hasTag('summary'), label: () => tr("nt_kind_summary"), short: () => tr("nt_short_summary"), hint: () => tr("nt_kind_summary_hint"),
     icon: <path d="M2 3.5h12M2 8h8M2 12.5h5" /> },
 ]
 /** One of those, in the title bar: pressing it goes on to the next. */
@@ -402,14 +410,18 @@ function NoteCycle({ list, now, set }) {
     </button>
   )
 }
-/** The same, in the open menu: every choice in sight. */
-function NoteChoice({ list, now, set }) {
+/** The same, in the open menu: every choice in sight, under a name that says
+ *  what the three are choosing between — "All · Mine · Agent" alone does not. */
+function NoteChoice({ title, list, now, set }) {
   return (
-    <span className="rl-seg">
-      {list.map((x) => (
-        <button key={x.k} type="button" className={`rl-btn${x === now ? ' on' : ''}${x.short().length > 6 ? ' rl-seg-long' : ''}`} onClick={() => set(x.k)}>{x.short()}</button>
-      ))}
-    </span>
+    <div className="nt-choice" data-keep>
+      <span className="nt-choice-t">{title}</span>
+      <span className="rl-seg">
+        {list.map((x) => (
+          <button key={x.k} type="button" title={x.hint?.()} className={`rl-btn${x === now ? ' on' : ''}${x.short().length > 6 ? ' rl-seg-long' : ''}`} onClick={() => set(x.k)}>{x.short()}</button>
+        ))}
+      </span>
+    </div>
   )
 }
 
@@ -461,8 +473,8 @@ export default function App() {
     keepOn: who.k !== 'all' || kind.k !== 'all',
     keepTools: () => (
       <>
-        <NoteChoice list={KIND} now={kind} set={setKindK} />
-        <NoteChoice list={WHO} now={who} set={setWhoK} />
+        <NoteChoice title={tr("nt_choice_kind")} list={KIND} now={kind} set={setKindK} />
+        <NoteChoice title={tr("nt_choice_who")} list={WHO} now={who} set={setWhoK} />
       </>
     ),
     barTools: () => (
@@ -526,7 +538,7 @@ export default function App() {
  *  the one thing a JS pdf library makes hard and a print dialog makes free. */
 function preview(ids, say) {
   if (!ids.length) { say(tr("nt_pick_note")); return }
-  openTab(`${PORTAL_BASE}/?print=${ids.join(',')}`)
+  openWindow(`${PORTAL_BASE}/?print=${ids.join(',')}`)
 }
 
 /** A new note from a template, made and opened. Parked in the toolbox's
@@ -583,10 +595,10 @@ async function saveTemplate(a, name, body) {
 /** note's own line in the ⋯: today's note, and, on the to-dos tab, which of
  *  them it shows. Printing and templates live in the toolbox (`공용`). */
 function TodoScopes({ a, tscope, setTscope }) {
-  return (a.tab?.id === 'todos' || a.tab?.id === 'system') && TODO_SCOPES.map((x) => (
-    <button key={x.k} type="button" data-keep className={`rl-btn${tscope === x.k ? ' on' : ''}`}
-      onClick={() => setTscope(x.k)}>{x.label}</button>
-  ))
+  return (a.tab?.id === 'todos' || a.tab?.id === 'system') && (
+    <NoteChoice title={tr("nt_choice_todo")} list={TODO_SCOPES}
+      now={TODO_SCOPES.find((x) => x.k === tscope) || TODO_SCOPES[0]} set={setTscope} />
+  )
 }
 
 /** The to-dos: every GFM checkbox in every note, read by the server. A press
@@ -677,6 +689,7 @@ const putNote = (id, baseVersion, v, o) => ask(`/notes/${encodeURIComponent(id)}
  *  opens as a tab of its own (an activity's note, beside the activity). Its
  *  cancel has no list to go back to; a note deleted here says so. */
 export function SoloNote({ id }) {
+  useReloadKey()
   // Opened inside another service, this window is the whole app: what `#` and
   // `+` offer has to be asked for here too, since there is no list to do it.
   useTagChoices()
@@ -711,7 +724,7 @@ export function SoloNote({ id }) {
       {gone ? <p className="rl-msg">{tr("nt_deleted")}</p> : (
         <Editor id={id} say={say} onClosed={closed} onSaved={reload}
           flow={notes ? { notes, reload, open: to, step: to } : null}
-          onPrint={() => openTab(`${PORTAL_BASE}/?print=${encodeURIComponent(id)}`)} />
+          onPrint={() => openWindow(`${PORTAL_BASE}/?print=${encodeURIComponent(id)}`)} />
       )}
       {said && <div className="rl-hint nt-solo-note">{said}</div>}
     </div>
@@ -1566,15 +1579,39 @@ export function PrintView({ ids }) {
       .then(setNotes)
       .catch(() => setNotes([]))
   }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+  const [busy, setBusy] = useState('')
   if (!notes) return <p className="nt-print-msg">{tr("nt_loading")}</p>
   if (!notes.length) return <p className="nt-print-msg">{tr("nt_read_failed")}</p>
+  // A deck alone has a second way out: a PDF the server's Chrome makes, on
+  // paper the slides' size — which Safari's own printer will not do.
+  const deck = notes.length === 1 && notes[0].fields?.mode === 'slide' && !texNote(notes[0]) ? notes[0] : null
+  const download = async () => {
+    setBusy(tr("nt_slides_pdf_busy"))
+    try {
+      const r = await api(`/slides/${encodeURIComponent(deck.id)}`)
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.status)
+      // A backend from before this route answers with the app's own page.
+      if (!(r.headers.get('content-type') || '').includes('pdf')) throw new Error(tr("nt_slides_pdf_old"))
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(await r.blob())
+      a.download = `${deck.title || deck.id}.pdf`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000)
+      setBusy('')
+    } catch (e) { setBusy(String(e.message || e)) }
+  }
   return (
     <div className="nt-print">
       <div className="nt-print-bar">
         <button type="button" onClick={() => window.print()}>{tr("nt_print_save_pdf")}</button>
-        <span>{tr("nt_print_hint")}</span>
+        {deck ? <button type="button" disabled={busy === tr("nt_slides_pdf_busy")} title={tr("nt_slides_pdf_hint")}
+          onClick={download}>{tr("nt_slides_pdf")}</button> : null}
+        <span>{busy || (deck ? tr("nt_slides_pdf_hint") : tr("nt_print_hint"))}</span>
       </div>
-      {notes.map((n) => (
+      {notes.map((n) => n.fields?.mode === 'slide' && !texNote(n) ? (
+        <SlidePrint key={n.id} title={n.title} body={headed(n)} ratio={n.fields.ratio}
+          only={notes.every((m) => m.fields?.mode === 'slide' && !texNote(m) && slideH(m.fields.ratio) === slideH(n.fields.ratio))} />
+      ) : (
         <article key={n.id} className="nt-sheet">
           <h1>{n.title}</h1>
           {/* The tags are in the body, drawn as tags — repeating them here

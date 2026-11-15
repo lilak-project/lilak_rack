@@ -1,3 +1,4 @@
+import Select from 'lilak-ui/components/Select.jsx'
 import '../strings.js'
 import { useState } from 'react'
 import { RackField } from 'racklist'
@@ -141,11 +142,11 @@ function Body({ note, setNote, go, keep, where, read, slide, print, say, ask, ta
           {/* A template is a note in `templates/`, so this list is a folder
               listing and nothing more. */}
           {make.templates.length ? (
-            <select className="rl-in rl-pick" value=""
+            <Select className="rl-in rl-pick" value=""
               onChange={(e) => { if (e.target.value) make.from(e.target.value) }}>
               <option value="">{tr("nt_from_template")}</option>
               {make.templates.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
+            </Select>
           ) : <span className="rl-hint">{tr("nt_tmpl_none")}</span>}
         </RackField>
         <Keep make={make} say={say} />

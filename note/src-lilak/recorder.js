@@ -91,7 +91,8 @@ export function askReady() {
   if (asked) return
   asked = true
   // `ready: true` and nothing else: a server from before this answers the page.
-  api('/record').then((r) => r.json()).then((j) => set({ ready: j?.ready === true })).catch(() => set({ ready: false }))
+  api('/record').then((r) => r.json()).then((j) => set({ ready: j?.ready === true, setup: j?.ready === false ? j : null }))
+    .catch(() => set({ ready: false }))
 }
 
 /** The service's notice line, as the last editor gave it. */

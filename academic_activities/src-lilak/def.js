@@ -35,6 +35,8 @@ const noteTodos = async () => {
     return todos.filter((t) => t.due).sort((a, b) => named(a) - named(b)).map((t) => ({
       id: `todo:${t.id}:${t.line}`, feed: tr(named(t) ? 'aa_todos_named' : 'aa_todos'), color: named(t) ? '#a21caf' : color || '#365944',
       title: untagged(t.text), start: t.due, location: t.title, done: t.done, urgent: !!t.urgent,
+      // What the calendar's tag filter reads: the title has lost its #tags above.
+      tags: t.tags || [],
       toggle: (done) => fetch(`${NOTE()}/api/todos`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ id: t.id, line: t.line, done, text: t.text }),
@@ -57,7 +59,7 @@ const noteTodos = async () => {
 // 참여 형태; each group allows some of them.
 const ROLES = ['oral', 'poster', 'contribution', 'corresponding author', 'attend', 'online', 'absence', 'chair',
   'spokesperson', 'co-spokesperson', 'core', 'setup', 'shift', 'software']
-const COMMON = ['kind', 'name', 'start', 'startTime', 'end', 'endTime', 'repeat', 'series', 'seriesDate', 'chain', 'link', 'key', 'folder', 'note', 'comment']
+const COMMON = ['kind', 'name', 'start', 'startTime', 'end', 'endTime', 'repeat', 'series', 'seriesDate', 'chain', 'link', 'key', 'folder', 'note', 'comment', 'tags']
 const TALK = ['place', 'online', 'onlineLink', 'role', 'title', 'talkDate', 'talkTime', 'host', 'tripKind', 'tripStart', 'tripEnd']
 const GROUPS = [
   { label: tr('aa_g_academic'), color: '#2f6fde', fields: [...TALK, 'papers', 'submitDate'],
@@ -219,6 +221,10 @@ export default {
   ],
   // The calendar tab: one bar per activity in its group's colour — the trip
   // light gray, 행사 시작~끝 light, 발표일자 underlined by a band.
+  // Stored in Seoul time, as Google sync writes it; read and written in the zone
+  // the calendar's menu chooses (racklist zone.js). A day with no time stays put.
+  zone: { home: 'Asia/Seoul', pairs: [['start', 'startTime'], ['end', 'endTime', 'start'], ['talkDate', 'talkTime', 'start']],
+    repeat: 'repeat', series: 'series', seriesDate: 'seriesDate' },
   calendar: {
     start: 'start', end: 'end', mark: 'talkDate', submit: 'submitDate',
     repeat: 'repeat', series: 'series', seriesDate: 'seriesDate',

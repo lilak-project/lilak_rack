@@ -1,3 +1,4 @@
+import Select from 'lilak-ui/components/Select.jsx'
 import './strings.js'
 import { useEffect, useState } from 'react'
 import { PORTAL_BASE, authHeaders } from './portal.js'
@@ -164,10 +165,10 @@ function FolderRow({ name, ctx, field }) {
               setBusy(false)
             }}>{tr("rk_make_folder")}</button>
             {orphans.length > 0 && (
-              <select className="rl-in" value="" onChange={(e) => setCand(e.target.value)}>
+              <Select className="rl-in" value="" onChange={(e) => setCand(e.target.value)}>
                 <option value="">{tr("rk_link_existing_folder")}</option>
                 {orphans.map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
+              </Select>
             )}
           </div>
         )}

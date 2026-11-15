@@ -112,7 +112,7 @@ export function RackBulkEditor({ def, doc, ids, ctx = {}, onSave, onCancel, canD
     <div className="rl-edit">
       <RackActions key={ids.join(',')} onSave={save} saveDisabled={!dirty} onCancel={onCancel}
         onRevert={reset} hint={dirty ? '' : tr("rk_only_changed_apply")}
-        onDelete={canDelete ? removeAll : undefined}
+        onDelete={canDelete && !recs.some((r) => def.item.lock?.(r)) ? removeAll : undefined}
         deleteWarn={tr("rk_delete_selected_warn", recs.length, def.unit)} />
       <div className="rl-rec">
         <RackField label={tr("rk_targets")}>

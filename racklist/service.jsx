@@ -1,9 +1,11 @@
+import Select from 'lilak-ui/components/Select.jsx'
+import './theme.js'
 import './strings.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RackTable, RackRow, RackTabs } from './table.jsx'
 import { RackFrame } from './frame.jsx'
 import { RackPaneStrip, RackPaneTools, paneLayout, paneStyles, useTabSpread, FULL } from './panes.jsx'
-import { RackBar } from './bar.jsx'
+import { RackBar, useReloadKey } from './bar.jsx'
 import { RackMenu, RackRail, MenuRow, useRackMenu } from './menu.jsx'
 import { PaneFind } from './panefind.jsx'
 import { RackCalendar } from './calendar.jsx'
@@ -14,11 +16,12 @@ import { FilterBar, FacetRows, useFacetFilter } from './filter.jsx'
 import { RackListing } from './listing.jsx'
 import { RackItemEditor, cloneOf } from './editor.jsx'
 import { chainKey, flowFor } from './chain.js'
+import { zoneView, useZone } from './zone.js'
 import { useMergeMode, RackMergeButtons, RackMerge, RackMoveTags } from './merge.jsx'
 import { RackBulkEditor } from './bulk.jsx'
 import { useRackList } from './list.js'
 import { useRackKeys, useToggleKey } from './hooks.js'
-import { typeOf, NoteEdit } from './types.jsx'
+import { typeOf, NoteEdit, syncNoteFlows } from './types.jsx'
 import { useFolders, RackFolder, RackFilePane, RackSettings, hasRoots } from './files.jsx'
 import { asSorts, bumpSort, bySome, byKeys } from './sort.js'
 import {
@@ -28,7 +31,8 @@ import {
 } from './schema.js'
 import { PORTAL_PROJECT, PORTAL_SERVICE, PROJECT_LINKED, brandStyle, isManager, portalUser, fetchDoc, putDoc, newId, takeOpenRequest, showInCalendar, calAsk, calFilterAsk, load, save, projectKey, serviceColor } from './portal.js'
 import { tr } from 'lilak-ui/i18n.jsx'
-import { tagKey, tagTree, tagWithin, tagRenames, useTagSources, sharedTagRows, useFavTags, renameTagEverywhere, renameTagHere, forgetTagSources, uniqueTags } from './tags.js'
+import { tagKey, tagTree, tagWithin, tagRenames, useTagSources, sharedTagRows, useFavTags, renameTagEverywhere, renameTagHere, forgetTagSources, uniqueTags, useProjects, projectOfTag, saveProject, projectFolder, loadProjectFolders, openProjectFolder } from './tags.js'
+import { RackTagProject } from './tagproject.jsx'
 import { RackTagged, RackTaggedTab, TAGGED_COLS, TAGGED_SORTERS, useTaggedRows } from './tagged.jsx'
 
 /**
@@ -52,6 +56,7 @@ import { RackTagged, RackTaggedTab, TAGGED_COLS, TAGGED_SORTERS, useTaggedRows }
  *   slots.keepOn                 that filter holds something back (the menu says so, shut)
  *   slots.keepTools(api)         its controls in the open menu, where barTools gives way
  *   slots.tabs                   [{ id, label, render(api) }] — tabs of the service's own
+ *                                (`lead: true` puts one before the items and opens on it)
  *   slots.settings(api)          more of the settings tab, under the kit's (a manager's)
  *   slots.views                  { view: (tab, api) => node } — tabs of its own opened on
  *                                demand: api.openTab({ id, kind: 'view', view, label, who? });
@@ -113,6 +118,9 @@ const SOLO = typeof window !== 'undefined' ? new URLSearchParams(window.location
 // The menu's column, as wide as the calendar's head (rack.css .rl-mod-rail sets the
 // width; this is the same sum on the window, for the columns the table gives up).
 const menuWidth = () => (typeof window === 'undefined' ? 0 : 10 + Math.max(120, (window.innerWidth - 20) * 2 / 23))
+// The width the calendar keeps beside an editor; narrower, the editor goes full width.
+// 690: its menu (130px) and seven days of about 75px — the densest it is still read at.
+const CAL_MIN = 690
 const BARE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('bare')
 // A save anywhere on this page's service and project (a solo editor in another
 // service's pane, the list itself) tells every open list of it to read again.
@@ -125,8 +133,13 @@ export function RackService(props) {
 /** One item's editor, alone, the same editor the list opens. Its cancel has no
  *  list to go back to; an item deleted here says so. */
 function RackSolo({ def: declared, id }) {
+  useReloadKey()
   const def = useMemo(() => (declared.docKeys ? declared : defineRack(declared)), [declared])
-  const [doc, setDoc] = useState(null)
+  const [stored, setDoc] = useState(null)
+  // The times as the list's chosen zone reads them (zone.js); an edit goes back to the stored zone.
+  const [zone] = useZone(def)
+  const zv = useMemo(() => zoneView(def, stored, zone), [def, stored, zone])
+  const doc = zv.doc
   const [note, setNote] = useState('')
   const [gone, setGone] = useState(false)
   const remote = useRemoteDocs(def)
@@ -138,6 +151,7 @@ function RackSolo({ def: declared, id }) {
   const commit = useCallback(async (patch, said) => {
     if (!doc) return false
     try {
+      patch = zv.back(patch)
       const r = await putDoc(doc.version, Object.fromEntries(def.docKeys.filter((k) => patch[k] !== undefined).map((k) => [k, patch[k]])))
       if (r.conflict) { if (r.doc) setDoc(r.doc); setNote(tr("rk_changed_meanwhile")); return false }
       setDoc(r.doc)
@@ -145,7 +159,7 @@ function RackSolo({ def: declared, id }) {
       told?.postMessage({ version: r.doc.version, doc: r.doc })
       return true
     } catch (e) { setNote(String(e.message || e)); return false }
-  }, [doc, def, told])
+  }, [doc, def, told, zv])
   const [, of, who] = /^class:([^:]+):(.+)$/.exec(id) || []
   const c = of && def.classes.find((x) => x.k === of && x.stored)
   const rec = c ? (doc?.[of] || []).find((r) => String(r.id) === who)
@@ -163,9 +177,9 @@ function RackSolo({ def: declared, id }) {
     <div className="rl rl-solo" style={brandStyle()}>
       {!doc ? <p className="rl-msg">{note || tr("rk_loading")}</p>
         : gone || !rec ? <p className="rl-msg">{tr("rk_open_target_missing")}</p>
-          : <RackItemEditor key={id} def={def} doc={doc} rec={rec} ctx={ctx} onSave={commit} canDelete={isManager()}
+          : <RackItemEditor key={`${id}:${zone}`} def={def} doc={doc} rec={rec} ctx={ctx} onSave={commit} canDelete={isManager()}
             {...(c ? { fields: c.fields, listKey: c.k, noun: c.noun, cls: c } : {})}
-            onCancel={() => {}} onDeleted={() => setGone(true)}
+            onCancel={() => { if (inPane) toPage({ rackClose: { was: id } }) }} onDeleted={() => setGone(true)}
             actions={c ? undefined : itemButtons(def, ctx, doc)} />}
       {doc && note && <div className="rl-hint rl-solo-note">{note}</div>}
     </div>
@@ -174,24 +188,33 @@ function RackSolo({ def: declared, id }) {
 
 function RackList({ def: declared, slots = {} }) {
   const def = useMemo(() => (declared.docKeys ? declared : defineRack(declared)), [declared])
-  const [doc, setDoc] = useState(null)
+  const [stored, setDoc] = useState(null)
+  // The times as the chosen zone reads them (zone.js, set in the calendar's menu):
+  // everything below sees these, and commit puts an edit back in the stored zone.
+  const [zone, setZone, zones, setZones] = useZone(def)
+  const zv = useMemo(() => zoneView(def, stored, zone), [def, stored, zone])
+  const doc = zv.doc
   const [outOpen, setOutOpen] = useState(false)
+  // A record's flow carries its note along (types.jsx): checked as the records change.
+  useEffect(() => { if (doc && !BARE) syncNoteFlows(def, doc) }, [doc, def])
   const remote = useRemoteDocs(def)
   const [folders, reloadFolders] = useFolders(def)
   const folderField = useMemo(() => def.item.fields.find((f) => f.type === 'folder'), [def])
   const IS_ADMIN = useMemo(() => isManager(), [])
   const ME = useMemo(() => portalUser()?.email || '', [])
-  const FIRST = itemTabId(def)
+  const FIRST = (slots.tabs || []).find((t) => t.lead)?.id || itemTabId(def)
 
   const FIXED = useMemo(() => {
     const [all, ...classTabs] = fixedTabs(def)
+    const slot = (t) => ({ id: t.id, kind: 'slot', label: t.label })
     return [
+      ...(slots.tabs || []).filter((t) => t.lead).map(slot),
       all,
       // A month of the items, when they have dates (def.calendar) — the items
       // again, so beside them.
       ...(def.calendar ? [{ id: 'calendar', kind: 'calendar', label: tr("rk_tab_calendar") }] : []),
       ...classTabs,
-      ...(slots.tabs || []).map((t) => ({ id: t.id, kind: 'slot', label: t.label })),
+      ...(slots.tabs || []).filter((t) => !t.lead).map(slot),
       // What was deleted, and the way back — a manager's, as deleting is.
       // Where the service may read the disk is a manager's to say.
       ...(IS_ADMIN && (hasRoots(def) || slots.settings) ? [{ id: 'settings', kind: 'settings', label: tr("rk_tab_settings") }] : []),
@@ -313,6 +336,7 @@ function RackList({ def: declared, slots = {} }) {
   const commit = useCallback(async (patch, saidAs) => {
     if (!doc) return false
     try {
+      patch = zv.back(patch)
       // Only the keys this edit touched: the store keeps the rest as they are
       // (merge), and a paper's save no longer carries 2,000 authors with it.
       // A source of the service's own (note) still gets the whole document.
@@ -331,7 +355,7 @@ function RackList({ def: declared, slots = {} }) {
       if (window.top !== window) window.top.postMessage({ type: 'lilak:saved' }, window.location.origin)
       return true
     } catch (e) { setNote(String(e.message || e)); return false }
-  }, [doc, def, setNote, said])
+  }, [doc, def, setNote, said, zv])
 
   const openEdit = useCallback((t) => panes.open(t), [panes])
   // ☆ / ★ in a row: the favorite tag on or off, saved at once — the star turns
@@ -406,21 +430,25 @@ function RackList({ def: declared, slots = {} }) {
    *  The tab is found by what it is SHOWING, not by its name: a frame is
    *  opened as `rec:<svc>:<id>` here and as `note:<id>` by a field, and only
    *  the src is sure. */
+  const frameShowing = useCallback((was) => panes.tabs.find((x) => x.kind === 'frame'
+    && new URLSearchParams(String(x.src || '').split('?')[1] || '').get('solo') === String(was)), [panes])
   const stepFrame = useCallback(({ was, id, label, src }) => {
-    const showing = `solo=${encodeURIComponent(was)}`
-    const t = panes.tabs.find((x) => x.kind === 'frame' && String(x.src || '').includes(showing))
+    const t = frameShowing(was)
     if (t) panes.step(t.id, { ...t, id: t.id.split(was).join(id), label: label || t.label, src })
-  }, [panes])
+  }, [panes, frameShowing])
+  // …and its close is this tab's (it has saved what it had first).
+  const closeFrame = useCallback(({ was }) => { const t = frameShowing(was); if (t) panes.close(t.id) }, [panes, frameShowing])
   useEffect(() => {                                     // …and what a bare list or a solo editor framed here asks for
     const take = (e) => {
       if (e.origin !== window.location.origin) return
       if (e.data?.rackOpen) openRecord(e.data.rackOpen)
       if (e.data?.rackFrame) openEdit({ ...e.data.rackFrame, kind: 'frame' })
       if (e.data?.rackStep) stepFrame(e.data.rackStep)
+      if (e.data?.rackClose) closeFrame(e.data.rackClose)
     }
     window.addEventListener('message', take)
     return () => window.removeEventListener('message', take)
-  }, [openRecord, openEdit, stepFrame])
+  }, [openRecord, openEdit, stepFrame, closeFrame])
 
   /** Open a stored class record by what items call it — what a chip in the
    *  editor does, so a class without a tab of its own (tab: false) is still
@@ -476,8 +504,10 @@ function RackList({ def: declared, slots = {} }) {
     // Another service's page as an editor tab: { id, label, src }.
     openFrame: (t) => openEdit({ ...t, kind: 'frame' }),
     openRecord,
+    // The document again, after a change made on the server (the inbox's decide).
+    reload,
   }), [remote, folders, hits, reloadFolders, openFolder, openFile, setNote, openItem, openClassByName,
-    openTab, openEdit, openRecord, commit, IS_ADMIN, tab, def.calendar, showDate])
+    openTab, openEdit, openRecord, commit, IS_ADMIN, tab, def.calendar, showDate, reload])
   const api = { def, doc, commit, reload, openTab, openEdit, closeEdit: (id) => panes.close(id), openItem, setNote,
     picked, setPicked, clearPicked, chosen, tab, rows, scope, query,
     // Where the editors stand (cols, full, dock) and where the border between
@@ -498,6 +528,23 @@ function RackList({ def: declared, slots = {} }) {
   // Asked when that tab is open, not five requests on every opening of a page.
   const tagSources = useTagSources(tagAgain, !!cls)
   const { isFavTag, toggleFavTag } = useFavTags()
+  // Projects are tags marked as one (kept in project_manager): every tags tab
+  // lists them, draws them as nameplates, and makes or changes them (tagproject.jsx).
+  const [projAgain, setProjAgain] = useState(0)
+  const projects = useProjects(projAgain)
+  const projOf = useCallback((name) => projectOfTag(projects, name), [projects])
+  const projChanged = () => {
+    setProjAgain((n) => n + 1)
+    forgetTagSources()
+    setTagAgain((n) => n + 1)
+    if (PORTAL_SERVICE.name === 'project_manager') reload()
+  }
+  // Their folders, as project_manager keeps them (its folder roots), for the folder column.
+  const [projFolders, setProjFolders] = useState(null)
+  const projProj = projects[0]?.proj
+  useEffect(() => { if (cls && projProj) loadProjectFolders(projProj).then(setProjFolders) }, [!!cls, projProj, projAgain])   // eslint-disable-line react-hooks/exhaustive-deps
+  const projFolderOf = (p) => { const n = projectFolder(p.name, projFolders); return projFolders?.dirs?.[n.normalize('NFC')] ? n : '' }
+  const projCell = (name) => (projOf(name) ? <span className="rl-proj">{name}</span> : name)
   // A tags tab: after this service's count, a column per other service that
   // shares tags (and per record kind here that wears them too: an author
   // group), each saying how many wear the tag there.
@@ -507,9 +554,12 @@ function RackList({ def: declared, slots = {} }) {
     return [
       ...def.classes.filter((c) => c.stored && (doc?.[c.k] || []).some((r) => Array.isArray(r?.tags) && r.tags.length))
         .map((c) => ({ k: `cls:${c.k}`, w: 80, min: 46, label: c.label, num: true })),
-      ...tagSources.filter((s) => s.svc !== own).map((s) => ({ k: `svc:${s.svc}`, w: 96, min: 46, label: s.label, num: true })),
+      // Not the projects (a project is drawn in the name) nor the inbox's candidates: nothing wears those yet.
+      ...tagSources.filter((s) => s.svc !== own && s.svc !== 'project_manager' && s.svc !== 'inbox').map((s) => ({ k: `svc:${s.svc}`, w: 96, min: 46, label: s.label, num: true })),
+      // A project's tags and folder, as its tab in project_manager had them; empty on a plain tag.
+      ...(projects.length ? [{ k: 'pj:tags', w: 220, min: 60, label: tr('rk_proj_tags') }, { k: 'pj:folder', w: 50, min: 40, label: tr('rk_proj_folder') }] : []),
     ]
-  }, [cls, clsField, def, doc, tagSources])
+  }, [cls, clsField, def, doc, tagSources, projects.length])
   const clsCols = useMemo(() => (cls ? L.colsOf('c:', [...classColumns(def, cls), ...perCols]).filter((c) => !c.when || c.when(tab)) : []), [L.colsOf, cls, def, tab, perCols])   // eslint-disable-line react-hooks/exhaustive-deps
   const mergeCols = useMemo(() => [{ k: 'chk', w: 26, min: 26, fix: true }, ...clsCols], [clsCols])
   // A tags tab lists the tags worn here — by its items, or by its other
@@ -535,10 +585,12 @@ function RackList({ def: declared, slots = {} }) {
         }
         for (const [k, v] of n) besides.set(k, { ...(besides.get(k) || {}), [`cls:${c.k}`]: v })
       }
+      // A project's tag is listed wherever the tab is, worn here or not.
       all = sharedTagRows(tagSources, { svc: own, tags: worn })
-        .filter((t) => cls.shared || here.has(t.key) || besides.has(t.key))
+        .filter((t) => cls.shared || here.has(t.key) || besides.has(t.key) || !!projOf(t.name))
         .map((t) => ({ ...(here.get(t.key) || { key: t.key, name: t.name, count: 0 }),
-          per: { ...besides.get(t.key), ...Object.fromEntries(t.by.filter((b) => b.svc !== own).map((b) => [`svc:${b.svc}`, b.n])) } }))
+          per: { ...besides.get(t.key), ...Object.fromEntries(t.by.filter((b) => b.svc !== own).map((b) => [`svc:${b.svc}`, b.n])),
+            ...(projOf(t.name) ? { 'pj:tags': projOf(t.name).tags.join(' '), 'pj:folder': projFolderOf(projOf(t.name)) } : {}) } }))
     }
     // Every spelling the record holds is searched — an alias, a handle.
     all = all.filter((r) => !q || Object.values(r).flat().some((v) => typeof v === 'string' && v.toLowerCase().includes(q)))
@@ -551,7 +603,7 @@ function RackList({ def: declared, slots = {} }) {
     // (the tags tab's name, in the inbox) leaves it in the order it is kept.
     if (clsSort.k === 'count' || clsCols.some((x) => x.k === clsSort.k)) all.sort(bySome(get, clsSort.dir))
     return !cls.stored && caseFree(clsField) ? [...all.filter((r) => isFavTag(r.name)), ...all.filter((r) => !isFavTag(r.name))] : all
-  }, [cls, clsCols, clsField, def, doc, query, clsSort, extra, tagSources, isFavTag])
+  }, [cls, clsCols, clsField, def, doc, query, clsSort, extra, tagSources, isFavTag, projOf, projFolders])   // eslint-disable-line react-hooks/exhaustive-deps
   // A class tab (the tags) filters as the items tab does: by its columns' values.
   const clsSorters = useMemo(() => {
     if (!cls) return {}
@@ -587,7 +639,9 @@ function RackList({ def: declared, slots = {} }) {
   const tgRec = tab?.kind === 'tagged' && tab.item ? items.find((x) => idOf(x) === tab.item) : null
   const tg = def.item.tagged || {}
   const tgRows = useTaggedRows(tab?.kind !== 'tagged' ? NONE : tgRec ? (tgRec[tg.tags || 'tags'] || NONE) : (tab.names || NONE),
-    tgRec ? (tgRec[tg.match || 'match'] || 'or') : 'or', PORTAL_SERVICE.name, tgRec ? labelOf(def, tgRec) : '')
+    tgRec ? (tgRec[tg.match || 'match'] || 'or') : (tab.match || 'or'),
+    // Every service's records but the projects themselves — this one's too, now any tags tab opens a project.
+    'project_manager', tgRec ? labelOf(def, tgRec) : '')
   const [tgSort, setTgSort] = useState([{ k: 'date', dir: -1 }])
   const tgFilter = useFacetFilter(tgRows || NONE, TAGGED_SORTERS)
   const tgShown = useMemo(() => {
@@ -603,6 +657,32 @@ function RackList({ def: declared, slots = {} }) {
 
   const showEdit = L.showEdit && !!doc
   const showList = !showEdit || L.showList
+  // The calendar keeps CAL_MIN for itself: an editor dragged wider stops there,
+  // and a button at the edge offers the whole width instead (calFull). (A window
+  // too narrow for both has no list beside an editor at all: useRackList.)
+  const docked = paneLayout(panes, showList, showEdit).handle
+  const calRoom = L.vw - (!BARE && menuState.open ? menuWidth() : 0)
+  const calSide = tab?.kind === 'calendar' && showEdit && showList && !panes.full && (docked === 'left' || docked === 'right') && calRoom > 0
+  const calNeed = Math.ceil(CAL_MIN / calRoom * 1000) / 10          // the calendar's least share, %
+  const calLimit = !calSide ? null : docked === 'left' ? { max: 100 - calNeed } : { min: calNeed }
+  split.setLimit(calLimit)
+  // The button shows while the drag presses against the edge, and goes 3s after the last press.
+  const [calPush, setCalPush] = useState(false)
+  useEffect(() => {
+    if (!split.pushed) return undefined
+    setCalPush(true)
+    const t = setTimeout(() => setCalPush(false), 3000)
+    return () => clearTimeout(t)
+  }, [split.pushed])
+  useEffect(() => {
+    if (!calLimit) return
+    const share = docked === 'left' ? 100 - split.pct : split.pct
+    if (share < calNeed) split.setPct(docked === 'left' ? 100 - calNeed : calNeed)   // the window narrowed
+  })
+  const calFull = !!calLimit && calPush && (
+    <button type="button" className="rl-btn rl-split-full" title={tr('rk_full_width')}
+      onPointerDown={(e) => e.stopPropagation()} onClick={() => panes.setFull(true)}>⤢</button>
+  )
   const order = asSorts(sort).length ? asSorts(sort) : asSorts(def.item.order)
 
   // Today, when the table is in date order: what is on now is lit, and a line
@@ -744,7 +824,7 @@ function RackList({ def: declared, slots = {} }) {
     if (etab.kind === 'item') {
       const rec = etab.who ? items.find((r) => idOf(r) === etab.who) : null
       return (
-        <RackItemEditor key={etab.id} def={def} doc={doc} rec={rec} seed={etab.seed} ctx={ctx} onSave={commit}
+        <RackItemEditor key={`${etab.id}:${zone}`} def={def} doc={doc} rec={rec} seed={etab.seed} ctx={ctx} onSave={commit}
           canDelete={IS_ADMIN} onCancel={() => panes.close(etab.id)} guard={(fn) => panes.guard(etab.id, fn)}
           onClone={(seed) => openItem(null, null, seed)} occ={etab.occ}
           onStep={(id, occ) => {
@@ -826,7 +906,7 @@ function RackList({ def: declared, slots = {} }) {
       if (c.stored) {
         const rec = etab.who ? findStored(c, etab.who) : null
         return (
-          <RackItemEditor key={etab.id} def={def} doc={doc} rec={rec} fields={c.fields} listKey={c.k} noun={c.noun} cls={c}
+          <RackItemEditor key={`${etab.id}:${zone}`} def={def} doc={doc} rec={rec} fields={c.fields} listKey={c.k} noun={c.noun} cls={c}
             ctx={ctx} onSave={commit} onCancel={() => panes.close(etab.id)} guard={(fn) => panes.guard(etab.id, fn)}
             actions={c.actions ? (f, setF) => c.actions(f, setF, { ...ctx, doc, rec, close: (then) => {
               // `then`: the editor to show instead, if it is open too.
@@ -844,6 +924,16 @@ function RackList({ def: declared, slots = {} }) {
       const names = classRows(def, doc, c, extra).map((r) => r.name)
       // A tag with others inside it: they follow a rename, and it is not deleted.
       const hasKids = (g) => caseFree(field) && tagNames(c).some((n) => tagKey(n) !== tagKey(g) && tagWithin(n, g))
+      // A project's own tag renamed everywhere: its name (`+name`) follows, the
+      // tag's last part; deleted everywhere, the project goes with it.
+      const pj = c.shared && caseFree(field) ? projOf(etab.who) : null
+      const projFollows = async (to) => {
+        if (!pj) return
+        const name = to ? to.slice(to.lastIndexOf('/') + 1) : ''
+        if (name === pj.name) return
+        await saveProject(pj, name ? { name } : null).catch((e) => setNote(tr('rk_proj_failed', e.message)))
+        projChanged()
+      }
       return (
         <RackEditClass name={etab.who} noun={c.noun} wears={tr("rk_x_using", def.item.noun)} unit={def.unit}
           exists={names} wearing={(gone) => (caseFree(field) ? items.filter((r) => gone.some((g) => wears(r, field, g))) : wearing(field, gone))
@@ -852,7 +942,9 @@ function RackList({ def: declared, slots = {} }) {
           onSave={async (gone, to, said) => {
             if (gone.some(hasKids)) {
               if (gone.some((g) => tagKey(g) !== tagKey(to) && tagWithin(to, g))) { setNote(tr('rk_move_inside')); return }
-              if (await renameTags(c, tagRenames(tagNames(c), gone, to))) panes.close(etab.id)
+              const ok = await renameTags(c, tagRenames(tagNames(c), gone, to))
+              await projFollows(to)
+              if (ok) panes.close(etab.id)
               return
             }
             // A shared tag is renamed (or merged) in every other service too.
@@ -862,7 +954,9 @@ function RackList({ def: declared, slots = {} }) {
               if (bad.length) setNote(tr('rk_rename_failed_in', bad.join(' · ')))
               setTagAgain((n) => n + 1)
             }
-            if (await commit({ [def.item.key]: foldNames(field, gone, to) }, said)) panes.close(etab.id)
+            const ok = await commit({ [def.item.key]: foldNames(field, gone, to) }, said)
+            await projFollows(to)
+            if (ok) panes.close(etab.id)
           }}
           onCancel={() => panes.close(etab.id)}
           onDelete={IS_ADMIN && !hasKids(etab.who) ? async () => {
@@ -873,9 +967,13 @@ function RackList({ def: declared, slots = {} }) {
               if (bad.length) setNote(tr('rk_rename_failed_in', bad.join(' · ')))
               setTagAgain((n) => n + 1)
             }
-            if (await commit({ [def.item.key]: foldNames(field, [etab.who], '') },
-              tr("rk_removed_name", etab.who)) || c.shared) panes.close(etab.id)
-          } : null}>
+            const ok = await commit({ [def.item.key]: foldNames(field, [etab.who], '') }, tr("rk_removed_name", etab.who))
+            await projFollows('')
+            if (ok || c.shared) panes.close(etab.id)
+          } : null}
+          deleteWarn={pj ? tr('rk_proj_delete_warn', pj.name) : undefined}>
+          {/* A tag may be a project: its description, period and what else it gathers. */}
+          {caseFree(field) && <RackTagProject tag={etab.who} projects={projects} onChanged={projChanged} say={setNote} />}
           {/* A shared tag: what wears it in the other services, each opening in a pane here. */}
           {c.shared && <RackTagged names={[etab.who]} skip={PORTAL_SERVICE.name} onOpen={openRecord} />}
         </RackEditClass>
@@ -895,9 +993,16 @@ function RackList({ def: declared, slots = {} }) {
         const fc = { ...c, field: f }
         return [f.k, f.cell ? f.cell(r, fc) : typeOf(f).cell(valueOf(f, r, fc), fc)]
       })),
-      ...(cls.stored ? {} : { name: r.name || D }),
+      ...(cls.stored ? {} : { name: r.name ? projCell(r.name) : D }),
       count: r.count || D,
       ...Object.fromEntries(perCols.map((p) => [p.k, r.per?.[p.k] || D])),
+      ...(projOf(r.name) ? {
+        'pj:tags': <span className="rl-projs">{projOf(r.name).tags.map((t) => <span key={t} className="rl-tag">{t}</span>)}</span>,
+        'pj:folder': r.per?.['pj:folder'] ? (
+          <button type="button" className="rl-ok rl-lnk" title={r.per['pj:folder']}
+            onClick={(e) => { e.stopPropagation(); openProjectFolder(projOf(r.name).proj, r.per['pj:folder']).catch((x) => setNote(x.message)) }}>✓</button>
+        ) : D,
+      } : {}),
       fav: <RackStar on={isFavTag(r.name)} onToggle={() => toggleFavTag(r.name)} />,
     }
   }
@@ -967,76 +1072,6 @@ function RackList({ def: declared, slots = {} }) {
         {newButton}
         {slots.commands?.(api)}
       </MenuRow>
-      {/* Faint with nothing picked, not gone: what is below them stays put as rows are picked. */}
-      <MenuRow title={tr("rk_menu_pick")}>
-        {tab?.kind === 'items' && (
-          <button type="button" className="rl-btn" title={tr("rk_bulk_edit_hint")} disabled={picked.size < 2}
-            onClick={openMany}>{tr("rk_bulk_edit_n", picked.size)}</button>
-        )}
-        {/* The other reading of "open what I picked": not one form over all of
-            them (above) but each in a tab of its own, to go through one by one.
-            ponytail: no ceiling — 40 picked rows is 40 editors, and the tab
-            strip is what says so. Put one in if anyone ever does it twice. */}
-        {tab?.kind === 'items' && (
-          <button type="button" className="rl-btn" title={tr("rk_open_each_hint")} disabled={!picked.size}
-            onClick={() => chosen.forEach((r) => openItem(idOf(r), r))}>{tr("rk_open_each_n", picked.size)}</button>
-        )}
-        {tab?.kind === 'items' && listClasses.map((c) => (
-          <select key={c.k} className="rl-btn rl-pick" value="" disabled={!picked.size}
-            onChange={(e) => e.target.value && putInList(c, e.target.value)}>
-            <option value="">{tr("rk_put_in_x", c.noun)}</option>
-            <option value="+new">{tr("rk_add_new_x", c.noun)}</option>
-            {listsFor(c).map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name || l.id.slice(0, 8)} ({(l[c.list.ids] || []).length}){c.list.owner && l[c.list.owner] && l[c.list.owner] !== ME ? ` · ${l[c.list.owner]}` : ''}
-              </option>
-            ))}
-          </select>
-        ))}
-        {inList && (
-          <button type="button" className="rl-btn rl-tabonly"
-            onClick={() => { const l = findStored(inList, tab.key); if (l) openClass(inList, l) }}>{tr("rk_edit_x", inList.noun)}</button>
-        )}
-        {inList && (
-          <button type="button" className="rl-btn" disabled={!picked.size} title={tr("rk_remove_from_this_hint", inList.label)}
-            onClick={() => takeOutOfList(inList, tab.key)}>{tr("rk_remove_from_x_n", inList.label, picked.size)}</button>
-        )}
-        {slots.pick?.(api)}
-      </MenuRow>
-      <MenuRow title={tr("rk_menu_merge")}>
-        {mergeable && (
-          <RackMergeButtons merge={merge} noun={cls.stored ? cls.noun : (clsField.label || cls.noun)}
-            onOpen={(names) => openEdit({ id: `merge:${cls.k}`, kind: 'merge', of: cls.k, names,
-              label: tr("rk_merge_n_x", cls.stored ? cls.noun : (clsField.label || cls.noun), names.length) })} />
-        )}
-        {mergeable && merge.mode && outline && (
-          <button type="button" className="rl-btn" disabled={!merge.size}
-            onClick={() => openEdit({ id: `move:${cls.k}`, kind: 'move', of: cls.k, names: merge.names, label: tr('rk_move_n_x', merge.size) })}>
-            {tr('rk_move_n', merge.size)}</button>
-        )}
-        {/* `bundle`: the names picked, as a new item wearing them (a project of
-            tags) — matching any of them, or (`bundle.match`, the item's field
-            for it) all of them. */}
-        {mergeable && merge.mode && cls.bundle && ['or', 'and'].map((m) => (
-          <button key={m} type="button" className={`rl-btn${m === 'or' ? ' rl-go' : ''}`} disabled={!merge.size}
-            onClick={() => {
-              openItem(null, null, { [clsField.k]: merge.names,
-                ...(cls.bundle.match ? { [cls.bundle.match]: m } : {}),
-                ...(def.item.label === 'name' || !def.item.label ? { name: merge.names.join('_') } : {}) })
-              merge.off()
-            }}>
-            {tr(m === 'or' ? 'rk_bundle_any_n' : 'rk_bundle_all_n', def.item.noun, merge.size)}</button>
-        ))}
-      </MenuRow>
-      <MenuRow title={tr("rk_menu_show")}>
-        {fNow && <span data-keep className="rl-menu-keep"><FilterBar f={fNow} /></span>}
-        {tab?.kind === 'items' && (def.item.quick || []).map((q) => (
-          <button key={q.id} type="button" data-keep className={`rl-btn${quick.includes(q.id) ? ' on' : ''}`} title={q.title}
-            onClick={() => setQuick((xs) => (xs.includes(q.id) ? xs.filter((x) => x !== q.id) : [...xs, q.id]))}>{q.label}</button>
-        ))}
-        {!BARE && slots.keepTools?.(api)}
-        {slots.show?.(api)}
-      </MenuRow>
       {BARE ? (
         <MenuRow>
           {panes.tabs.length > 0 && (
@@ -1071,6 +1106,79 @@ function RackList({ def: declared, slots = {} }) {
           </MenuRow>
         </>
       )}
+      {/* What is always there stands first; what this tab or this moment adds
+          comes after it, in a colour of its own (rack.css `.rl-menu-extra`) —
+          what is shown first, as most tabs have it, then picking and merging. */}
+      <MenuRow extra title={tr("rk_menu_show")}>
+        {fNow && <span data-keep className="rl-menu-keep"><FilterBar f={fNow} /></span>}
+        {tab?.kind === 'items' && (def.item.quick || []).map((q) => (
+          <button key={q.id} type="button" data-keep className={`rl-btn${quick.includes(q.id) ? ' on' : ''}`} title={q.title}
+            onClick={() => setQuick((xs) => (xs.includes(q.id) ? xs.filter((x) => x !== q.id) : [...xs, q.id]))}>{q.label}</button>
+        ))}
+        {!BARE && slots.keepTools?.(api)}
+        {slots.show?.(api)}
+      </MenuRow>
+      {/* Faint with nothing picked, not gone: what is below them stays put as rows are picked. */}
+      <MenuRow extra title={tr("rk_menu_pick")}>
+        {tab?.kind === 'items' && (
+          <button type="button" className="rl-btn" title={tr("rk_bulk_edit_hint")} disabled={picked.size < 2}
+            onClick={openMany}>{tr("rk_bulk_edit_n", picked.size)}</button>
+        )}
+        {/* The other reading of "open what I picked": not one form over all of
+            them (above) but each in a tab of its own, to go through one by one.
+            ponytail: no ceiling — 40 picked rows is 40 editors, and the tab
+            strip is what says so. Put one in if anyone ever does it twice. */}
+        {tab?.kind === 'items' && (
+          <button type="button" className="rl-btn" title={tr("rk_open_each_hint")} disabled={!picked.size}
+            onClick={() => chosen.forEach((r) => openItem(idOf(r), r))}>{tr("rk_open_each_n", picked.size)}</button>
+        )}
+        {tab?.kind === 'items' && listClasses.map((c) => (
+          <Select key={c.k} className="rl-btn rl-pick" value="" disabled={!picked.size}
+            onChange={(e) => e.target.value && putInList(c, e.target.value)}>
+            <option value="">{tr("rk_put_in_x", c.noun)}</option>
+            <option value="+new">{tr("rk_add_new_x", c.noun)}</option>
+            {listsFor(c).map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name || l.id.slice(0, 8)} ({(l[c.list.ids] || []).length}){c.list.owner && l[c.list.owner] && l[c.list.owner] !== ME ? ` · ${l[c.list.owner]}` : ''}
+              </option>
+            ))}
+          </Select>
+        ))}
+        {inList && (
+          <button type="button" className="rl-btn rl-tabonly"
+            onClick={() => { const l = findStored(inList, tab.key); if (l) openClass(inList, l) }}>{tr("rk_edit_x", inList.noun)}</button>
+        )}
+        {inList && (
+          <button type="button" className="rl-btn" disabled={!picked.size} title={tr("rk_remove_from_this_hint", inList.label)}
+            onClick={() => takeOutOfList(inList, tab.key)}>{tr("rk_remove_from_x_n", inList.label, picked.size)}</button>
+        )}
+        {slots.pick?.(api)}
+      </MenuRow>
+      <MenuRow extra title={tr("rk_menu_merge")}>
+        {mergeable && (
+          <RackMergeButtons merge={merge} noun={cls.stored ? cls.noun : (clsField.label || cls.noun)}
+            onOpen={(names) => openEdit({ id: `merge:${cls.k}`, kind: 'merge', of: cls.k, names,
+              label: tr("rk_merge_n_x", cls.stored ? cls.noun : (clsField.label || cls.noun), names.length) })} />
+        )}
+        {mergeable && merge.mode && outline && (
+          <button type="button" className="rl-btn" disabled={!merge.size}
+            onClick={() => openEdit({ id: `move:${cls.k}`, kind: 'move', of: cls.k, names: merge.names, label: tr('rk_move_n_x', merge.size) })}>
+            {tr('rk_move_n', merge.size)}</button>
+        )}
+        {/* `bundle`: the names picked, as a new item wearing them (a project of
+            tags) — matching any of them, or (`bundle.match`, the item's field
+            for it) all of them. */}
+        {mergeable && merge.mode && cls.bundle && ['or', 'and'].map((m) => (
+          <button key={m} type="button" className={`rl-btn${m === 'or' ? ' rl-go' : ''}`} disabled={!merge.size}
+            onClick={() => {
+              openItem(null, null, { [clsField.k]: merge.names,
+                ...(cls.bundle.match ? { [cls.bundle.match]: m } : {}),
+                ...(def.item.label === 'name' || !def.item.label ? { name: merge.names.join('_') } : {}) })
+              merge.off()
+            }}>
+            {tr(m === 'or' ? 'rk_bundle_any_n' : 'rk_bundle_all_n', def.item.noun, merge.size)}</button>
+        ))}
+      </MenuRow>
     </>
   )
   const menuButton = (
@@ -1166,7 +1274,7 @@ function RackList({ def: declared, slots = {} }) {
 
         <div className="rl-body">
           {doc && lay.left.map((c) => editorPane(c, ps.left))}
-          {ps.before && <div {...ps.before} />}
+          {ps.before && <div {...ps.before}>{calFull}</div>}
           {showList && (<div className="rl-pane" style={ps.list}>
 
             {err && <p className="rl-msg">{err}</p>}
@@ -1243,6 +1351,9 @@ function RackList({ def: declared, slots = {} }) {
                       // items to open; its row is opened by the right click alone.
                       onClick={() => (merge.mode ? merge.toggle(r.name)
                         : cls.count === false ? undefined
+                          // A project: everything it gathers, in every service.
+                          : outline && projOf(r.name) ? openTab({ id: `tagged:+${tagKey(projOf(r.name).name)}`, kind: 'tagged',
+                            names: projOf(r.name).tags, match: projOf(r.name).match, label: `+${projOf(r.name).name}` })
                           // A shared tag: everything wearing it, in every service.
                           : cls.shared ? openTab({ id: `tagged:${r.key || r.name}`, kind: 'tagged', names: [r.name], label: `#${r.name}` })
                           : openTab({ id: `${cls.k}:${r.key || r.name}`, kind: 'items', of: cls.k,
@@ -1265,7 +1376,7 @@ function RackList({ def: declared, slots = {} }) {
                                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d={r.open ? 'M4 7h16l-8 12z' : 'M7 4l12 8-12 8z'} /></svg>
                               </button>
                             ) : <span className="rl-fold" />}
-                            {r.name}
+                            {projCell(r.name)}
                           </span>
                         ) } : {}),
                       }} />
@@ -1276,7 +1387,7 @@ function RackList({ def: declared, slots = {} }) {
             )}
 
             {doc && tab?.kind === 'calendar' && (
-              <RackCalendar def={def} doc={doc} ctx={ctx} picked={picked} at={calAt}
+              <RackCalendar def={def} doc={doc} ctx={ctx} picked={picked} at={calAt} zone={def.zone ? zone : ''} onZone={setZone} zones={zones} onZones={setZones}
                 // The records an editor is showing now: their bars outlined.
                 editing={new Set(panes.showing ? panes.cols.map((c) => panes.current(c)).filter((t) => t?.kind === 'item' && t.who).map((t) => t.who) : [])}
                 // The search box narrows the calendar as it does the table.
@@ -1370,7 +1481,7 @@ function RackList({ def: declared, slots = {} }) {
             {doc && tab?.kind === 'view' && slots.views?.[tab.view]?.(tab, api)}
           </div>)}
 
-          {ps.after && <div {...ps.after} />}
+          {ps.after && <div {...ps.after}>{calFull}</div>}
           {doc && lay.right.map((c) => editorPane(c, ps.right))}
         </div>
 

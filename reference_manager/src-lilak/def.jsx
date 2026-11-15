@@ -12,11 +12,14 @@
 import './strings.js'
 import {
   firstAuthor, jShort, refLabel, mainTag, tagsOf, abbrevName, bibOrder, handleFor,
-  TOKENS, PRESETS, TYPES,
+  TOKENS, PRESETS, TYPES, place, partsOf,
 } from './paper.js'
 import { citedBy, papersOf, authorStats, NameWith } from './widgets.jsx'
 import { tr } from 'lilak-ui/i18n.jsx'
 import { tagKey } from 'racklist'
+
+/** What belongs to the source, not to a place inside it. */
+const notPart = (r) => r.type !== 'part'
 
 /** Every paper wearing one of `gone` wears `to` instead — once — and its main
  *  tag follows. A key is filed under the main tag, so one left naming a tag
@@ -59,11 +62,18 @@ export default {
     findHint: tr("rm_find_hint"),
     // A half-typed line is not data, and a main tag that is not one of the
     // paper's tags is not its main tag.
-    fill: (r) => ({ ...r, mainTag: tagsOf(r).includes(r.mainTag) ? r.mainTag : '' }),
-    check: (r) => (String(r.citeKey || '').trim() || String(r.title || '').trim() ? '' : tr("rm_need_key_or_title")),
+    fill: (r) => ({
+      ...r,
+      mainTag: tagsOf(r).includes(r.mainTag) ? r.mainTag : '',
+      // One spelling per place, so the same place is recognised as the same.
+      ...(r.locator ? { locator: place(r.locator) } : {}),
+    }),
+    // A part is a place inside something: without the something it is nothing.
+    check: (r) => (r.type === 'part' && !r.parent?.id ? tr("rm_need_parent")
+      : String(r.citeKey || '').trim() || String(r.title || '').trim() ? '' : tr("rm_need_key_or_title")),
     // The table reads type · key · who · when · where · what; the form reads
     // the way a citation is written down.
-    columns: ['type', 'citeKey', 'a1', 'year', 'jl', 'title', 'tags', 'pdf', 'cites', 'by'],
+    columns: ['type', 'citeKey', 'parent', 'a1', 'year', 'jl', 'title', 'tags', 'pdf', 'parts', 'cites', 'by'],
     fields: [
       { k: 'paste', label: tr("rm_paste"), type: 'paste', store: false, search: false,
         when: (r, { draft }) => draft },
@@ -71,7 +81,13 @@ export default {
         col: { w: 56, min: 40, drop: 1180, label: 'type' }, tone: 'dim' },
       { k: 'citeKey', label: 'cite key', type: 'citekey', col: { w: 150, min: 80, label: 'key' } },
       { k: 'title', label: tr("rm_title_field"), type: 'longtext', rows: 2, col: { w: 260, min: 120, label: 'title' }, tone: 'ink' },
-      { k: 'authors', label: tr("rm_authors"), type: 'authors', of: 'authors' },
+      // A part points into another reference and says where. Everything
+      // bibliographic stays on that one — a part repeats none of it.
+      { k: 'parent', label: tr("rm_parent"), type: 'ref', col: { w: 150, min: 70, drop: 1400, label: 'in' },
+        tone: 'dim', when: (r) => r.type === 'part', hint: tr("rm_parent_hint") },
+      { k: 'locator', label: tr("rm_locator"), type: 'text', width: 180, placeholder: 'Figure 3',
+        when: (r) => r.type === 'part', hint: tr("rm_locator_hint") },
+      { k: 'authors', label: tr("rm_authors"), type: 'authors', of: 'authors', when: notPart },
       // Worked out from the parts, so they cannot drift from what is stored.
       { k: 'a1', label: 'first author', get: (r, ctx) => firstAuthor(ctx.doc, r),
         col: { w: 134, min: 70 }, tone: 'dim', search: false },
@@ -83,12 +99,12 @@ export default {
         hint: tr("rm_pac_hint") },
       // The chip wears the short name: 'Nuclear Instruments and Methods in
       // Physics Research Section A: …' wrapped onto three lines in the editor.
-      { k: 'journal', label: tr("rm_journal"), type: 'class', of: 'journals', show: 'shortName' },
-      { k: 'volume', label: tr("rm_volume"), type: 'text', width: 80, placeholder: 'volume' },
-      { k: 'pages', label: tr("rm_pages"), type: 'text', width: 110, placeholder: 'pages' },
+      { k: 'journal', label: tr("rm_journal"), type: 'class', of: 'journals', show: 'shortName', when: notPart },
+      { k: 'volume', label: tr("rm_volume"), type: 'text', width: 80, placeholder: 'volume', when: notPart },
+      { k: 'pages', label: tr("rm_pages"), type: 'text', width: 110, placeholder: 'pages', when: notPart },
       { k: 'year', label: tr("rm_year"), type: 'text', width: 70, placeholder: 'year',
-        col: { w: 46, min: 38, num: true, label: 'year' }, sort: (v) => Number(v) || null },
-      { k: 'doi', label: 'doi', type: 'text', mono: true, href: (v) => `https://doi.org/${v}` },
+        col: { w: 46, min: 38, num: true, label: 'year' }, sort: (v) => Number(v) || null, when: notPart },
+      { k: 'doi', label: 'doi', type: 'text', mono: true, href: (v) => `https://doi.org/${v}`, when: notPart },
       { k: 'url', label: 'url', type: 'url' },
       // Tags are what one most often sets on many papers at once (선택 편집).
       { k: 'tags', label: tr("rm_tags"), type: 'maintags', bulk: true, col: { w: 180, min: 60, drop: 1320, label: 'tags' },
@@ -99,12 +115,18 @@ export default {
           .map((r) => r.citeKey).filter(Boolean),
         movedWhy: tr("rm_main_tag_moves") },
       { k: 'cites', label: tr("rm_cites"), type: 'cites', search: false,
-        col: { w: 44, min: 34, num: true, drop: 860, label: 'cites' }, when: (r, { draft }) => !draft },
+        col: { w: 44, min: 34, num: true, drop: 860, label: 'cites' },
+        when: (r, { draft }) => !draft && r.type !== 'part' },
       { k: 'by', label: tr("rm_cited_by"), type: 'citedby', search: false,
         get: (r, ctx) => (citedBy(ctx.doc).get(r.id) || []).length,
         col: { w: 44, min: 34, num: true, drop: 860, label: 'cited by' }, when: (r, { draft }) => !draft },
+      // A part has no file of its own: it is a place in the parent's.
       { k: 'pdf', label: 'pdf', type: 'file', roots: 'pdfRoots', find: 'citeKey', search: false,
-        col: { w: 38, min: 30, num: true } },
+        col: { w: 38, min: 30, num: true }, when: notPart },
+      { k: 'parts', label: tr("rm_parts"), type: 'parts', search: false,
+        get: (r, ctx) => partsOf(ctx.doc, r.id).length,
+        col: { w: 44, min: 34, num: true, drop: 1000, label: 'parts' },
+        when: (r, { draft }) => !draft },
       { k: 'links', label: tr("rm_links"), type: 'list', link: true, placeholder: 'https://…' },
       { k: 'note', label: tr("rm_note"), type: 'longtext', rows: 2 },
       // Where a paper was presented: the activities (in Activities) that list

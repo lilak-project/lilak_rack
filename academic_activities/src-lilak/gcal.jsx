@@ -1,3 +1,4 @@
+import Select from 'lilak-ui/components/Select.jsx'
 import './strings.js'
 import { useCallback, useEffect, useState } from 'react'
 import { PORTAL_BASE, authHeaders } from 'racklist'
@@ -97,10 +98,10 @@ export function GcalPanel() {
             {Object.entries(SIDE).map(([k, l]) => (
               <span key={k} style={{ display: 'contents' }}>
                 <label>{l} {k === 'etc' ? tr("aa_gc_for_other") : tr("aa_gc_for_rest")}</label>
-                <select className="rl-in" value={pick[k]} onChange={(e) => setPick({ ...pick, [k]: e.target.value })}>
+                <Select className="rl-in" value={pick[k]} onChange={(e) => setPick({ ...pick, [k]: e.target.value })}>
                   <option value="">—</option>
                   {cals.map((c) => <option key={c.id} value={c.id}>{c.name}{c.primary ? tr("aa_gc_default") : ''}</option>)}
-                </select>
+                </Select>
               </span>
             ))}
           </div>
@@ -198,9 +199,9 @@ function Auto({ st, save }) {
     <div className="gc-sync">
       <label className="gc-edit">
         <input type="checkbox" checked={!!st.onEdit} onChange={(e) => save({ onEdit: e.target.checked })} />{tr("aa_gc_push_on_edit")}</label>
-      <label className="gc-edit">{tr("aa_gc_full_sync", ' ')}<select className="rl-in gc-every" value={st.auto || 0} onChange={(e) => save({ auto: Number(e.target.value) })}>
+      <label className="gc-edit">{tr("aa_gc_full_sync", ' ')}<Select className="rl-in gc-every" value={st.auto || 0} onChange={(e) => save({ auto: Number(e.target.value) })}>
           {EVERY.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
+        </Select>
       </label>
       <p className="rl-hint">{tr("aa_gc_full_sync_hint")}</p>
       {Object.entries(st.sync || {}).map(([side, s]) => (

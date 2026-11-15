@@ -1,5 +1,6 @@
 import '../strings.js'
 import { useState } from 'react'
+import { Copy } from '@phosphor-icons/react'
 import { fileSrc, kb } from '../api.js'
 import { press } from './press.js'
 import { dropped } from '../liveedit.js'
@@ -75,7 +76,7 @@ const FigNo = ({ fig, go }) => (fig ? (
     {...press(() => go(fig.line))}>{tr("nt_fig_n", fig.n)}</button>
 ) : null)
 
-/** One row of the list: its figure number, a thumbnail, the name, the size, `넣기` and `복사`. */
+/** One row of the list: its figure number, a thumbnail, the name, the size, `넣기` and copy (an icon). */
 const Row = ({ x, src, put, copy, fig, go }) => (
   <li>
     <FigNo fig={fig} go={go} />
@@ -86,7 +87,8 @@ const Row = ({ x, src, put, copy, fig, go }) => (
     <a className="rl-mono nt-fname" href={src} target="_blank" rel="noreferrer">{x.name}</a>
     <span className="rl-hint">{kb(x.bytes)}</span>
     <button type="button" className="rl-btn" title={tr("nt_file_put")} {...press(put)}>{tr("nt_file_put_do")}</button>
-    <button type="button" className="rl-btn" title={tr("nt_file_copy_hint")} {...press(copy)}>{tr("nt_file_copy")}</button>
+    <button type="button" className="rl-btn nt-icon-btn" title={tr("nt_file_copy_hint")} aria-label={tr("nt_file_copy")} {...press(copy)}>
+      <Copy size={14} weight="bold" aria-hidden="true" /></button>
   </li>
 )
 

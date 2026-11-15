@@ -295,8 +295,8 @@ export function RackItemEditor({
         hint={why} pending={dirty && !why}
         onClose={onCancel && (async () => { if (await settle.current()) onCancel() })} closeDisabled={dirty && !!why}
         onCancel={onCancel}
-        onClone={onClone && isItem ? clone : undefined}
-        onDelete={canDelete ? remove : undefined}
+        onClone={onClone && isItem && def.item.clone !== false ? clone : undefined}
+        onDelete={canDelete && !(isItem && def.item.lock?.(f)) ? remove : undefined}
         deleteWarn={own.deleteWarn ? own.deleteWarn(f, doc) : undefined}
         extra={<>{actions?.(f, setF)}{nav}</>} />
       <div className="rl-rec">

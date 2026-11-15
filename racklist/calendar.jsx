@@ -1,3 +1,4 @@
+import Select from 'lilak-ui/components/Select.jsx'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import './strings.js'
 import { tr } from 'lilak-ui/i18n.jsx'
@@ -6,6 +7,11 @@ import { ctxFor, labelOf, valueOf, favField } from './schema.js'
 import { tagKey, tagWithin, nameKey, useProjects, projectWears, useAuthors } from './tags.js'
 import { load, save, projectKey } from './portal.js'
 import { occurrences, DAYS, dow } from './rrule.js'
+import { zoneChoices } from './zone.js'
+import { ZoneMap } from './zonemap.jsx'
+
+// No zone name has a colon: the dropdown's line that opens the map.
+const EDIT_ZONES = 'edit:zones'
 
 /**
  * [달력] — records with dates, the way Apple's Calendar shows a month: a row
@@ -160,8 +166,9 @@ const shiftMonth = (ym, n) => { const [y, m] = ym.split('-').map(Number); const 
 const GRAY = '#8a94a6'
 // Further than this many weeks, going to a day is a jump, not a scroll through them all.
 const FAR = 80
-// The space between a week's lanes — wider in a week a handed-in line runs from.
-const GAP = { base: 2, wide: 6 }
+// The space between a week's lanes: the same in every week, so the rows of one
+// month line up. A handed-in line runs along it, over the bars' edges where it is narrow.
+const GAP = 2
 // How many weeks are drawn around what is on screen, and how many more are
 // added when the scroll nears an end.
 const BEFORE = 10
@@ -213,8 +220,9 @@ const linesOf = (t, w, mark) => {
 const kept = () => { try { return (window.top.__rackCal ||= {}) } catch { return (window.__rackCal ||= {}) } }
 const reloaded = () => performance.getEntriesByType?.('navigation')[0]?.type === 'reload'
 
-export function RackCalendar({ def, doc, items, query, ctx, picked, editing, onPick, onOpen, onNew, onResize, onCopy, onOccurrence, at }) {
+export function RackCalendar({ def, doc, items, query, ctx, picked, editing, zone, onZone, zones, onZones, onPick, onOpen, onNew, onResize, onCopy, onOccurrence, at }) {
   const cal = def.calendar
+  const [zoneMap, setZoneMap] = useState(false)
   const idk = def.item.id || 'id'
   const today = fmt(new Date())
   // A month's worth of weeks on screen, the same without weekends, or a week folded into two rows.
@@ -385,7 +393,9 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, editing, onP
     }
     if (!query) {
       for (const x of ext) {
-        if (!x.start || hidden.has(`feed:${x.feed}`) || !tagged((x.title || '').match(/#[^\s#]+/g)?.map((t) => t.slice(1)) || [])) continue
+        // Its tags as the feed gives them, else the #tags in its title.
+        const ts = x.tags || (x.title || '').match(/#[^\s#]+/g)?.map((t) => t.slice(1)) || []
+        if (!x.start || hidden.has(`feed:${x.feed}`) || !tagged(ts)) continue
         const s = carried?.id === x.id ? carried.day : x.start
         const e = x.end && x.end >= s ? x.end : s
         out.push({ r: { name: x.title }, id: `ext:${x.id}`, ext: x, s, e, ts: '', te: '', mk: '', sb: '', to: s,
@@ -649,7 +659,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, editing, onP
   // ── handed in, then presented: a line from the day it went in (A) to the
   // talk (B) — or, with no talk, to the record's first day. Each end runs down the whole left side of its box and leaves it
   // at the top — or at the bottom, for a box in the bottom lane of its week —
-  // then runs in the gap between the lanes (widened in those weeks, see GAP)
+  // then runs in the gap between the lanes (see GAP)
   // out to the margin left of the days, down (or up), and in along the other
   // end's gap to its box. The margin holds two lines side by side; a third
   // over the same weeks runs from A into a dot at the edge, and on from a dot
@@ -672,7 +682,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, editing, onP
       const r = n.getBoundingClientRect(), down = n.closest('.rl-cal-bar').dataset.bottom === '1'
       const top = r.top - box.top + el.scrollTop, bot = r.bottom - box.top + el.scrollTop
       const y = down ? bot : top
-      return { x: r.left - box.left + 0.75, y, far: down ? top : bot, gap: y + (down ? GAP.wide / 2 : -GAP.wide / 2) }
+      return { x: r.left - box.left + 0.75, y, far: down ? top : bot, gap: y + (down ? GAP / 2 : -GAP / 2) }
     }
     const ends = []
     for (const ev of events) {
@@ -953,11 +963,21 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, editing, onP
           <button type="button" className="rl-btn" title={tr("rk_next_month")} onClick={() => goTo(shiftMonth(month, 1))}>{monthName(shiftMonth(month, 1))} ›</button>
         </span>
         <button type="button" className="rl-btn rl-cal-today" onClick={toToday}>{tr("rk_today")}</button>
-        <select className="rl-btn rl-pick rl-cal-mode" value={mode} onChange={(e) => switchMode(e.target.value)}>
+        <Select className="rl-btn rl-pick rl-cal-mode" value={mode} onChange={(e) => switchMode(e.target.value)}>
           <option value="month">{tr("rk_cal_mode_month")}</option>
           <option value="week">{tr("rk_cal_mode_week")}</option>
           <option value="mwd">{tr("rk_cal_mode_mwd")}</option>
-        </select>
+        </Select>
+        {/* The zone every time here is read and written in (zone.js): stored as before, shown as chosen. */}
+        {zone && (
+          // Its last line is not a zone: it opens the map the list is picked on.
+          <Select className="rl-btn rl-pick rl-cal-mode" value={zone} title={tr("rk_cal_zone")}
+            onChange={(e) => (e.target.value === EDIT_ZONES ? setZoneMap(true) : onZone(e.target.value))}>
+            {zoneChoices(zone, zones).map(([z, l]) => <option key={z} value={z}>{l}</option>)}
+            <option value={EDIT_ZONES}>{tr("rk_zone_edit")}</option>
+          </Select>
+        )}
+        {zoneMap && <ZoneMap zones={zones} onChange={onZones} onClose={() => setZoneMap(false)} />}
       </div>
       {!week && (
         <div className="rl-cal-days" style={{ '--cols': mwd ? 5 : 7 }}>
@@ -1015,9 +1035,7 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, editing, onP
           stack.forEach((used, k) => lanes[T - 1 - k].push(...used))
           for (const s of lows) s.lane = T - 1 - s.k
           const total = Math.max(lanes.length, LANES)
-          // A week a line leaves from has room between its lanes for it.
-          const gap = shownEvents.some((ev) => ev.sb && ev.sb !== ev.to
-            && ((ev.sb >= ws && ev.sb <= we) || (ev.to >= ws && ev.to <= we))) ? GAP.wide : GAP.base
+          const gap = GAP
           // The lines of a name that so many lanes hold.
           const linesIn = (rows) => Math.floor((rows * 22 + (rows - 1) * gap - 4) / 14)
           const fitsOver = (s, free) => {

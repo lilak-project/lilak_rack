@@ -16,7 +16,7 @@
  * and stored by its whole name.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { PORTAL_BASE, PORTAL_SERVICE, authHeaders, linkProject, newId, remoteDocOf } from './portal.js'
+import { PORTAL_BASE, PORTAL_SERVICE, SHARE, authHeaders, linkProject, newId, remoteDocOf } from './portal.js'
 
 export const tagKey = (t) => String(t ?? '').trim().toLowerCase()
 /** Is `t` the tag `parent`, or inside it? */
@@ -113,18 +113,31 @@ export function mergeTags(counts) {
  *  manager bundle's ('rack'), a name another bundle's own (lilak_log: 'log'). */
 export const tagGroup = (t) => (t === true ? 'rack' : t || '')
 
+/** Which services' tags a page reads, from the portal's /api/services list: one row per
+ *  service — the portal lists a service split into project cards once per card (same name),
+ *  and reading it twice doubled every count and renamed a tag twice. */
+export function sharingServices(list, share, myName) {
+  const once = list.filter((s, i) => list.findIndex((x) => x.name === s.name) === i)
+  // The portal's share set says which project of each; without one (an
+  // older portal) the manifests' tag group, through the main projects.
+  // Named as the card of that project (papers-jw), not the first card of the service.
+  if (share) {
+    return once.filter((s) => s.tags && share[s.name]).map((s) => ({ ...s, link_project: share[s.name],
+      label: list.find((x) => x.name === s.name && x.project_card === share[s.name])?.label || s.label }))
+  }
+  const me = once.find((s) => s.name === myName)
+  const group = tagGroup(me ? me.tags : true)
+  return once.filter((s) => s.tags && s.link_project && tagGroup(s.tags) === group)
+}
+
 let asked = null
 /** Every sharing service's tags, asked once per page: [{ svc, label, color,
- *  tags: { name: count } }] — only the services of this one's tag group. */
+ *  tags: { name: count } }] — only the projects of this one's share set. */
 export function loadTagSources() {
   asked ||= fetch('/api/services', { headers: authHeaders() })
     .then((r) => (r.ok ? r.json() : []))
     .then((list) => (Array.isArray(list) ? list : []))
-    .then((list) => {
-      const me = list.find((s) => s.name === PORTAL_SERVICE.name)
-      const group = tagGroup(me ? me.tags : true)
-      return list.filter((s) => s.tags && s.link_project && tagGroup(s.tags) === group)
-    })
+    .then((list) => sharingServices(list, SHARE, PORTAL_SERVICE.name))
     .then((list) => Promise.all(list
       .map((s) => fetch(`/pp/${s.name}/${s.link_project}/api/tags`, { headers: authHeaders() })
         .then((r) => (r.ok ? r.json() : { denied: r.status === 403 })).catch(() => null)
@@ -258,11 +271,55 @@ export function loadProjects() {
   const proj = linkProject(PM)
   projAsk ||= (!proj ? Promise.resolve([]) : remoteDocOf(PM, proj)
     .then((d) => (d?.projects || []).filter((p) => p?.name)
-      .map((p) => ({ id: p.id, name: p.name, tags: p.tags || [], match: p.match || 'or', svc: PM, proj })))
+      .map((p) => ({ id: p.id, name: p.name, tags: p.tags || [], match: p.match || 'or',
+        description: p.description || '', start: p.start || '', end: p.end || '', svc: PM, proj })))
     .catch(() => []))
   return projAsk
 }
 export const forgetProjects = () => { projAsk = null }
+/** A project's own tag: the one that is its name, or ends in `/name` (a
+ *  sub-project, AToM-X/ihm) — not the first: KO-25-20 wears ELARK before its own. */
+export function projectOwnTag(p) {
+  const n = tagKey(p?.name)
+  return (n && (p.tags || []).find((t) => { const k = tagKey(t); return k === n || k.endsWith(`/${n}`) })) || ''
+}
+/** A project's folder under project_manager's folder roots: `NN__<name>`, the
+ *  numbering the projects folder already has (05__STARK), found with or without
+ *  its number, any case; a new one is numbered after the last. */
+const NUMBERED = /^(\d+)__(.+)$/
+export function projectFolder(name, folders) {
+  if (!name || !folders?.dirs) return name || ''
+  const dirs = Object.keys(folders.dirs)
+  const want = name.normalize('NFC').toLowerCase()
+  const hit = dirs.find((d) => (NUMBERED.exec(d)?.[2] ?? d).toLowerCase() === want)
+  if (hit) return hit
+  const n = Math.max(0, ...dirs.map((d) => Number(NUMBERED.exec(d)?.[1]) || 0)) + 1
+  return `${String(n).padStart(2, '0')}__${name}`
+}
+/** project_manager's folders ({ roots, dirs }), and opening one on the desktop. */
+export const loadProjectFolders = (proj) => fetch(`/pp/${PM}/${proj || linkProject(PM)}/api/folders`, { headers: authHeaders() })
+  .then((r) => (r.ok ? r.json() : null)).catch(() => null)
+export const openProjectFolder = (proj, name) => fetch(`/pp/${PM}/${proj || linkProject(PM)}/api/folders/open`, {
+  method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+}).then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.detail || `HTTP ${r.status}`) })
+/** The project whose own tag is `tag`, if one is. */
+export const projectOfTag = (projects, tag) => (projects || []).find((p) => tagKey(projectOwnTag(p)) === tagKey(tag))
+/** Make, change or delete (`fields` null) a project in project_manager, from
+ *  any service: its records API, as jobboard makes one. */
+export function saveProject(p, fields) {
+  const proj = p?.proj || linkProject(PM)
+  if (!proj) return Promise.reject(new Error('project_manager?'))
+  const [path, body] = !p ? ['records', { key: 'projects', record: fields }]
+    : fields ? ['records/update', { key: 'projects', id: p.id, fields }]
+      : ['records/delete', { key: 'projects', id: p.id }]
+  return fetch(`/pp/${PM}/${proj}/api/${path}`, {
+    method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }).then(async (r) => {
+    if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.detail || `HTTP ${r.status}`)
+    forgetProjects()
+    return r.json()
+  })
+}
 /** Does a record wearing `tags` belong to project `p`? All its tags or any (`p.match`). */
 export function projectWears(p, tags) {
   const want = (p.tags || []).map(tagKey).filter(Boolean)
@@ -339,14 +396,14 @@ export function useReferences() {
   return list
 }
 
-/** The projects ([] until they come). */
-export function useProjects() {
+/** The projects ([] until they come); asked again when `again` changes (after a save). */
+export function useProjects(again = 0) {
   const [list, setList] = useState([])
   useEffect(() => {
     let on = true
     loadProjects().then((x) => { if (on) setList(x) })
     return () => { on = false }
-  }, [])
+  }, [again])
   return list
 }
 

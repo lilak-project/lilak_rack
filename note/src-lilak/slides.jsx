@@ -79,7 +79,9 @@ export function DeckMeasure({ body, h, onPages }) {
   const drawn = useRef('')
   drawn.current = text
   const measure = useRef(() => {
-    if (!root.current) return
+    // Printing hides this page (note.css), and a picture or a font arriving
+    // then would measure nothing and cut the deck into nothing.
+    if (!root.current || !root.current.getBoundingClientRect().width || window.matchMedia?.('print').matches) return
     const src = dropComments(drawn.current).split('\n')
     const pages = cutPages(blocksOf(root.current).map((b) => ({ ...b, tags: tagLine(src[b.line - 1]) })), room.current)
     const key = JSON.stringify(pages)
@@ -301,5 +303,32 @@ export function SlideShow({ title, body, pages, h, start, onClose }) {
         onContextMenu={(e) => e.stopPropagation()}>×</button>
     </div>,
     document.body,
+  )
+}
+
+// ── on paper ──────────────────────────────────────────────────────────────
+/** The deck for the print page: cut exactly as the show cuts it, one slide to
+ *  a sheet of paper the slide's own size (`size` below, in the page's px, so
+ *  the PDF is the show and not an A4 with a picture of it). */
+export function SlidePrint({ title, body, ratio, only }) {
+  const h = slideH(ratio)
+  const [pages, setPages] = useState(null)
+  const slides = useMemo(() => (pages ? pageTexts(dropComments(body), pages) : []), [body, pages])
+  const figs = useMemo(() => figureList(body), [body])
+  const name = `nt-deck-${(RATIOS.find((r) => r[0] === ratio) || RATIOS[0])[0]}`
+  return (
+    <section className="nt-deck-print" style={{ '--nt-deck-h': `${h}px`, page: name }}>
+      {/* Named for a print that mixes notes; Safari knows no named pages and
+          takes the plain `@page` alone, so a print of decks alone sets that too. */}
+      <style>{`@page ${name} { size: ${W}px ${h}px; margin: 0; }${only ? ` @page { size: ${W}px ${h}px; margin: 0; }` : ''}`}</style>
+      <DeckMeasure body={body} h={h} onPages={setPages} />
+      {slides.map((text, at) => (
+        <div key={at} className={`nt-deck nt-deck-sheet${at ? '' : ' nt-deck-cover'}`}>
+          {at ? null : <h1>{title}</h1>}
+          <Rendered figures={figs.filter((f) => f.line < (pages[at]?.from ?? 0)).length}>{text}</Rendered>
+          <span className="nt-deck-no">{at + 1} / {slides.length}</span>
+        </div>
+      ))}
+    </section>
   )
 }

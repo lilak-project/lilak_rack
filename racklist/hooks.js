@@ -145,6 +145,9 @@ export function usePaneSplit(key, initial = 50, { edge = 'left', min = 20, max =
   const [dragging, setDragging] = useState(false)
   const box = useRef(null)
   const span = useRef(null)
+  // A bound the page sets as it goes (a calendar keeping its width): the drag stops there.
+  const limit = useRef({})
+  const [pushed, setPushed] = useState(0)      // drags pressed past that bound, counted
   useEffect(() => { save(key, pct) }, [key, pct])
   // A drag that is still on when the handle goes leaves the page unclickable.
   useEffect(() => () => document.body.classList.remove('rl-resizing'), [])
@@ -167,7 +170,10 @@ export function usePaneSplit(key, initial = 50, { edge = 'left', min = 20, max =
     if (!dragging || !span.current) return
     const { left, width } = span.current
     const at = edge === 'right' ? left + width - e.clientX : e.clientX - left
-    setPct(Math.min(max, Math.max(min, (at / width) * 100)))
+    const lo = Math.max(min, limit.current.min ?? min), hi = Math.min(max, limit.current.max ?? max)
+    const want = (at / width) * 100
+    if ((limit.current.min != null && want < lo) || (limit.current.max != null && want > hi)) setPushed((n) => n + 1)
+    setPct(Math.min(hi, Math.max(lo, want)))
   }, [dragging, edge, min, max])
 
   const stop = useCallback(() => {
@@ -181,6 +187,12 @@ export function usePaneSplit(key, initial = 50, { edge = 'left', min = 20, max =
      *  note's tools take exactly what the pane gains by going full width. */
     setPct: (v) => setPct(Math.min(max, Math.max(min, v))),
     reset: () => setPct(initial),
+    /** End a drag whose handle is going away (a pane taking the whole width under it). */
+    stop,
+    /** { min, max } in % beyond the hook's own, or {}: a drag stops there. */
+    setLimit: (l) => { limit.current = l || {} },
+    /** Goes up each time a drag is pressed against that bound. */
+    pushed,
     /** on the pane that comes first */
     leftStyle: { flex: `0 0 ${pct}%`, maxWidth: `${pct}%` },
     /** on the one after the handle */

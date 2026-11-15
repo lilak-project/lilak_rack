@@ -58,9 +58,13 @@ const fenceLanguage = (info) => {
  *  second (non-fallback) highlighter REPLACES the fallback one outright
  *  (`getHighlighters`), so laying one over the default took every colour in
  *  the editor — LaTeX's and markdown's — away with it. */
+/*  Each colour is also a variable named after it (`--nt-syn-708`), so the
+ *  dark theme can say its own (note.css) and bright stays CodeMirror's. */
 export const noteHighlight = HighlightStyle.define(
-  defaultHighlightStyle.specs.map((spec) => (
-    spec.tag === tags.heading ? { ...spec, textDecoration: 'none' } : spec)))
+  defaultHighlightStyle.specs.map((spec) => {
+    const s = spec.tag === tags.heading ? { ...spec, textDecoration: 'none' } : spec
+    return s.color ? { ...s, color: `var(--nt-syn-${s.color.slice(1)}, ${s.color})` } : s
+  }))
 
 const mark = (cls) => new (class extends GutterMarker { elementClass = cls })()
 const PIN = mark('nt-pin')
@@ -131,7 +135,7 @@ const look = EditorView.theme({
   // selected on the line the caret was in — a double-clicked word showed
   // nothing at all. The native highlight paints over the line and under the
   // glyphs, which is where it belongs.
-  '::selection': { background: 'var(--rk-cite)' },
+  '::selection': { background: 'var(--nt-sel, var(--rk-cite))' },
 })
 
 // The line between two slides stands on top of the slide's own height.

@@ -657,6 +657,24 @@ class Document:
                 doc_.write(new, me.get("email") or me.get("username") or "", replaces=cur)
             return {"record": next(x for x in doc_.read()[k] if str(x.get("id")) == rid)}
 
+        @app.post("/api/records/delete")
+        def delete_record(body: dict = Body(...), me: dict = Depends(signed_in)) -> dict:
+            """The record `id` of `key` taken out — what another service ends here
+            (a project turned back into a plain tag in any service's tags tab).
+            It goes the way a PUT's deletion goes (the trash, where there is one)."""
+            import copy
+            k, rid = str(body.get("key") or ""), str(body.get("id") or "")
+            if k not in doc_.keys or k == "settings" or not rid:
+                raise HTTPException(400, "지울 목록과 id가 필요합니다.")
+            with doc_.lock:
+                cur = doc_.read()
+                if not any(isinstance(x, dict) and str(x.get("id")) == rid for x in cur.get(k) or []):
+                    raise HTTPException(404, "그 기록이 없습니다.")
+                new = copy.deepcopy(cur)
+                new[k] = [x for x in new.get(k) or [] if not (isinstance(x, dict) and str(x.get("id")) == rid)]
+                doc_.write(new, me.get("email") or me.get("username") or "", replaces=cur)
+            return {"ok": True}
+
         @app.post("/api/tags/rename")
         def rename_tags(body: dict = Body(...), me: dict = Depends(signed_in)) -> dict:
             """Every record wearing one of `from` (any case) wears `to` instead —

@@ -1,3 +1,4 @@
+import Select from 'lilak-ui/components/Select.jsx'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import './strings.js'
 import { tr, currentLang } from 'lilak-ui/i18n.jsx'
@@ -5,7 +6,7 @@ import { RackTextRows } from './fields.jsx'
 import { authHeaders, linkProject, openInService, serviceColor, remoteDocOf } from './portal.js'
 import { useSharedTags, spellTag, tagKey, uniqueTags } from './tags.js'
 import { parseRule, describe, withUntil, withCount, withoutEnd, DAYS, dow, nth } from './rrule.js'
-import { flowOf, flowFor } from './chain.js'
+import { chainKey, flowOf, flowFor } from './chain.js'
 
 /**
  * Field types — what a property of an [항목] IS, said once.
@@ -217,13 +218,13 @@ registerType('select', {
     const gone = str(value) && !flatOptions(field.options).some((o) => (Array.isArray(o) ? o[0] : o) === str(value))
     return (
       <>
-        <select className="rl-in" value={str(value)} onChange={(e) => onChange(e.target.value)}>
+        <Select className="rl-in" value={str(value)} onChange={(e) => onChange(e.target.value)}>
           {!field.required && <option value="">—</option>}
           {(field.options || []).map((o) => (o?.group
             ? <optgroup key={o.group} label={o.group}>{o.options.map(option)}</optgroup>
             : option(o)))}
           {gone && <option value={str(value)}>{str(value)}</option>}
-        </select>
+        </Select>
         {gone && <span className="rl-hint rl-warn">{tr("rk_not_in_list", field.label || tr("rk_value"))}</span>}
       </>
     )
@@ -362,12 +363,12 @@ function Pick({ value, onChange, field, ctx, rec }) {
   }
   return (
     <>
-      <select className="rl-in" value={cur}
+      <Select className="rl-in" value={cur}
         onChange={(e) => (e.target.value === NEW ? setTyping(true) : onChange(storedFor(field, ctx, e.target.value)))}>
         <option value="">—</option>
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
         <option value={NEW}>{tr("rk_type_your_own")}</option>
-      </select>
+      </Select>
       {off && <span className="rl-hint rl-warn">{tr("rk_not_in_kind", field.label || tr("rk_value"))}</span>}
     </>
   )
@@ -898,6 +899,34 @@ export function NoteEdit({ value, onChange, field, rec, ctx, bare }) {
     </>
   )
 }
+/** A record in a flow takes its note into that flow: notes step as their records
+ *  do. The record's flow wins over what the note says; the note of a record in
+ *  no flow is left as it is. Run when the records change — what each note should
+ *  be in is compared with the last run first, so an edit elsewhere costs no read. */
+const NOTE_FLOWS = new Map()
+export async function syncNoteFlows(def, doc) {
+  const k = chainKey(def), idk = def.item.id || 'id'
+  const items = doc?.[def.item.key] || []
+  const byId = new Map(items.map((r) => [String(r[idk]), r]))
+  for (const fl of k ? def.item.fields.filter((f) => f.type === 'note') : []) {
+    const svc = fl.svc || 'note', proj = linkProject(svc)
+    const want = new Map()
+    for (const r of items) {
+      const id = r[fl.k]?.id, flow = id && flowOf(def, r, (x) => byId.get(x))
+      if (flow) want.set(id, flow)
+    }
+    const key = JSON.stringify([...want]), at = `${def.key}:${fl.k}`
+    if (!want.size || NOTE_FLOWS.get(at) === key) continue
+    NOTE_FLOWS.set(at, key)
+    const off = (await notesOf(svc, proj, true)).filter((n) => want.has(n.id) && (n.fields?.chain || '') !== want.get(n.id))
+    for (const n of off) {
+      await noteApi(svc, proj, `/notes/${encodeURIComponent(n.id)}`, { method: 'PUT',
+        body: JSON.stringify({ baseVersion: n.version, fields: { ...(n.fields || {}), chain: want.get(n.id) } }) }).catch(() => {})
+    }
+    if (off.length) notesOf(svc, proj, true)
+  }
+}
+
 registerType('note', {
   empty: () => null,
   text: (v) => str(v?.title),
@@ -1014,7 +1043,7 @@ function RepeatEdit({ value, onChange, field, rec }) {
   return (
     <div className="rl-repeat">
       <div className="rl-rrow">
-        <select className="rl-in" value={raw ? 'RAW' : freq}
+        <Select className="rl-in" value={raw ? 'RAW' : freq}
           onChange={(e) => {
             const f = e.target.value
             if (f === 'RAW') { setRaw(true); if (!v) put('FREQ=WEEKLY'); return }
@@ -1027,7 +1056,7 @@ function RepeatEdit({ value, onChange, field, rec }) {
           <option value="MONTHLY">{tr("rk_every_MONTHLY")}</option>
           <option value="YEARLY">{tr("rk_every_YEARLY")}</option>
           <option value="RAW">{tr("rk_raw_rule")}</option>
-        </select>
+        </Select>
         {v && !raw && (
           <>
             <input className="rl-in" type="number" min={1} style={{ width: 56 }} value={r.interval}
@@ -1057,16 +1086,16 @@ function RepeatEdit({ value, onChange, field, rec }) {
       )}
       {v && !raw && freq === 'MONTHLY' && (
         <div className="rl-rrow">
-          <select className="rl-in" value={r.byday.length ? 'nth' : 'day'}
+          <Select className="rl-in" value={r.byday.length ? 'nth' : 'day'}
             onChange={(e) => put(build({ nth: e.target.value === 'nth' ? { n: snth > 4 ? -1 : snth, d: sdow } : null }))}>
             <option value="day">{tr('rk_monthly_on_day', sdom)}</option>
             <option value="nth">{tr('rk_monthly_on_nth', nth(snth > 4 ? -1 : snth), dow(sdow))}</option>
-          </select>
+          </Select>
         </div>
       )}
       {v && !raw && (
         <div className="rl-rrow">
-          <select className="rl-in" value={end}
+          <Select className="rl-in" value={end}
             onChange={(e) => {
               const m = e.target.value
               put(m === 'until' ? withUntil(v.rule, start || new Date().toISOString().slice(0, 10))
@@ -1075,7 +1104,7 @@ function RepeatEdit({ value, onChange, field, rec }) {
             <option value="none">{tr("rk_no_end")}</option>
             <option value="until">{tr("rk_end_until")}</option>
             <option value="count">{tr("rk_end_count")}</option>
-          </select>
+          </Select>
           {end === 'until' && (
             <input className="rl-in" type="date" value={r.until} onChange={(e) => put(withUntil(v.rule, e.target.value))} />
           )}

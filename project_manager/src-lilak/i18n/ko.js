@@ -7,6 +7,8 @@ export default {
   pm_show_in_calendar: "달력",
   pm_name_hint: "한 낱말로 — 본문에서 +이름 으로 부릅니다",
   pm_name_one_word: "프로젝트 이름에는 띄어쓰기와 # + . , ; : ! ? ( ) [ ] { } ' \" 를 쓸 수 없습니다 (예: STARK_CRIB)",
+  pm_parent: (a0) => `상위: ${a0}`,
+  pm_delete_has_kids: (a0) => `되돌릴 수 없습니다. 하위 프로젝트 ${a0}의 태그가 이 프로젝트 아래에 남아 상위를 잃습니다 — 먼저 옮기거나 지우세요`,
   pm_tags: "태그",
   pm_match: "묶기",
   pm_and: "모두",

@@ -1,4 +1,5 @@
 export default {
+  ib_not_saved: "Could not save the edits first",
   ib_title_col: "Title",
   ib_unit: "items",
   ib_title: "Inbox",

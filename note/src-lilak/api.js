@@ -1,5 +1,6 @@
 import './strings.js'
 import { PORTAL_BASE, authHeaders } from 'racklist'
+import { linkProject } from 'racklist/portal.js'
 import { tr } from 'lilak-ui/i18n.jsx'
 
 /** The note service's own API — not rackstore's. The editor, the tools and
@@ -41,6 +42,15 @@ export function openTab(url) {
   a.remove()
 }
 
+/** A window of its own rather than a tab: the print page, beside the note it
+ *  prints. Opened WITHOUT `noopener` (which makes `open` answer null even when
+ *  it worked) and cut loose after; a refused one falls back to a tab. */
+export function openWindow(url) {
+  const w = window.open(url, '_blank', `popup,width=${Math.min(1200, screen.availWidth)},height=${screen.availHeight}`)
+  if (w) { w.opener = null; return }
+  openTab(url)
+}
+
 export const api = (p, o) => fetch(`${PORTAL_BASE}/api${p}`, {
   ...o, headers: { 'Content-Type': 'application/json', ...authHeaders(), ...(o?.headers || {}) },
 })
@@ -50,4 +60,11 @@ export async function ask(p, o) {
   if (r.status === 409) return { conflict: true, body: await r.json() }
   if (!r.ok) throw new Error(`${o?.method || 'GET'} ${p} → ${r.status}`)
   return { body: await r.json() }
+}
+
+/** A job of jobboard's, in an editor tab beside this note — the page's own
+ *  RackList takes `rackOpen` as it does from a list framed in it. */
+export function openJob(job) {
+  const proj = linkProject('jobboard')
+  if (proj) window.postMessage({ rackOpen: { svc: 'jobboard', proj, id: job.id, label: job.name || job.id } }, window.location.origin)
 }

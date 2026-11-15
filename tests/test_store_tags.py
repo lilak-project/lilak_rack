@@ -86,6 +86,13 @@ class Records(Tags):
         self.assertTrue(r["updatedAt"])
         self.assertEqual(self.c.post("/api/records/update", json={"key": "items", "id": "zz", "fields": {}}, headers=H).status_code, 404)
 
+    def test_delete_record_takes_one_out(self):
+        self.c.post("/api/records", json={"key": "items", "record": {"id": "gone", "name": "G"}}, headers=H)
+        self.assertTrue(self.c.post("/api/records/delete", json={"key": "items", "id": "gone"}, headers=H).json()["ok"])
+        ids = [x["id"] for x in self.c.get("/api/data", headers=H).json()["items"]]
+        self.assertNotIn("gone", ids)
+        self.assertEqual(self.c.post("/api/records/delete", json={"key": "items", "id": "gone"}, headers=H).status_code, 404)
+
 
 class Trash(unittest.TestCase):
     """The bin (Bin, shared with note): a record deleted is listed, and comes back."""

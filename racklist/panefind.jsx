@@ -57,18 +57,40 @@ function hitsIn(root, q) {
 const lastIn = (el) => { let x = el; while (x.lastChild) x = x.lastChild; return x }
 
 const lit = typeof CSS !== 'undefined' && CSS.highlights && typeof Highlight !== 'undefined'
+// Safari repaints only where the NEW highlight is: a match dropped by the next
+// letter stayed lit (the "t" of Meeting after typing "tag"). The elements that
+// held the last matches are nudged to repaint.
+let litBefore = []
+function repaint(ranges) {
+  const now = new Set(ranges.map((r) => r.startContainer.parentElement))
+  for (const el of litBefore) {
+    if (!el || now.has(el)) continue
+    el.classList.add('rl-repaint')
+    requestAnimationFrame(() => el.classList.remove('rl-repaint'))
+  }
+  litBefore = [...now]
+}
 function paint(hits, now) {
   if (lit) {
-    CSS.highlights.set('rl-find', new Highlight(...hits.filter((h) => h.range).map((h) => h.range)))
+    const ranges = hits.filter((h) => h.range).map((h) => h.range)
+    CSS.highlights.set('rl-find', new Highlight(...ranges))
+    repaint(ranges)
     const cur = hits[now]
     if (cur?.range) CSS.highlights.set('rl-find-now', new Highlight(cur.range))
     else CSS.highlights.delete('rl-find-now')
   }
   document.querySelectorAll('.rl-find-field').forEach((el) => el.classList.remove('rl-find-field', 'now'))
+  document.querySelectorAll('.rl-find-text').forEach((el) => el.classList.remove('rl-find-text'))
   for (const h of hits) if (h.field) h.field.classList.add('rl-find-field')
   const cur = hits[now]
   if (!cur) return
-  if (cur.range) cur.range.startContainer.parentElement?.scrollIntoView({ block: 'center', inline: 'nearest' })
+  if (cur.range) {
+    // The element holding the current match is outlined as well: Safari did not
+    // paint the highlight on some of them (a field's name), so it read as no match.
+    const el = cur.range.startContainer.parentElement
+    el?.classList.add('rl-find-text')
+    el?.scrollIntoView({ block: 'center', inline: 'nearest' })
+  }
   if (cur.field) { cur.field.classList.add('now'); cur.field.scrollIntoView({ block: 'center', inline: 'nearest' }) }
   // An editor scrolls to its match and hands back where it is now on screen.
   if (cur.editor) {
@@ -78,8 +100,9 @@ function paint(hits, now) {
   }
 }
 function unpaint(root) {
-  if (lit) { CSS.highlights.delete('rl-find'); CSS.highlights.delete('rl-find-now') }
+  if (lit) { CSS.highlights.delete('rl-find'); CSS.highlights.delete('rl-find-now'); repaint([]) }
   document.querySelectorAll('.rl-find-field').forEach((el) => el.classList.remove('rl-find-field', 'now'))
+  document.querySelectorAll('.rl-find-text').forEach((el) => el.classList.remove('rl-find-text'))
   root?.querySelectorAll('*').forEach((el) => el.rackFind?.clear?.())
 }
 

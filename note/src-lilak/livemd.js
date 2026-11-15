@@ -4,11 +4,11 @@ import { StateEffect, StateField } from '@codemirror/state'
 import { syntaxTree } from '@codemirror/language'
 import katex from 'katex'
 import { tr } from 'lilak-ui/i18n.jsx'
-import { openTab as open } from './api.js'
+import { openTab as open, openJob } from './api.js'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Rendered } from './reading.jsx'
-import { headingNumbers, figureOf, figureList, isAudio, isProject, isAuthor, onProjChoices, onAuthorChoices, mathFences, overdue, commentSpans, highlightSpans, arrowSpans, MATH, FIGURE_RE, URGENT_RE } from './marks.js'
+import { headingNumbers, figureOf, figureList, isAudio, isProject, isAuthor, onProjChoices, onAuthorChoices, onJobChoices, jobOf, JOB_RE, mathFences, overdue, commentSpans, highlightSpans, arrowSpans, MATH, FIGURE_RE, URGENT_RE } from './marks.js'
 
 /** Markdown drawn on top of the text that IS the file.
  *
@@ -168,6 +168,23 @@ function caretAfter(view, dom, markup) {
 const pictureUnder = (bar) => bar.closest('.cm-line')?.nextElementSibling?.querySelector?.('img.nt-embed') || null
 
 /** A file that is not a picture (`![[paper.pdf]]`): a link, in the markup's place. */
+/** `::219c0f`, off its line: the job's ticket (reading.jsx draws the same). */
+class JobTicket extends WidgetType {
+  constructor(short, name) { super(); this.short = short; this.name = name }
+  eq(o) { return o.short === this.short && o.name === this.name }
+  toDOM() {
+    const el = (cls, text) => { const s = document.createElement('span'); s.className = cls; if (text) s.textContent = text; return s }
+    const t = el('nt-ticket'), inner = el('nt-ticket-in')
+    t.title = `::${this.short}`
+    t.dataset.short = this.short
+    if (this.name) inner.append(el('nt-ticket-name', this.name))
+    inner.append(el('nt-ticket-id', this.short))
+    t.append(inner)
+    return t
+  }
+  ignoreEvent() { return false }
+}
+
 class FileLink extends WidgetType {
   constructor(spec, src) { super(); this.spec = spec; this.src = src }
   eq(other) { return other.spec === this.spec }
@@ -228,15 +245,15 @@ class Bar extends WidgetType {
       bar.appendChild(b)
       return b
     }
-    cell('nt-fig-n', tr('nt_fig_n', this.n))
-    cell('nt-fig-name', name.split('/').pop(), name)
-    // The text, to be edited by hand — the one way back to it.
-    button('nt-fig-edit', tr('nt_fig_edit'), tr('nt_fig_edit_hint'), () => {
+    // The figure's number is also the way to its text, to be edited by hand —
+    // where the file's name is; until then the name is only a hover away.
+    button('nt-fig-n', tr('nt_fig_n', this.n), `${name} — ${tr('nt_fig_edit_hint')}`, () => {
       const at = markupAt(view, bar, this.markup)
       if (!at) return
       view.dispatch({ effects: setRaw.of(at.from), selection: { anchor: at.to }, scrollIntoView: true })
       view.focus()
     })
+    cell('nt-fig-name', name.split('/').pop(), name)
     /** How wide the picture is NOW: as written, or as drawn under the bar. */
     const wide = () => w || Math.round((pictureUnder(bar)?.getBoundingClientRect().width || 0) / zoomOf(view)) || 400
     const write = (px) => writeWidth(view, bar, this.markup, px)
@@ -248,6 +265,7 @@ class Bar extends WidgetType {
     px.type = 'number'
     px.className = 'nt-fig-c nt-fig-px'
     px.min = '40'
+    px.max = '9999'                 // four digits: what the box is sized for
     px.step = '10'
     px.title = tr('nt_img_px')
     if (w) px.value = String(w)
@@ -264,6 +282,7 @@ class Bar extends WidgetType {
     }
     px.addEventListener('mousedown', (e) => e.stopPropagation())
     px.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); px.blur() } })
+    px.addEventListener('input', () => { if (px.value.length > 4) px.value = px.value.slice(0, 4) })
     px.addEventListener('change', () => write(Math.max(0, Number(px.value) || 0)))
     bar.appendChild(px)
     button('nt-fig-fit', tr('nt_img_auto'), tr('nt_img_auto_hint'), () => write(0))
@@ -616,6 +635,14 @@ function build(view, fileSrc, numbered) {
       marks.push(Decoration.mark({ class: 'nt-auth-in' }).range(start, start + 1 + m[2].length))
       if (!shown(start)) hide(start, start + 1)
     }
+    // On its line it is the text, marked; off it, the ticket.
+    for (const m of text.matchAll(JOB_RE)) {
+      const job = jobOf(m[2])
+      const start = at(m.index + m[1].length)
+      if (!job || inCode(start)) continue
+      marks.push(shown(start) ? Decoration.mark({ class: 'nt-job-in' }).range(start, start + 8)
+        : Decoration.replace({ widget: new JobTicket(m[2], job.name) }).range(start, start + 8))
+    }
     for (const m of text.matchAll(DATE)) {
       const start = at(m.index)
       if (inCode(start)) continue
@@ -738,7 +765,8 @@ const paint = (fileSrc, onOpenNote, numbered) => ViewPlugin.fromClass(class {
     }
     const offProj = onProjChoices(redraw)
     const offAuth = onAuthorChoices(redraw)
-    this.off = () => { offProj(); offAuth() }
+    const offJob = onJobChoices(redraw)
+    this.off = () => { offProj(); offAuth(); offJob() }
   }
   take({ marks, bars }) { this.decorations = marks; this.bars = bars }
   update(u) {
@@ -767,6 +795,12 @@ const paint = (fileSrc, onOpenNote, numbered) => ViewPlugin.fromClass(class {
           open(url)
           return true
         }
+      }
+      // `::219c0f` drawn as its ticket — only off the caret's line — opens the job.
+      const ticket = e.target.closest?.('.nt-ticket')
+      if (ticket) {
+        const job = jobOf(ticket.dataset.short)
+        if (job) { e.preventDefault(); openJob(job); return true }
       }
       // `[[노트]]` — the other note, opened in a tab of its own.
       if (where != null && onOpenNote && e.target.closest?.('.nt-cm-wiki')) {

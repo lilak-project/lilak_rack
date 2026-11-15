@@ -67,6 +67,14 @@ function Body({ note, setNote, say }) {
         <RecButton note={note.id} title={note.title} />
         {r.ready === false ? <span className="rl-hint">{tr('nt_rec_none')}</span> : null}
       </div>
+      {r.setup ? (
+        // What this host lacks, and how to give it: whisper does not come with the note.
+        <div className="nt-rec-setup">
+          <div className="rl-hint">{tr('nt_rec_missing', r.setup.missing.map((m) => (m === 'model' ? tr('nt_rec_model', r.setup.model) : m)).join(', '))}</div>
+          <div className="rl-hint">{tr('nt_rec_setup')}</div>
+          <code className="rl-mono nt-rec-cmd">sh {r.setup.setup}</code>
+        </div>
+      ) : null}
       <label className="nt-rec-row">
         <span>{tr('nt_rec_lang')}</span>
         <LangPick />

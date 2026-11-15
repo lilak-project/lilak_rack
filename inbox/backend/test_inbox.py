@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lilak_portal_auth"))   # the package, not its repo folder
 
 import main                                    # noqa: E402
+import approve as ap                           # noqa: E402
 
 
 class Inbox(unittest.TestCase):
@@ -104,6 +105,107 @@ class Inbox(unittest.TestCase):
             {"id": "done-old", "status": "checked", "createdAt": "2026-10-20T10:00:00+09:00"},
         ]
         self.assertEqual([c["id"] for c in main._order(rows)], ["wait-new", "wait-old", "done-new", "gone-mid", "done-old"])
+
+
+class Decide(unittest.TestCase):
+    """Cards, opening one, and deciding — the service calls made here (approve.py), faked."""
+
+    def setUp(self):
+        self.calls = []
+
+        def fake(auth, method, path, body=None):
+            self.calls.append((method, path, body))
+            if path.endswith("/api/notes") and method == "POST":
+                return {"id": "n1", "version": "v1"}
+            if "/api/notes/" in path and method == "GET":
+                return {"id": "old", "title": "있던 노트", "version": "v7", "body": "본문\n"}
+            if path.endswith("/api/records"):
+                return {"record": {"id": "a1"}}
+            if path.endswith("/api/submit"):
+                return {"id": "j1"}
+            if "academic_activities" in path and path.endswith("/api/data"):
+                return {"activities": [{"id": "act", "name": "TAMU", "place": "College Station"}]}
+            if "project_manager" in path:
+                return {"projects": [{"id": "p1", "tags": ["STARK"]}]}
+            return {}
+        self.real, ap.call = ap.call, fake
+        self.addCleanup(lambda: setattr(ap, "call", self.real))
+        main.app.dependency_overrides[main.signed_in] = lambda: {"authenticated": True, "username": "u"}
+        self.addCleanup(main.app.dependency_overrides.clear)
+        self.put([
+            {"id": "n", "target": "note", "status": "waiting", "title": "T", "body": "b", "noteTags": "#x",
+             "project": {"svc": "project_manager", "proj": "projects", "id": "p1"}, "destProj": "notes-job", "from": "kim"},
+            {"id": "u", "target": "activity", "status": "waiting", "mode": "update", "match": {"id": "act"}, "place": "Houston",
+             "destProj": "activities"},
+            {"id": "j", "target": "job", "status": "waiting", "recipe": "scan", "jobProject": "AToM-X", "params": '{"run": 1}',
+             "destProj": "jobboard"},
+            {"id": "bad", "target": "activity", "status": "waiting", "name": "no date"},
+            {"id": "c", "target": "note", "status": "waiting", "mode": "checked", "title": "nothing new"},
+            {"id": "old", "target": "note", "status": "approved", "title": "done"},
+        ])
+        from fastapi.testclient import TestClient
+        self.c = TestClient(main.app)
+
+    def put(self, rows):
+        with main.DOC.lock:
+            d = main.DOC.read()
+            main.DOC.write({**d, "inbox": rows}, replaces=d)
+
+    def status(self, cid):
+        return next(c for c in main.DOC.read()["inbox"] if c["id"] == cid)
+
+    def test_pending_cards_carry_what_to_draw_and_nothing_decided(self):
+        got = self.c.get("/api/pending").json()
+        self.assertEqual(got["count"], 5)
+        cards = {x["id"]: x for x in got["items"]}
+        self.assertNotIn("old", cards)
+        self.assertEqual((cards["n"]["actions"], cards["n"]["goes"]), (["approve", "discard"], "note/notes-job"))
+        self.assertEqual(cards["u"]["actions"], ["update", "discard"])
+        self.assertEqual(cards["c"]["actions"], ["check"])
+        self.assertTrue(cards["bad"]["blocked"])
+
+    def test_opening_shows_what_it_makes_or_changes(self):
+        n = self.c.get("/api/inbox/n").json()["sections"]
+        self.assertIn("#x #STARK", n[0]["text"])                                     # the project's tags join the note's
+        u = self.c.get("/api/inbox/u").json()["sections"][0]
+        self.assertEqual(u["k"], "change")
+        self.assertIn(["place", "College Station", "Houston"], u["rows"])
+
+    def test_approving_makes_it_where_it_goes_then_saves_where_it_went(self):
+        r = self.c.post("/api/inbox/n/decide", json={"action": "approve"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual([(m, p) for m, p, _ in self.calls if "note" in p],
+                         [("POST", "/pp/note/notes-job/api/notes"), ("PUT", "/pp/note/notes-job/api/notes/n1")])
+        self.assertEqual((self.status("n")["status"], self.status("n")["made"]), ("approved", {"svc": "note", "proj": "notes-job", "id": "n1"}))
+        self.c.post("/api/inbox/u/decide", json={"action": "update"})
+        self.assertIn(("POST", "/pp/academic_activities/activities/api/records/update",
+                       {"key": "activities", "id": "act", "fields": {"place": "Houston"}}), self.calls)
+        self.c.post("/api/inbox/j/decide", json={"action": "approve"})
+        self.assertEqual(self.status("j")["made"]["id"], "j1")
+
+    def test_what_cannot_be_done_is_refused(self):
+        self.assertEqual(self.c.post("/api/inbox/bad/decide", json={"action": "approve"}).status_code, 502)
+        self.assertEqual(self.c.post("/api/inbox/c/decide", json={"action": "approve"}).status_code, 409)   # only [확인]
+        self.assertEqual(self.c.post("/api/inbox/old/decide", json={"action": "discard"}).status_code, 409)
+        self.assertEqual(self.status("bad")["status"], "waiting")
+
+    def test_decided_lists_the_latest_decision_first(self):
+        self.c.post("/api/inbox/c/decide", json={"action": "check"})
+        self.c.post("/api/inbox/n/decide", json={"action": "discard"})
+        got = self.c.get("/api/decided").json()
+        self.assertEqual(got["count"], 3)                                            # and "old", decided before
+        self.assertEqual([x["id"] for x in got["items"]][:2], ["n", "c"])
+        self.assertEqual(got["items"][0]["actions"], ["restore"])
+        self.assertEqual(len(self.c.get("/api/decided?limit=1").json()["items"]), 1)
+
+    def test_check_discard_restore(self):
+        self.c.post("/api/inbox/c/decide", json={"action": "check"})
+        self.assertEqual(self.status("c")["status"], "checked")
+        self.c.post("/api/inbox/n/decide", json={"action": "discard"})
+        self.assertEqual(self.status("n")["status"], "discarded")
+        self.c.post("/api/inbox/n/decide", json={"action": "restore"})
+        self.assertEqual((self.status("n")["status"], self.status("n")["made"]), ("waiting", None))
+        self.assertEqual(self.calls, [])                                             # none of these reach a service
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@
  *   EditMany editing the selection at once (affiliations and groups they share)
  *   AuthorCommands  add to group · make group · remove from group
  */
+import Select from 'lilak-ui/components/Select.jsx'
 import './strings.js'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
@@ -336,11 +337,11 @@ function EditMany({ ids, doc, onSave, onDone, onCancel, say }) {
               </div>
             ))}
             <div className="rl-rrow rl-full">
-              <select className="rl-btn rl-pick" value="" disabled={!affLeft.length}
+              <Select className="rl-btn rl-pick" value="" disabled={!affLeft.length}
                 onChange={(e) => setAdd2((s) => ({ ...s, aff: [...s.aff, e.target.value] }))}>
                 <option value="">{tr("am_add_aff")}</option>
                 {affLeft.map(([id, n]) => <option key={id} value={id}>{n}</option>)}
-              </select>
+              </Select>
             </div>
           </div>
         </Fld>
@@ -374,11 +375,11 @@ function EditMany({ ids, doc, onSave, onDone, onCancel, say }) {
               </div>
             ))}
             <div className="rl-rrow rl-full">
-              <select className="rl-btn rl-pick" value="" disabled={!grpLeft.length}
+              <Select className="rl-btn rl-pick" value="" disabled={!grpLeft.length}
                 onChange={(e) => setAdd2((s) => ({ ...s, grp: [...s.grp, e.target.value] }))}>
                 <option value="">{tr("am_add_group")}</option>
                 {grpLeft.map(([id, n]) => <option key={id} value={id}>{n}</option>)}
-              </select>
+              </Select>
             </div>
           </div>
         </Fld>
@@ -445,7 +446,7 @@ function AffRows({ value = [], options, onChange }) {
       {value.length === 0 && <span className="rl-hint">{tr("am_none")}</span>}
       {value.map((x, i) => (
         <div key={i} className="rl-rrow">
-          <select className="rl-in" style={{ width: 120 }} value={x.tag || ''}
+          <Select className="rl-in" style={{ width: 120 }} value={x.tag || ''}
             onChange={(e) => put(i, 'tag', e.target.value)}>
             <option value="">{tr("am_aff_placeholder")}</option>
             {/* An entry pointing at a class that is gone stays selectable, so
@@ -453,7 +454,7 @@ function AffRows({ value = [], options, onChange }) {
             {withOwn(options, x.tag).map(([id, n]) => (
               <option key={id} value={id}>{n}</option>
             ))}
-          </select>
+          </Select>
           <input className="rl-in" style={{ width: 150 }} placeholder={tr("am_department")}
             value={x.dept || ''} onChange={(e) => put(i, 'dept', e.target.value)} />
           <input className="rl-in" style={{ width: 170 }} placeholder="position"
@@ -506,13 +507,13 @@ function GrpRows({ value = [], options, onChange }) {
       {value.length === 0 && <span className="rl-hint">{tr("am_none")}</span>}
       {value.map((x, i) => (
         <div key={i} className="rl-rrow">
-          <select className="rl-in" style={{ width: 190 }} value={x.group || ''}
+          <Select className="rl-in" style={{ width: 190 }} value={x.group || ''}
             onChange={(e) => put(i, 'group', e.target.value)}>
             <option value="">{tr("am_group_placeholder")}</option>
             {withOwn(options, x.group).map(([id, n]) => (
               <option key={id} value={id}>{n}</option>
             ))}
-          </select>
+          </Select>
           <input className="rl-in" style={{ width: 150 }} placeholder="role"
             value={x.role || ''} onChange={(e) => put(i, 'role', e.target.value)} />
           <input className="rl-in" style={{ width: 66 }} type="number" min="1" placeholder="core"
@@ -618,12 +619,12 @@ export function AuthorCommands({ api }) {
   return (
     <>
       {/* The group list IS the menu: picking is the whole action. */}
-      <select className="rl-btn rl-go rl-pick" value=""
+      <Select className="rl-btn rl-go rl-pick" value=""
         disabled={!picked.size || !(doc?.groups || []).length}
         onChange={(e) => addToGroup(e.target.value)}>
         <option value="">add to group</option>
         {groupChoices.map(([id, n]) => <option key={id} value={id}>{n}</option>)}
-      </select>
+      </Select>
       <button type="button" className="rl-btn rl-go" disabled={!picked.size}
         onClick={() => setForm((g) => (g ? null : {}))}>make group</button>
       {form && (

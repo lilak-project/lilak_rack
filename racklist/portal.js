@@ -22,6 +22,10 @@ export const PORTAL_SERVICE = (typeof window !== 'undefined' && window.__PORTAL_
  *  is not its service's still reads the others' — they do not read it. */
 const LINKS = PORTAL_SERVICE.links || {}
 export const linkProject = (svc) => LINKS[svc] || ''
+/** This project's share set, { svc: proj } (the portal's rack services page):
+ *  whose tags it reads. Absent from an older portal — tags.js then falls back
+ *  to the manifests' tag groups. */
+export const SHARE = PORTAL_SERVICE.share || null
 export const PROJECT_LINKED = !LINKS[PORTAL_SERVICE.name] || LINKS[PORTAL_SERVICE.name] === PORTAL_PROJECT
 
 /** Readable text on a given plate. Luminance, not a guess: a service may be

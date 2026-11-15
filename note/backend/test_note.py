@@ -214,4 +214,11 @@ assert REC_NAME.match("rec-20261110-093000.webm") and REC_NAME.match("rec-202611
 for bad in ("pic.png", "../rec-20261110-093000.webm", "rec-20261110-093000.webm/x", "rec-x.webm"):
     assert not REC_NAME.match(bad), bad
 assert NOT_WORDS.match("[BLANK_AUDIO]") and NOT_WORDS.match("(음악)") and not NOT_WORDS.match("안녕 (웃음)")
+# ── the slide PDF's ticket: one note, for a while, then never again ───────
+import time as _t                          # noqa: E402
+from backend import main as _m           # noqa: E402
+_tk = _m._ticket("deck")
+assert _m._ticket_for(_tk) == "deck" and _m._ticket_for("") is None and _m._ticket_for("nope") is None
+_m.TICKETS[_tk] = ("deck", _t.time() - 1)
+assert _m._ticket_for(_tk) is None
 print("note: ok")

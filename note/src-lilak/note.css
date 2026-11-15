@@ -116,6 +116,20 @@
 .nt-proj-in::before, .nt-proj::before { left: 4px; }
 .nt-proj-in::after, .nt-proj::after { right: 4px; }
 
+/* A job — `::219c0f` — drawn as jobboard's ticket: a notch on the left, the
+   short id on a slant cut in Jobboard's graphite. */
+.nt-ticket { display: inline-flex; vertical-align: middle; padding: 1px; background: var(--nt-job, #334155);
+  -webkit-mask: radial-gradient(circle 4px at 0 50%, #0000 97%, #000); mask: radial-gradient(circle 4px at 0 50%, #0000 97%, #000); }
+.nt-ticket-in { display: inline-flex; align-items: stretch; height: 1.35em; background: var(--rk-panel, #fff); white-space: nowrap;
+  font-size: .85em; line-height: 1;
+  -webkit-mask: radial-gradient(circle 5px at -1px 50%, #0000 97%, #000); mask: radial-gradient(circle 5px at -1px 50%, #0000 97%, #000); }
+.nt-ticket-name { display: flex; align-items: center; padding: 0 7px 0 9px; color: var(--rk-ink, #111); }
+.nt-ticket-id { display: flex; align-items: center; padding: 0 6px 0 10px; background: var(--nt-job, #334155); color: #fff;
+  font-family: var(--rk-mono, var(--font-mono)); font-size: .9em; clip-path: polygon(5px 0, 100% 0, 100% 100%, 0 100%); }
+.nt-ticket-name + .nt-ticket-id { margin-left: -5px; }
+.nt-ticket-in > .nt-ticket-id:first-child { padding-left: 9px; clip-path: none; }
+.nt-job-in { color: var(--nt-job, #334155); font-family: var(--rk-mono, var(--font-mono)); }
+
 /* A tag, where a note is read: the same blue the rest of RACK cites with. */
 .nt-sheet .nt-tag { background: #3730a3; color: #3730a3; }
 .nt-sheet .nt-tag::after { background: #eef2ff; }
@@ -207,6 +221,7 @@
   font-family: var(--rk-sans); font-size: 12px; line-height: 1;
   user-select: none;
 }
+.nt-cal.nt-cal-left { left: auto; right: 0; }
 .nt-cal:focus { outline: 1px solid var(--rk-accent, var(--rk-cite-t)); }
 .nt-cal-head { display: flex; align-items: center; gap: 2px; padding: 1px 2px 4px; }
 .nt-cal-head b { flex: 1; text-align: center; font-weight: 600; letter-spacing: .02em; }
@@ -286,6 +301,20 @@ body.nt-paper #root { height: auto; min-height: 100%; }
   .nt-sheet + .nt-sheet { break-before: page; }
   .nt-sheet :where(h1, h2, h3) { break-after: avoid; }
   .nt-sheet pre, .nt-sheet blockquote, .nt-sheet table { break-inside: avoid; }
+  /* A slide note: its own paper (SlidePrint's `@page`), one slide to a sheet. */
+  .nt-deck-sheet { break-inside: avoid; }
+  .nt-deck-sheet:not(:last-child) { break-after: page; }
+  .nt-deck-print + *, * + .nt-deck-print { break-before: page; }
+  .nt-deck-flow { display: none; }
+}
+.nt-deck-sheet {
+  position: relative; height: var(--nt-deck-h); overflow: hidden;
+  print-color-adjust: exact; -webkit-print-color-adjust: exact;
+}
+/* On screen: the slides one under another, as they will come out. */
+@media screen {
+  .nt-deck-print { padding: 16px 0; background: #e2e8f0; }
+  .nt-deck-sheet { margin: 0 auto 16px; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
 }
 
 /* ── the editor: a title, and then the note ──────────────────────────────
@@ -694,6 +723,9 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 .nt-cm-link, .nt-cm-wiki { color: var(--rk-cite-t); text-decoration: underline; text-underline-offset: 2px; }
 /* Drawn as a link, so it opens like one — except on the line being edited. */
 .nt-cm-link { cursor: pointer; }
+/* A link is the link's colour all through: CodeMirror's own url colour (#219)
+   under it was a second, darker blue — and all but black in dark. */
+:is(.nt-cm-link, .nt-cm-wiki) * { color: inherit; }
 .nt-cm-quote, .nt-deck blockquote { border-left: 2px solid var(--rk-edge); color: var(--rk-dim); }
 /* A ``` block: the same box the sheet and the PDF draw, laid on line by line
    because the lines are the file's own. The fence stays visible — it is the
@@ -753,6 +785,8 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 .nt-rec { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; }
 .nt-rec-row { display: flex; align-items: center; gap: 8px; }
 .nt-rec-on { color: var(--rk-danger, #b91c1c); border-color: var(--rk-danger, #b91c1c); }
+.nt-rec-setup { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border-left: 2px solid var(--rk-edge); }
+.nt-rec-cmd { user-select: all; overflow-wrap: anywhere; }
 .nt-rec-item { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .nt-rec-item audio, audio.nt-audio { height: 28px; max-width: 100%; vertical-align: middle; }
 /* `==형광==`, and `%% 주석 %%` while the caret is in it. */
@@ -846,33 +880,33 @@ body.nt-paper #root { height: auto; min-height: 100%; }
    what it is called, and the only thing anyone changes about it — its size.
    One box ruled into cells, as tall as the line it stands in and in the text's
    own size: it stands where a line of text stood, and it reads as one. */
+.nt-fig-bar .nt-fig-name { display: none; }
 .nt-fig-bar {
   display: inline-flex; align-items: stretch; max-width: 100%;
-  height: 1.7em; margin: 0; vertical-align: top;
+  height: 1.35em; margin: .175em 0 0; vertical-align: top;
   border: 1px solid var(--rk-edge); background: var(--rk-panel);
-  font-size: inherit; line-height: calc(1.7em - 2px); color: var(--rk-dim);
+  font-size: .86em; line-height: calc(1.35em - 2px); color: var(--rk-dim);
   overflow: hidden;
 }
-.nt-fig-c { display: block; padding: 0 10px; white-space: nowrap; }
+.nt-fig-c { display: block; padding: 0 8px; white-space: nowrap; }
 .nt-fig-c + .nt-fig-c { border-left: 1px solid var(--rk-line); }
-.nt-fig-n { background: var(--rk-gut); color: var(--rk-ink); font-weight: 700; }
+.nt-fig-n, .nt-fig-do.nt-fig-n { color: var(--rk-ink); font-weight: 600; }
 .nt-fig-name {
   min-width: 0; overflow: hidden; text-overflow: ellipsis;
   font-family: var(--rk-mono); font-size: .92em; color: var(--rk-ink);
 }
-/* The buttons are buttons: a face of their own, and a hand on hover. */
+/* No colour: cells told apart by their rules alone, a hand and a shade on hover. */
 .nt-fig-do {
-  flex: 0 0 auto; border: 0; background: var(--rk-cite); color: var(--rk-cite-t);
+  flex: 0 0 auto; border: 0; background: none; color: var(--rk-ink);
   font: inherit; line-height: inherit; cursor: pointer;
 }
-.nt-fig-do:hover { background: var(--rk-cite-t); color: var(--rk-panel); }
-.nt-fig-less, .nt-fig-more { font-family: var(--rk-mono); font-weight: 700; padding: 0 12px; }
-.nt-fig-edit { background: var(--rk-panel); color: var(--rk-ink); }
-.nt-fig-edit:hover { background: var(--rk-gut); color: var(--rk-ink); }
+.nt-fig-do:hover { background: var(--rk-gut); }
+.nt-fig-less, .nt-fig-more { font-family: var(--rk-mono); padding: 0 9px; }
 /* Narrow, and without the stepper: the two buttons beside it ARE the stepper. */
 .nt-fig-px {
-  flex: 0 0 64px; width: 64px; padding: 0 8px; border: 0; border-left: 1px solid var(--rk-line);
-  background: var(--rk-panel); font: inherit; font-family: var(--rk-mono); font-size: .92em;
+  /* Four digits and no more: `ch` of the mono face it is written in. */
+  flex: 0 0 auto; box-sizing: border-box; width: calc(4ch + 14px); padding: 0 6px; border: 0; border-left: 1px solid var(--rk-line);
+  background: none; font: inherit; font-family: var(--rk-mono); font-size: .92em;
   color: var(--rk-ink); text-align: right; appearance: textfield; -moz-appearance: textfield;
 }
 .nt-fig-px:focus { outline: none; background: var(--rk-gut); }
@@ -891,17 +925,28 @@ body.nt-paper #root { height: auto; min-height: 100%; }
    One page, 1000 wide and `--nt-deck-h` tall, whose type is its own and not the screen's: the show
    scales the whole page to the screen, and the numbers here are in the file
    because a picture's written width (`|600`) has to mean the same thing on it. */
-.nt-slide, .nt-deck { --nt-deck-fs: 24px; }
+.nt-slide, .nt-deck {
+  --nt-deck-fs: 24px;
+  /* The page's own colours: a slide is paper in bright and a dark slide in
+     dark (below) — but paper again wherever it is printed (.nt-print). */
+  --nt-deck-bg: #fff; --nt-deck-ink: #111; --nt-deck-head: #000; --nt-deck-dim: #64748b;
+}
+:root[data-lilak-theme="dark"] :is(.nt-slide, .nt-deck) {
+  --nt-deck-bg: var(--rk-panel); --nt-deck-ink: var(--rk-text); --nt-deck-head: var(--rk-ink); --nt-deck-dim: var(--rk-dim);
+}
+:root[data-lilak-theme="dark"] .nt-print .nt-deck {
+  --nt-deck-bg: #fff; --nt-deck-ink: #111; --nt-deck-head: #000; --nt-deck-dim: #64748b;
+}
 .nt-deck {
   box-sizing: border-box; width: 1000px; padding: 40px 50px;
-  background: #fff; color: #111;
+  background: var(--nt-deck-bg); color: var(--nt-deck-ink);
   font-family: var(--rk-sans); font-size: var(--nt-deck-fs); line-height: 1.45;
 }
 .nt-deck-page { position: absolute; left: 50%; top: 50%; height: var(--nt-deck-h); overflow: hidden; }
-.nt-deck-no { position: absolute; right: 20px; bottom: 12px; font-size: .6em; color: #64748b; }
+.nt-deck-no { position: absolute; right: 20px; bottom: 12px; font-size: .6em; color: var(--nt-deck-dim); }
 .nt-deck-flow { position: fixed; left: -20000px; top: 0; visibility: hidden; }
 .nt-deck > :first-child { margin-top: 0; }
-.nt-deck h1, .nt-deck h2, .nt-deck h3, .nt-deck h4, .nt-deck h5, .nt-deck h6 { margin: .5em 0 .3em; font-weight: 600; color: #000; }
+.nt-deck h1, .nt-deck h2, .nt-deck h3, .nt-deck h4, .nt-deck h5, .nt-deck h6 { margin: .5em 0 .3em; font-weight: 600; color: var(--nt-deck-head); }
 .nt-deck h1 { font-size: 1.45em; }
 .nt-deck h2 { font-size: 1.22em; }
 .nt-deck h3 { font-size: 1.07em; }
@@ -912,7 +957,7 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 /* A picture's number, under it. Only a slide numbers them out loud. */
 .nt-fig-cap { display: none; }
 .nt-deck .nt-fig-wrap { display: block; }
-.nt-deck .nt-fig-cap, .nt-raw.nt-slide .nt-fig-cap { display: block; margin-top: .2em; font-size: .6em; line-height: 1.45; color: #64748b; }
+.nt-deck .nt-fig-cap, .nt-raw.nt-slide .nt-fig-cap { display: block; margin-top: .2em; font-size: .6em; line-height: 1.45; color: var(--nt-deck-dim); }
 /* The rest of what the editor draws on a slide, drawn the same here: the box
    and margins below are the editor's, in `em` so both scale with the page. */
 .nt-deck blockquote { padding-left: .6em; }
@@ -936,7 +981,7 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 .nt-deck p > .katex-display:last-child { margin-bottom: 0; }
 /* Slide 1: the note's title and the line under it, in the middle of the page. */
 .nt-deck-cover { display: flex; flex-direction: column; align-items: center; text-align: center; }
-.nt-deck-cover h1, .nt-deck-cover-ed h1 { margin: 0; font-size: 2.2em; font-weight: 600; color: #000; }
+.nt-deck-cover h1, .nt-deck-cover-ed h1 { margin: 0; font-size: 2.2em; font-weight: 600; color: var(--nt-deck-head); }
 /* The title a little above the middle, and what is under it further down, where
    a name goes. The editor's title slide (below) is laid out to the same marks. */
 .nt-deck.nt-deck-cover > h1 { display: flex; align-items: flex-end; min-height: calc(var(--nt-deck-h) * .46 - 40px); margin: 0 0 calc(var(--nt-deck-h) * .2); }
@@ -950,7 +995,7 @@ body.nt-paper #root { height: auto; min-height: 100%; }
      and flex would otherwise widen the page to hold them. */
   flex: 0 0 calc(1000px * var(--nt-k, 1)); min-width: 0;
   padding: 0 calc(50px * var(--nt-k, 1)) calc(40px * var(--nt-k, 1));
-  background: #fff;
+  background: var(--nt-deck-bg); color: var(--nt-deck-ink);
   font-size: calc(var(--nt-deck-fs) * var(--nt-k, 1));
 }
 /* Line for line the heights `.nt-deck` gives, or the white under a slide, worked
@@ -973,7 +1018,7 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 /* What the show draws for a list's marker: `•` `◦` `▪`, or nothing beside a box. */
 .nt-raw.nt-slide .nt-cm-mark:is(.nt-cm-b0, .nt-cm-b1, .nt-cm-b2, .nt-cm-bx),
 .nt-raw.nt-slide .nt-cm-mark:is(.nt-cm-b0, .nt-cm-b1, .nt-cm-b2, .nt-cm-bx) * { color: transparent; }
-.nt-raw.nt-slide .nt-cm-mark:is(.nt-cm-b0, .nt-cm-b1, .nt-cm-b2)::before { position: absolute; left: 0; color: #111; }
+.nt-raw.nt-slide .nt-cm-mark:is(.nt-cm-b0, .nt-cm-b1, .nt-cm-b2)::before { position: absolute; left: 0; color: var(--nt-deck-ink); }
 .nt-raw.nt-slide .nt-cm-b0::before { content: '•'; }
 .nt-raw.nt-slide .nt-cm-b1::before { content: '◦'; }
 .nt-raw.nt-slide .nt-cm-b2::before { content: '▪'; }
@@ -1023,3 +1068,46 @@ body.nt-paper #root { height: auto; min-height: 100%; }
   background: rgb(0 0 0 / 55%); color: #fff; font-size: 24px; cursor: pointer; opacity: 0;
 }
 .nt-show-x:hover, .nt-show-x:focus-visible { opacity: 1; }
+
+/* The menu's three choices under 표시: each named, since "All · Mine · Agent"
+   alone does not say what it chooses between. */
+.nt-choice { display: flex; flex-direction: column; gap: 2px; }
+.nt-choice + .nt-choice { margin-top: 4px; }
+.nt-choice-t { font-size: 11px; line-height: 1.3; color: var(--rk-dim); }
+
+/* A button that is its icon: square, the glyph in the middle. */
+.rl-btn.nt-icon-btn { padding: 0 6px; justify-content: center; }
+
+/* ── dark (racklist theme.js) ────────────────────────────────────────────
+   Most of this file paints with --rk-* and follows by itself; these are the
+   colours it wrote down, given again for a dark ground. Paper (the print
+   page) keeps its own. */
+:root[data-lilak-theme="dark"] {
+  /* CodeMirror's colours (SourceArea noteHighlight), lifted for dark. */
+  --nt-syn-404740: #a6a4bb; --nt-syn-708: #c792ea; --nt-syn-219: #82aaff; --nt-syn-164: #9ccc65;
+  --nt-syn-a11: #f78c6c; --nt-syn-e40: #ffb86c; --nt-syn-00f: #82b1ff; --nt-syn-30a: #b4a7ff;
+  --nt-syn-085: #5fd3b0; --nt-syn-167: #6cd9c8; --nt-syn-256: #8fd0ff; --nt-syn-00c: #8fa8ff;
+  --nt-syn-940: #d6a86a; --nt-syn-f00: #ff6b6b;
+  --nt-job: #8a96ad;
+  /* What is selected: --rk-cite is all but the ground itself in dark. */
+  --nt-sel: color-mix(in srgb, var(--rk-cite-t) 38%, var(--rk-panel));
+}
+:root[data-lilak-theme="dark"] .nt-due-in.nt-due-late { background: color-mix(in srgb, var(--rk-danger, #f87171) 18%, var(--rk-panel)); }
+:root[data-lilak-theme="dark"] .nt-urgent { color: #fb923c; }
+:root[data-lilak-theme="dark"] .nt-hl { background: var(--rk-hl); color: var(--rk-ink); }
+:root[data-lilak-theme="dark"] :is(.nt-ref-no, .nt-dot) { color: var(--rk-danger, #f87171); }
+:root[data-lilak-theme="dark"] .nt-texerr { color: var(--rk-danger, #f87171); }
+:root[data-lilak-theme="dark"] .nt-dupmark { border-color: var(--rk-danger, #f87171); color: var(--rk-danger, #f87171); }
+/* The note read in its pane: the print sheet, but on the screen's ground. */
+:root[data-lilak-theme="dark"] .nt-read { background: var(--rk-panel); color: var(--rk-text); }
+:root[data-lilak-theme="dark"] .nt-read .nt-sheet h1 { color: var(--rk-ink); }
+:root[data-lilak-theme="dark"] .nt-read .nt-sheet .nt-meta { color: var(--rk-dim); }
+:root[data-lilak-theme="dark"] .nt-read .nt-sheet pre { background: var(--rk-gut); }
+:root[data-lilak-theme="dark"] .nt-read .nt-sheet blockquote { border-left-color: var(--rk-edge); color: var(--rk-dim); }
+:root[data-lilak-theme="dark"] .nt-read .nt-sheet :is(th, td) { border-color: var(--rk-edge); }
+:root[data-lilak-theme="dark"] .nt-read .nt-sheet .nt-tag { background: #a5b4fc; color: #a5b4fc; }
+:root[data-lilak-theme="dark"] .nt-read .nt-sheet .nt-tag::after { background: #1e1b4b; }
+:root[data-lilak-theme="dark"] .nt-read .nt-sheet .nt-tag::before { background: var(--rk-panel); border-color: #a5b4fc; }
+/* A link drawn by the renderer (reading, the show) is the browser's own navy
+   unless told; on a dark ground it is the rack's light blue. */
+:root[data-lilak-theme="dark"] :is(.nt-read, .nt-show) a { color: var(--rk-cite-t); }

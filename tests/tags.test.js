@@ -1,10 +1,21 @@
 import { describe, it, expect } from 'vitest'
-import { mergeTags, spellTag, uniqueTags, sharedTagRows, tagWithin, tagTree, tagMoves, tagRenames, projectWears } from '../racklist/tags.js'
+import { mergeTags, spellTag, uniqueTags, sharedTagRows, tagWithin, tagTree, tagMoves, tagRenames, projectWears, projectOwnTag, projectOfTag, sharingServices } from '../racklist/tags.js'
 import { choicesFor, setTagChoices } from '../note/src-lilak/marks.js'
 import { facetOf, passesFilter, NOT } from '../racklist/sort.js'
 import { defineRack, classRows, wears, itemSorters } from '../racklist/schema.js'
 
 describe('shared tags', () => {
+  it('a service split into project cards is read once, at its share set\'s project', () => {
+    // /api/services lists note twice (one card per project); each used to be fetched, so counts doubled.
+    const list = [{ name: 'note', tags: true, project_card: 'note', link_project: 'note', label: 'notes-jw' },
+      { name: 'note', tags: true, project_card: 'notes-job', link_project: 'note', label: 'notes-job' },
+      { name: 'jobboard', tags: 'jobs', link_project: 'jobboard' }, { name: 'elog' }]
+    expect(sharingServices(list, { note: 'notes-job', jobboard: 'jobboard' }, 'jobboard').map((s) => `${s.name}/${s.link_project}`))
+      .toEqual(['note/notes-job', 'jobboard/jobboard'])
+    // …and named as that project's card, not the first card listed.
+    expect(sharingServices(list, { note: 'notes-job' }, 'jobboard')[0].label).toBe('notes-job')
+    expect(sharingServices(list, null, 'note').map((s) => s.name)).toEqual(['note'])
+  })
   it('one tag whatever its case, named by the spelling used most', () => {
     expect(mergeTags([{ spirit: 5, CENS: 2 }, { SpiRIT: 26 }])).toEqual([
       { name: 'SpiRIT', count: 31 }, { name: 'CENS', count: 2 }])
@@ -112,5 +123,19 @@ describe('a column that shows less than it sorts by', () => {
   })
   it('is filtered by the day', () => {
     expect(facetOf([early, late], get)).toEqual([{ v: '2026-11-09', count: 2 }])
+  })
+})
+
+describe('a project is a tag marked as one', () => {
+  const ko = { name: 'KO-25-20', tags: ['ELARK', 'KO-25-20', 'Rutherford'] }
+  const ihm = { name: 'ihm', tags: ['AToM-X/ihm'] }
+  it('owns the tag that is its name, or ends in /name — not the first', () => {
+    expect(projectOwnTag(ko)).toBe('KO-25-20')
+    expect(projectOwnTag(ihm)).toBe('AToM-X/ihm')
+    expect(projectOwnTag({ name: 'x', tags: ['y'] })).toBe('')
+  })
+  it('is found by its own tag only, whatever the case', () => {
+    expect(projectOfTag([ko, ihm], 'atom-x/IHM')).toBe(ihm)
+    expect(projectOfTag([ko, ihm], 'ELARK')).toBeUndefined()
   })
 })

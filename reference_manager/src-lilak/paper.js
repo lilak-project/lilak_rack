@@ -157,6 +157,9 @@ export const KEY_RULES = {
   paper: '{a1}_{jl}_{year}_{tag}',
   // The year earns its place only when the PAC number is not already it.
   proposal: '{inst}_PAC{pac}_{year unless pac}_{a1}_{tag}',
+  // A part is read as a place inside its source, so its key is the source's
+  // with the place after it. The '/' is the same slash tags nest with.
+  part: '{pkey}/{loc}',
 }
 export const ruleFor = (r, settings) => (settings?.keyRules || {})[r?.type]
   || KEY_RULES[r?.type] || KEY_RULES.paper
@@ -174,10 +177,16 @@ export const citeKeyFor = (doc, r, rule = ruleFor(r, doc?.settings)) => rule
       tag: mainTag(r),
       inst: r.inst,
       pac: r.pac,
+      // A part with no source yet gets the place alone, not a stray '{pkey}'.
+      pkey: parentOf(doc, r)?.citeKey || '',
+      // The tidied place, not what was typed: the record keeps 'Figure 3'
+      // whatever spelling arrived, and a key written while typing 'Fig.3'
+      // would otherwise keep a name the place no longer has.
+      loc: place(r.locator),
     }[k.trim()]
     return v === undefined ? m : slug(v)
   })
-  .replace(/_+/g, '_').replace(/^_|_$/g, '')
+  .replace(/_+/g, '_').replace(/^[_/]+|[_/]+$/g, '')
 
 // ─── The listing rule ───────────────────────────────────────────────────────
 // A preset fills in a TEMPLATE and the template makes the text, so a shape
@@ -288,4 +297,62 @@ export function parseRis(src) {
   return got
 }
 
-export const TYPES = ['paper', 'proposal', 'thesis', 'report', 'writing']
+export const TYPES = ['paper', 'proposal', 'thesis', 'report', 'writing', 'part']
+
+// ─── Parts of a source ──────────────────────────────────────────────────────
+// A part is a place inside another reference kept as a reference of its own:
+// a figure, a table, a theorem. It earns a record when the place is cited more
+// than once or when we write its content down, so the place gets a name, the
+// value read off it, and a list of where it was used. Everything bibliographic
+// stays on the parent — a part holds no journal, year or authors of its own.
+
+// Every spelling of a place arrives as one: the English word, spelled out.
+// 'Fig.3', 'fig 3' and '그림 3' are the same Figure 3, which is what lets the
+// second citation of a place be recognised as the same place.
+// Every alias lands on ONE word: the English name, spelled out and singular.
+// 'Fig.3', 'fig 3' and '그림 3' are the same Figure 3, which is what lets the
+// second citation of a place be recognised as the same place. Whether it reads
+// singular or plural is decided by what follows, not by how it was typed —
+// 'pp. 1234' is one page and 'Fig. 3-5' is several figures.
+const PLACE = {
+  fig: 'Figure', figs: 'Figure', figure: 'Figure', figures: 'Figure', 그림: 'Figure',
+  tab: 'Table', tbl: 'Table', table: 'Table', tables: 'Table', 표: 'Table',
+  eq: 'Equation', eqn: 'Equation', eqs: 'Equation',
+  equation: 'Equation', equations: 'Equation', 식: 'Equation',
+  p: 'Page', pg: 'Page', page: 'Page', 쪽: 'Page', 페이지: 'Page',
+  pp: 'Page', pgs: 'Page', pages: 'Page',
+  sec: 'Section', sect: 'Section', section: 'Section', sections: 'Section', 절: 'Section',
+  ch: 'Chapter', chap: 'Chapter', chapter: 'Chapter', chapters: 'Chapter', 장: 'Chapter',
+  app: 'Appendix', appendix: 'Appendix', appendices: 'Appendix', 부록: 'Appendix',
+  thm: 'Theorem', theorem: 'Theorem', theorems: 'Theorem', 정리: 'Theorem',
+  slide: 'Slide', slides: 'Slide', 슬라이드: 'Slide',
+}
+// What a range is called. Appendix is the one that does not just take an 's'.
+const MANY = {
+  Figure: 'Figures', Table: 'Tables', Equation: 'Equations', Page: 'Pages',
+  Section: 'Sections', Chapter: 'Chapters', Appendix: 'Appendices',
+  Theorem: 'Theorems', Slide: 'Slides',
+}
+/** The one spelling of a place inside a source. Anything the table does not
+ *  know is left as it was typed — a locator is allowed to be prose. */
+export const place = (v) => {
+  const s = String(v || '').trim().replace(/\s+/g, ' ')
+  const m = s.match(/^([A-Za-z]+|[가-힣]+)\s*\.?\s*(.*)$/)
+  if (!m) return s
+  const word = PLACE[m[1].toLowerCase()]
+  if (!word || !m[2]) return s
+  const rest = m[2].replace(/\s+/g, '')
+  return `${(/[-–~,]/.test(rest) && MANY[word]) || word} ${rest}`
+}
+
+/** The id a 'ref' field holds, whichever shape it was written in. */
+const refId = (v) => (v && typeof v === 'object' ? v.id : v) || ''
+/** The source a part points into. */
+export const parentOf = (doc, r) => {
+  const id = refId(r?.parent)
+  return id ? (doc?.references || []).find((x) => x.id === id) || null : null
+}
+/** The parts kept of one source, in the order their places read. */
+export const partsOf = (doc, id) => (doc?.references || [])
+  .filter((r) => r.type === 'part' && refId(r.parent) === id)
+  .sort((a, b) => String(a.locator || '').localeCompare(String(b.locator || ''), undefined, { numeric: true }))

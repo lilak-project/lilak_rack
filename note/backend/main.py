@@ -19,6 +19,7 @@ import array
 import io
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -31,10 +32,11 @@ import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import quote
 
 import yaml
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
 from lilak_portal_auth import identity, manager, signed_in
@@ -44,6 +46,8 @@ DATA = Path(os.environ.get("NOTE_DATA_DIR", "./data"))
 PROJECT = os.environ.get("PORTAL_PROJECT", "")
 DIST = Path(os.environ.get("NOTE_DIST_DIR", "/app/note/dist"))
 NOTES = DATA / "notes"
+# A project made empty (from a set template) has no folder yet; the first note must not fail on it.
+NOTES.mkdir(parents=True, exist_ok=True)
 TEMPLATES = DATA / "templates"
 # What a note points at: images and anything else it embeds. Obsidian keeps
 # these beside the notes in the vault, and a note names one by file name alone.
@@ -332,6 +336,111 @@ class TodoBody(BaseModel):
     due: Optional[str] = None      # '' clears it, None leaves it alone
 
 
+# ── a slide note as a PDF its own size ───────────────────────────────────
+# Safari prints on the paper its dialog picked, whatever the page asks for, so
+# a deck comes out on A4. The PDF is made here instead, by a headless Chrome
+# printing this service's own print page — which needs to read one note and
+# its pictures without anybody's sign-in: a ticket, minted for that one print.
+TICKETS: dict = {}            # ticket → (note id, good until)
+TICKET_SECONDS = 120
+STARTED: dict = {}            # ticket → [Chrome started, Chrome came for it]
+CHROMES = (os.environ.get("NOTE_CHROME", ""),
+           "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+           "/Applications/Chromium.app/Contents/MacOS/Chromium",
+           "chromium", "chromium-browser", "google-chrome")
+
+
+def _ticket(note_id: str) -> str:
+    now = time.time()
+    for k in [k for k, (_, until) in TICKETS.items() if until < now]:
+        TICKETS.pop(k, None)
+    t = secrets.token_urlsafe(24)
+    TICKETS[t] = (note_id, now + TICKET_SECONDS)
+    return t
+
+
+def _ticket_for(t: str) -> Optional[str]:
+    hit = TICKETS.get(t or "")
+    return hit[0] if hit and hit[1] > time.time() else None
+
+
+def reader(request: Request, authorization: Optional[str] = Header(default=None)) -> dict:
+    """signed_in, or the print ticket's Chrome: that one note and the files."""
+    note = _ticket_for(request.cookies.get("note_ticket", ""))
+    if note:
+        return {"authenticated": True, "username": "pdf", "ticket": note}
+    return signed_in(identity(request, authorization))
+
+
+@app.get("/api/ticket/{t}")
+def use_ticket(t: str):
+    """Chrome's way in: the ticket becomes a cookie (which pictures carry, as a
+    header never is), and on to the print page."""
+    note = _ticket_for(t)
+    if not note:
+        raise HTTPException(404, "만료된 표입니다.")
+    # When Chrome got here, against when it was started: its own start-up,
+    # apart from the page's drawing (slides.log).
+    STARTED.setdefault(t, [time.monotonic(), None])[1] = time.monotonic()
+    r = RedirectResponse(f"/?print={quote(note, safe='')}")
+    r.set_cookie("note_ticket", t, httponly=True, samesite="strict")
+    return r
+
+
+@app.get("/api/slides/{note_id}")
+def slides_pdf(note_id: str, request: Request, _: dict = Depends(signed_in)):
+    if not _path(note_id).is_file():
+        raise HTTPException(404, "그 노트가 없습니다.")
+    chrome = next((w for w in (shutil.which(c) for c in CHROMES if c) if w), None)
+    if not chrome:
+        raise HTTPException(503, "이 서버에 PDF를 만들 Chrome이 없습니다.")
+    port = request.scope["server"][1]
+    t = _ticket(note_id)
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "slides.pdf"
+            # Everything a fresh profile would start doing besides printing, off.
+            cmd = [chrome, "--headless=new", "--disable-gpu", "--no-pdf-header-footer",
+                   "--no-first-run", "--no-default-browser-check", "--disable-extensions",
+                   "--disable-background-networking", "--disable-component-update",
+                   "--disable-sync", "--use-mock-keychain", f"--user-data-dir={tmp}/profile",
+                   "--virtual-time-budget=10000", f"--print-to-pdf={out}",
+                   f"http://127.0.0.1:{port}/api/ticket/{t}"]
+            if hasattr(os, "geteuid") and os.geteuid() == 0:
+                cmd.insert(1, "--no-sandbox")       # root in a container
+            # On a Mac, through LaunchServices as an app of its own rather than
+            # as this server's child: started by the portal, a child Chrome and
+            # each of its helpers were checked by the system one by one — 18 s
+            # for what takes 1 s from a terminal. `-W` waits for it to finish.
+            app = chrome.split(".app/")[0] + ".app" if ".app/" in chrome else ""
+            if sys.platform == "darwin" and app:
+                cmd = ["open", "-W", "-n", "-g", "-a", app, "--args", *cmd[1:]]
+            t0 = time.monotonic()
+            STARTED[t] = [t0, None]
+            run = subprocess.run(cmd, capture_output=True, timeout=90)
+            took = time.monotonic() - t0
+            came = STARTED.pop(t, [t0, None])[1]
+            if not out.is_file() or out.stat().st_size == 0:
+                raise HTTPException(500, "PDF를 만들지 못했습니다.")
+            data = out.read_bytes()
+            # How long Chrome took, beside the build: the one number that says
+            # whether a slow download is the printing or the way here.
+            BUILD.mkdir(parents=True, exist_ok=True)
+            with open(BUILD / "slides.log", "a", encoding="utf-8") as log:
+                log.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} {note_id} chrome {took:.2f}s"
+                          f" (start {(came - t0) if came else -1:.2f}s) {len(data)}B\n")
+                err = run.stderr.decode(errors="replace").strip().splitlines()[-8:]
+                log.writelines(f"    {line[:300]}\n" for line in err)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504, "PDF를 만드는 데 너무 오래 걸립니다.")
+    finally:
+        TICKETS.pop(t, None)
+    title = _read(_path(note_id)).get("title") or note_id
+    return Response(data, media_type="application/pdf", headers={
+        "Server-Timing": f"chrome;dur={took * 1000:.0f}",
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(title + '.pdf')}"})
+
+
 @app.get("/api/notes")
 def list_notes(_: dict = Depends(signed_in)) -> dict:
     notes = [_summary(n) for n in _all(NOTES)]
@@ -340,9 +449,9 @@ def list_notes(_: dict = Depends(signed_in)) -> dict:
 
 
 @app.get("/api/notes/{note_id}")
-def get_note(note_id: str, _: dict = Depends(signed_in)) -> dict:
+def get_note(note_id: str, me: dict = Depends(reader)) -> dict:
     p = _path(note_id)
-    if not p.is_file():
+    if me.get("ticket") not in (None, note_id) or not p.is_file():
         raise HTTPException(404, "그 노트가 없습니다.")
     # When this note's PDF was made, if it has one — so the editor can offer
     # to show it, and can tell whether it is still the note (its stamp is
@@ -636,7 +745,7 @@ def list_files(note: str = "", _: dict = Depends(signed_in)) -> dict:
 
 
 @app.get("/api/file/{name:path}")
-def get_file(name: str, note: str = "", _: dict = Depends(signed_in)):
+def get_file(name: str, note: str = "", _: dict = Depends(reader)):
     """A file a note embeds — `![[name.png]]` in a markdown note, which is
     Obsidian's spelling, or `img/fig1.png` in a tex note, which keeps its files
     in folders (`_safe_rel`). Either way it never leaves the project's files
@@ -912,7 +1021,12 @@ def _whisper(wav: Path, lang: str = "auto", prompt: str = "") -> str:
 
 @app.get("/api/record")
 def record_ready(_: dict = Depends(signed_in)) -> dict:
-    return {"ready": bool(_tool("whisper-cli") and _tool("ffmpeg") and WHISPER_MODEL.is_file())}
+    """Whether dictation can run here, and if not, what is missing and the one
+    script that puts it there — none of it comes with the code."""
+    missing = [n for n, ok in (("whisper-cli", _tool("whisper-cli")), ("ffmpeg", _tool("ffmpeg")),
+                               ("model", WHISPER_MODEL.is_file())) if not ok]
+    return {"ready": not missing, "missing": missing, "model": str(WHISPER_MODEL),
+            "setup": str(Path(__file__).resolve().parent.parent / "setup-whisper.sh")}
 
 
 # A recording kept as a file grows as it is made: a few seconds at a time, so

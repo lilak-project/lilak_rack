@@ -18,17 +18,15 @@
     "badge": true,
     "multi_project": true,
     "import_export": true,
-    "tags": true
+    "tags": false,
+    "inbox": true
   },
   "icon": "tray",
   "color": "#b45309",
   "label": "inbox",
   "open": "panel",
-  "entry_project": "inbox",
-  "autostart": [
-    "inbox"
-  ],
   "labels": {
     "ko": "받은편지함"
-  }
+  },
+  "entry_project": "inbox"
 }

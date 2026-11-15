@@ -8,8 +8,8 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { remarkSoftBreaks } from 'lilak-ui/log/Markdown.jsx'
 import { tr } from 'lilak-ui/i18n.jsx'
-import { TAG_RE, PROJ_RE, AUTH_RE, URGENT_RE, FIGURE_RE, embedSpec, figureOf, isAudio, isPicture, isProject, isAuthor, authorShow, overdue, plainRules, replaceOutsideCode, dropComments, highlightSpans, withArrows } from './marks.js'
-import { fileSrc } from './api.js'
+import { TAG_RE, PROJ_RE, AUTH_RE, JOB_RE, jobOf, URGENT_RE, FIGURE_RE, embedSpec, figureOf, isAudio, isPicture, isProject, isAuthor, authorShow, overdue, plainRules, replaceOutsideCode, dropComments, highlightSpans, withArrows } from './marks.js'
+import { fileSrc, openJob } from './api.js'
 
 /** The body, rendered — with `#태그` drawn as a tag and `» 2026-12-24` as the
  *  calendar label the editor draws, rather than left as the text they are in
@@ -17,7 +17,7 @@ import { fileSrc } from './api.js'
  *  out of those on the way to the page. `box` is the todo's checkbox, if this
  *  is a todo: a checked one has no day to be late for, and only an open one is
  *  urgent. */
-const CHIP_RE = new RegExp(`${TAG_RE.source}|(»|📅|✓|✅)\\s*(\\d{4}-\\d{1,2}-\\d{1,2})|${PROJ_RE.source}|${AUTH_RE.source}|(?<!!)\\[\\[([^\\]]+)\\]\\]|${URGENT_RE.source}`, 'g')
+const CHIP_RE = new RegExp(`${TAG_RE.source}|(»|📅|✓|✅)\\s*(\\d{4}-\\d{1,2}-\\d{1,2})|${PROJ_RE.source}|${AUTH_RE.source}|(?<!!)\\[\\[([^\\]]+)\\]\\]|${URGENT_RE.source}|${JOB_RE.source}`, 'g')
 
 function tagify(children, box) {
   const done = !!box?.properties.checked
@@ -35,20 +35,29 @@ function tagify(children, box) {
       if (urgent && (!box || done)) continue
       if (proj && !isProject(m[6])) continue
       if (auth && !isAuthor(m[8])) continue
-      const at = m.index + (tag ? m[1].length : proj ? m[5].length : auth ? m[7].length : urgent ? m[10].length : 0)
+      const job = m[12] !== undefined && jobOf(m[12])
+      if (m[12] !== undefined && !job) continue
+      const at = m.index + (tag ? m[1].length : proj ? m[5].length : auth ? m[7].length : urgent ? m[10].length : job ? m[11].length : 0)
       if (at > last) out.push(child.slice(last, at))
-      out.push(tag ? <span className="nt-tag" key={at}>{m[2]}</span>
+      out.push(job ? <JobTicket key={at} short={m[12]} name={job.name} /> : tag ? <span className="nt-tag" key={at}>{m[2]}</span>
         : proj ? <span className="nt-proj" key={at}>{m[6]}</span>
           : auth ? <span className="nt-auth" key={at}>{authorShow(m[8])}</span>
             : wiki ? <span className="nt-cm-wiki" key={at}>{m[9].split('|').pop().trim()}</span>
               : urgent ? <span className="nt-urgent" key={at}>!!</span>
                 : <span className={'»📅'.includes(m[3]) ? `nt-due-in${!done && overdue(m[4]) ? ' nt-due-late' : ''}` : 'nt-done-in'} key={at}>{m[4]}</span>)
-      last = at + (tag ? 1 + m[2].length : proj ? 1 + m[6].length : auth ? 1 + m[8].length : urgent ? 2 : m[0].length)
+      last = at + (job ? 8 : tag ? 1 + m[2].length : proj ? 1 + m[6].length : auth ? 1 + m[8].length : urgent ? 2 : m[0].length)
     }
     out.push(child.slice(last))
     return out
   })
 }
+/** A job as jobboard draws it: its recipe, then its short id on the cut. */
+const JobTicket = ({ short, name }) => (
+  <span className="nt-ticket" title={`::${short}`} role="link" tabIndex={0}
+    onClick={() => openJob(jobOf(short))} onKeyDown={(e) => { if (e.key === 'Enter') openJob(jobOf(short)) }}><span className="nt-ticket-in">
+    {name && <span className="nt-ticket-name">{name}</span>}<span className="nt-ticket-id">{short}</span>
+  </span></span>
+)
 const tagged = (Tag) => function Tagged({ node, children, ...rest }) {
   return <Tag {...rest}>{tagify(children, node?.children.find((c) => c.tagName === 'input'))}</Tag>
 }

@@ -22,7 +22,7 @@ import { tr } from 'lilak-ui/i18n.jsx'
  * browser: everything, the hard way.
  */
 export function RackBar({ box, spread, menu = null, open = false, tabs = null, tools = null, tabCount = 0, onCloseTabs, canCloseTabs, beforeReload = null, last = null, children }) {
-  useReloadKey()
+  useReloadKey(true)
   const { all, setAll, over } = spread
   return (
     <header className={`rl-bar${all && tabs ? ' rl-bar-all' : ''}${open ? ' rl-bar-open' : ''}`} ref={box}>
@@ -53,16 +53,22 @@ export function RackBar({ box, spread, menu = null, open = false, tabs = null, t
   )
 }
 
-/** ⌘R / Ctrl+R reloads this page only (⇧ left to the browser). */
-export function useReloadKey() {
+/** ⌘R / Ctrl+R reloads this page only (⇧ left to the browser). `page`: this is
+ *  a rack list's page (its title bar). A solo editor framed in one (?solo=, an
+ *  activity's note) reloads that page instead — without this the key fell
+ *  through to the browser, which reloads the whole portal. */
+export function useReloadKey(page = false) {
   useEffect(() => {
+    if (page) window.__rackPage = true
     const on = (e) => {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'r') {
         e.preventDefault()
-        window.location.reload()
+        let w = window
+        try { if (!page && window.parent !== window && window.parent.__rackPage) w = window.parent } catch { /* another origin */ }
+        w.location.reload()
       }
     }
     window.addEventListener('keydown', on)
     return () => window.removeEventListener('keydown', on)
-  }, [])
+  }, [page])
 }

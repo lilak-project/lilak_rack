@@ -8,6 +8,7 @@
  *   maintags   tags, one of which is MAIN (what the key is filed under)
  *   cites      the paper's reference list: links, or a line of text
  *   citedby    who cites it — counted, never stored
+ *   parts      the places kept of it (figures, tables, theorems) — counted
  *   paste      a BibTeX/RIS box that fills the form (a draft's helper)
  *   rolecount  an author's papers in one role, a count you can press
  *   authorpapers  the same, in the author's own form
@@ -18,6 +19,7 @@ import { registerType, newId, useSharedTags, spellTag, tagKey, uniqueTags } from
 import {
   authorRows, autRoles, handleFor, refLabel, linkedCites, citesOf, mainTag, tagsOf,
   ruleFor, citeKeyFor, parseCitation, splitAuthors, authorList, ROLE_LABEL,
+  partsOf,
 } from './paper.js'
 import { tr } from 'lilak-ui/i18n.jsx'
 
@@ -418,6 +420,45 @@ registerType('citedby', {
     )
   },
   Show: ({ ctx, rec }) => <CitedBy refs={ctx.doc?.references || []} mine={rec.id} onOpen={(id) => ctx.openItem?.(id)} />,
+})
+
+/** The places kept of one source. A part is a reference of its own, so this
+ *  is read off the list rather than stored — nothing to keep in step. */
+registerType('parts', {
+  text: (v) => (v ? String(v) : ''),
+  sort: (v) => v || null,
+  cell(v, ctx) {
+    if (!v) return D
+    const r = ctx.rec
+    return (
+      <button type="button" className="rl-lnk" title={tr("rm_parts_of_this")}
+        onClick={(e) => {
+          e.stopPropagation()
+          idsTab(ctx, `parts:${r.id}`, `${refLabel(r)} ⊃`, partsOf(ctx.doc, r.id).map((x) => x.id))
+        }}>{v}</button>
+    )
+  },
+  Show: ({ ctx, rec }) => {
+    const parts = partsOf(ctx.doc, rec.id)
+    if (!parts.length) return <span className="rl-hint">{tr("rm_none")}</span>
+    return (
+      <div className="rl-rows">
+        <div className="rl-rrow" style={{ flexWrap: 'wrap' }}>
+          {parts.map((x) => (
+            <span key={x.id} className="rl-tag">
+              <button type="button" className="rl-lnk" onClick={() => ctx.openItem?.(x.id)}
+                title={x.title || ''}>{x.locator || refLabel(x)}</button>
+            </span>
+          ))}
+        </div>
+        <div className="rl-rrow">
+          <button type="button" className="rl-btn"
+            onClick={() => idsTab(ctx, `parts:${rec.id}`, `${refLabel(rec)} ⊃`, parts.map((x) => x.id))}>
+            {tr("rm_open_group", parts.length)}</button>
+        </div>
+      </div>
+    )
+  },
 })
 
 registerType('paste', {
