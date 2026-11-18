@@ -15,13 +15,13 @@ import { RackEditClass } from './classedit.jsx'
 import { FilterBar, FacetRows, useFacetFilter } from './filter.jsx'
 import { RackListing } from './listing.jsx'
 import { RackItemEditor, cloneOf } from './editor.jsx'
-import { chainKey, flowFor } from './chain.js'
+import { chainKey, flowFor, withFlow, isFlowTag } from './chain.js'
 import { zoneView, useZone } from './zone.js'
 import { useMergeMode, RackMergeButtons, RackMerge, RackMoveTags } from './merge.jsx'
 import { RackBulkEditor } from './bulk.jsx'
 import { useRackList } from './list.js'
 import { useRackKeys, useToggleKey } from './hooks.js'
-import { typeOf, NoteEdit, syncNoteFlows } from './types.jsx'
+import { typeOf, NoteEdit, syncNoteFlows, FlowChip } from './types.jsx'
 import { useFolders, RackFolder, RackFilePane, RackSettings, hasRoots } from './files.jsx'
 import { asSorts, bumpSort, bySome, byKeys } from './sort.js'
 import {
@@ -32,7 +32,7 @@ import {
 import { PORTAL_PROJECT, PORTAL_SERVICE, PROJECT_LINKED, brandStyle, isManager, portalUser, fetchDoc, putDoc, newId, takeOpenRequest, showInCalendar, calAsk, calFilterAsk, load, save, projectKey, serviceColor } from './portal.js'
 import { tr } from 'lilak-ui/i18n.jsx'
 import { tagKey, tagTree, tagWithin, tagRenames, useTagSources, sharedTagRows, useFavTags, renameTagEverywhere, renameTagHere, forgetTagSources, uniqueTags, useProjects, projectOfTag, saveProject, projectFolder, loadProjectFolders, openProjectFolder } from './tags.js'
-import { RackTagProject } from './tagproject.jsx'
+import { RackTagKind } from './tagproject.jsx'
 import { RackTagged, RackTaggedTab, TAGGED_COLS, TAGGED_SORTERS, useTaggedRows } from './tagged.jsx'
 
 /**
@@ -283,6 +283,8 @@ function RackList({ def: declared, slots = {} }) {
   // service's tags, renamed and deleted in all of them, as project_manager's was.
   const [setWide, setSetWide] = useState(() => !!load(projectKey(def.key, 'tagwide'), false))
   useEffect(() => { save(projectKey(def.key, 'tagwide'), setWide) }, [def.key, setWide])
+  // A tags tab shows every kind, or only the projects, or only the flows.
+  const [tagKind, setTagKind] = useState('all')
   const sharedOf = (c) => !!c?.shared || (setWide && PROJECT_LINKED && !!c && !c.stored && caseFree(wornBy(def, c)))
   const mergeable = !!cls && ((!cls.stored && !!clsField && !isRef(clsField) && !typeOf(clsField).keys)
     || (cls.stored && !!cls.merge))
@@ -549,7 +551,7 @@ function RackList({ def: declared, slots = {} }) {
   const projProj = projects[0]?.proj
   useEffect(() => { if (cls && projProj) loadProjectFolders(projProj).then(setProjFolders) }, [!!cls, projProj, projAgain])   // eslint-disable-line react-hooks/exhaustive-deps
   const projFolderOf = (p) => { const n = projectFolder(p.name, projFolders); return projFolders?.dirs?.[n.normalize('NFC')] ? n : '' }
-  const projCell = (name) => (projOf(name) ? <span className="rl-proj">{name}</span> : name)
+  const projCell = (name) => (isFlowTag(name) ? <FlowChip t={name} /> : projOf(name) ? <span className="rl-proj">{name}</span> : name)
   // A tags tab: after this service's count, a column per other service that
   // shares tags (and per record kind here that wears them too: an author
   // group), each saying how many wear the tag there.
@@ -623,7 +625,9 @@ function RackList({ def: declared, slots = {} }) {
     }))
   }, [cls, clsCols, clsField, def, doc, extra])
   const clsFilter = useFacetFilter(classes, clsSorters)
-  const clsShown = clsFilter.on ? classes.filter(clsFilter.passes) : classes
+  const kindOf = (name) => (isFlowTag(name) ? 'flow' : projOf(name) ? 'project' : 'tag')
+  const clsKinded = !cls || cls.stored || tagKind === 'all' ? classes : classes.filter((r) => kindOf(r.name) === tagKind)
+  const clsShown = clsFilter.on ? clsKinded.filter(clsFilter.passes) : clsKinded
   // A tags tab is an outline: `agent/rack` under `agent`, which opens and shuts.
   // Looking for something opens everything, or the match would stay hidden.
   const [tagOpen, setTagOpen] = useState(() => new Set(load(projectKey(def.key, 'tagopen'), [])))
@@ -978,7 +982,12 @@ function RackList({ def: declared, slots = {} }) {
           } : null}
           deleteWarn={pj ? tr('rk_proj_delete_warn', pj.name) : undefined}>
           {/* A tag may be a project: its description, period and what else it gathers. */}
-          {caseFree(field) && <RackTagProject tag={etab.who} projects={projects} onChanged={projChanged} say={setNote} />}
+          {caseFree(field) && <RackTagKind tag={etab.who} projects={projects} onChanged={projChanged} say={setNote}
+            // A tag made a flow (`>name`) or back: renamed through the whole set, whatever this tab reads.
+            onRename={async (to) => {
+              const all = { ...c, shared: true }
+              if (await renameTags(all, tagRenames(tagNames(all), [etab.who], to))) panes.close(etab.id)
+            }} />}
           {/* A shared tag: what wears it in the other services, each opening in a pane here. */}
           {sharedOf(c) && <RackTagged names={[etab.who]} skip={PORTAL_SERVICE.name} onOpen={openRecord} />}
         </RackEditClass>
@@ -1160,6 +1169,15 @@ function RackList({ def: declared, slots = {} }) {
         {slots.pick?.(api)}
       </MenuRow>
       {/* A tags tab: this service's tags, or the set's (every service in it). */}
+      {outline && (
+        <MenuRow title={tr('rk_kind')}>
+          <div className="rl-seg">
+            {['all', 'project', 'flow'].map((k) => (
+              <button key={k} type="button" className={`rl-btn${tagKind === k ? ' on' : ''}`} onClick={() => setTagKind(k)}>{tr(`rk_kind_${k}`)}</button>
+            ))}
+          </div>
+        </MenuRow>
+      )}
       {outline && !cls.shared && PROJECT_LINKED && (
         <MenuRow title={tr('rk_tag_scope')}>
           <div className="rl-seg">
@@ -1448,9 +1466,9 @@ function RackList({ def: declared, slots = {} }) {
                   }
                   // The rest of the series stays in the flow the first part is in.
                   const ck = chainKey(def), { flow } = flowFor(def, all, rec)
-                  const r = made({ [R]: { rule: newRule, ex: (rp.ex || []).filter((d) => d >= occ) }, ...(ck ? { [ck]: flow } : {}) })
+                  const r = made({ [R]: { rule: newRule, ex: (rp.ex || []).filter((d) => d >= occ) }, ...(ck ? withFlow(def, rec, flow) : {}) })
                   const next = all.map((x) => {
-                    if (x === rec) return { ...x, [R]: { rule: oldRule, ex: (rp.ex || []).filter((d) => d < occ) }, ...(ck ? { [ck]: flow } : {}), updatedAt: now }
+                    if (x === rec) return { ...x, [R]: { rule: oldRule, ex: (rp.ex || []).filter((d) => d < occ) }, ...(ck ? withFlow(def, x, flow) : {}), updatedAt: now }
                     const s2 = x[S]?.id ?? x[S]
                     return s2 === rec.id && String(x[O] || '') >= occ ? { ...x, [S]: { id: r.id }, updatedAt: now } : x
                   })
@@ -1464,8 +1482,8 @@ function RackList({ def: declared, slots = {} }) {
                   if (def.item.fill) r = def.item.fill(r, doc)
                   // The copy goes in its source's flow — the source too, if it was in none.
                   const all = doc[def.item.key] || [], ck = chainKey(def), { flow, mark } = flowFor(def, all, rec)
-                  if (ck) r[ck] = flow
-                  const patch = { [def.item.key]: [r, ...(mark ? all.map((x) => (x === rec ? { ...x, [ck]: flow, updatedAt: now } : x)) : all)] }
+                  if (ck) Object.assign(r, withFlow(def, r, flow))
+                  const patch = { [def.item.key]: [r, ...(mark ? all.map((x) => (x === rec ? { ...x, ...withFlow(def, x, flow), updatedAt: now } : x)) : all)] }
                   Object.assign(patch, def.item.onSave?.(r, null, { ...doc, ...patch }) || {})
                   return commit(patch, tr("rk_copied_x", labelOf(def, r)))
                 }} />

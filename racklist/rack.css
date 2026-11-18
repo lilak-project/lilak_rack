@@ -553,6 +553,8 @@ button.rl-fold:hover { color: var(--rk-ink, inherit); }
   color: var(--rk-text);
 }
 .rl-hint { color: var(--rk-mute); }
+/* The record named for an agent (pathline.jsx): one line, read-only, copied whole. */
+.rl-agentline { flex: 1 1 auto; min-width: 0; font-family: var(--rk-mono, var(--font-mono)); font-size: .85em; color: var(--rk-dim); background: transparent; border: 1px solid var(--rk-edge); padding: 2px 6px; }
 
 /* ── a draggable column edge ───────────────────────────────────────────────
    The head cell holds it; it is 7px wide so it can be caught without being
@@ -748,6 +750,19 @@ button.rl-proj { cursor: pointer; }
 .rl-projs { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
 .rl-rec .rl-proj { --bd: 4px; --sc: 4px; height: 26px; gap: 7px; padding: 0 6px 3px; font-size: var(--rk-fs); }
 
+/* A flow — `>name`, records that follow on one from another (chain.js) — is
+   a tag that points on: orange, its right end an arrowhead. Neither a tag's
+   blue nor a project's nameplate, so the three never read alike. */
+.rl-flow {
+  --flow: #c2410c; --flow-bg: #ffedd5;
+  display: inline-flex; align-items: center; height: 17px; padding: 0 12px 0 6px;
+  background: var(--flow-bg); color: var(--flow); border: 0;
+  font: inherit; font-weight: 600; font-size: var(--fs-tiny); white-space: nowrap;
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%);
+}
+.rl-tag.rl-flow { border: 0; padding-right: 14px; }
+.rl-rec .rl-tag.rl-flow { height: 26px; padding: 0 16px 0 8px; font-size: var(--rk-fs); }
+.rl-flow .rl-lnk, .rl-flow .rl-x { color: inherit; }
 /* A person — `@name` — beside the tags and the nameplates: their name behind
    a face. The face is a mask painted in the chip's own colour and held in one
    custom property, so a different face for one person is that one line

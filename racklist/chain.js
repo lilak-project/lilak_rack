@@ -1,9 +1,15 @@
 /**
  * A flow (흐름): records that follow one another — a meeting's sittings, the
- * steps of one piece of work. Each holds the flow's name (the id of its first
- * record) in its `type: 'chain'` field; the order is their days', so nothing
- * names a next or a previous record, and putting one in or taking it out
- * changes that one alone (a sync merges it as any other edit).
+ * steps of one piece of work. Each wears the flow as a tag that begins with `>`
+ * (`#>AToM-X-meeting`), so the tags tab lists the flows and a note carries its
+ * flow in its text like any tag; the order is their days', so nothing names a
+ * next or a previous record, and putting one in or taking it out changes that
+ * one alone (a sync merges it as any other edit). The mark keeps a flow apart
+ * from an ordinary tag of the same word: a note tagged #meeting is not in one.
+ *
+ * Before 2026-11 a record held the flow as the id of its first record in its
+ * `type: 'chain'` field. That is still read, so nothing falls out of its flow
+ * while the data is moved; a service has flows when it declares that field.
  *
  * A record that repeats (calendar.repeat) is a flow of its own sittings, field
  * or no field; a sitting taken out of it (calendar.series) stays in its flow.
@@ -12,6 +18,38 @@ import { occurrences, parseRule } from './rrule.js'
 
 /** The field a service keeps flows in, or undefined: it has none. */
 export const chainKey = (def) => def.item.fields.find((f) => f.type === 'chain')?.k
+/** A flow's tag: `>` and a name. */
+export const isFlowTag = (t) => /^>\S/.test(String(t ?? '').trim())
+const flowTagOf = (r) => (Array.isArray(r?.tags) ? r.tags.find(isFlowTag) : '') || ''
+/** Two names of one flow: a tag is the same tag whatever its case. */
+export const sameFlow = (a, b) => !!a && String(a).toLowerCase() === String(b || '').toLowerCase()
+/** A flow's name for a record: its label as one word (a tag holds no space). */
+export const flowName = (label) => `>${String(label || '').trim().replace(/\s+/g, '-').replace(/[#.,;:!?()[\]{}'"]/g, '').replace(/^>+/, '') || 'flow'}`
+/** The fields that put `r` in `flow` ('' = in none): the flow's tag among its
+ *  tags, and the old field emptied — or, for a flow not yet moved to a tag
+ *  (an id), that field as before. */
+export function withFlow(def, r, flow) {
+  const k = chainKey(def)
+  const tags = (Array.isArray(r?.tags) ? r.tags : []).filter((t) => !isFlowTag(t))
+  if (isFlowTag(flow)) return { tags: [...tags, String(flow).trim()], ...(k ? { [k]: '' } : {}) }
+  return { tags, ...(k ? { [k]: flow || '' } : {}) }
+}
+/** A note's text with its flow tag set (or taken out): the `#>…` words go, and
+ *  the flow's goes on the first line of nothing but tags — a new one on top when
+ *  there is none. Used by note and by the records that make notes. */
+export function withFlowTag(body, flow) {
+  const strip = (l) => l.replace(/(^|[ \t])#>[^\s#]+/g, '$1').replace(/[ \t]{2,}/g, ' ').trimEnd()
+  // A line that held only the flow goes with it.
+  const lines = String(body || '').split('\n').flatMap((l) => (/#>/.test(l) ? (strip(l).trim() ? [strip(l)] : []) : [l]))
+  while (lines.length && !lines[0].trim()) lines.shift()
+  if (!isFlowTag(flow)) return lines.join('\n')
+  const tag = `#${String(flow).trim()}`
+  const tagsOnly = (l) => !!l.trim() && l.trim().split(/\s+/).every((w) => /^#[^\s#]/.test(w))
+  const at = lines.findIndex(tagsOnly)
+  if (at >= 0) lines[at] = `${lines[at].trimEnd()} ${tag}`
+  else lines.unshift(tag, ...(lines.length ? [''] : []))
+  return lines.join('\n')
+}
 const idOf = (def, r) => String(r?.[def.item.id || 'id'] ?? '')
 const day = (v) => String(v || '').slice(0, 10)
 const seriesOf = (def, r) => { const S = def.calendar?.series; return S ? String(r?.[S]?.id ?? r?.[S] ?? '') : '' }
@@ -21,6 +59,8 @@ const repeats = (def, r) => !!(def.calendar?.repeat && r?.[def.calendar.repeat]?
 export function flowOf(def, r, byId) {
   const k = chainKey(def)
   if (!r) return ''
+  const tag = flowTagOf(r)
+  if (tag) return String(tag).trim()
   if (k && r[k]) return String(r[k])
   const s = seriesOf(def, r)
   if (s) { const p = byId(s); return (p && p !== r && flowOf(def, p, byId)) || s }
@@ -46,7 +86,7 @@ export function flowStops(def, items, flow, near) {
   const out = []
   let endless = false
   for (const r of items) {
-    if (flowOf(def, r, (x) => byId.get(x)) !== flow) continue
+    if (!sameFlow(flowOf(def, r, (x) => byId.get(x)), flow)) continue
     const id = idOf(def, r), first = day(r[cal.start || 'start'] || r.date)
     if (!first) continue
     const key = (d) => `${d} ${cal.time?.(r) || ''} ${r.createdAt || ''} ${id}`
@@ -81,10 +121,19 @@ export function flowSteps(def, items, rec, occ = '', today = new Date().toISOStr
 
 /** The flow a copy of `r` (a clone, a drag-copy, a sitting taken out) goes in,
  *  and whether `r` is to be given it too: it was in one only by repeating, or
- *  in none — then the flow is named after it. */
+ *  in none — then the flow is a new tag named after it (`>name`, `>name-2` when
+ *  that is taken). A flow not yet moved to a tag stays as it is.
+ *  ponytail: a sitting taken out of a record that repeats, in no flow but its
+ *  series, starts a tag of its own and leaves the series; tag the series first. */
 export function flowFor(def, items, r) {
   const byId = new Map(items.map((x) => [idOf(def, x), x]))
-  const k = chainKey(def)
-  if (!k) return { flow: '', mark: false }
-  return { flow: flowOf(def, r, (x) => byId.get(x)) || idOf(def, r), mark: !r[k] }
+  if (!chainKey(def)) return { flow: '', mark: false }
+  const now = flowOf(def, r, (x) => byId.get(x))
+  if (isFlowTag(now) || (now && r[chainKey(def)])) return { flow: now, mark: false }
+  const l = def.item.label
+  const base = flowName(typeof l === 'function' ? l(r) : r?.[l || 'name'] || r?.title)
+  const taken = new Set(items.map(flowTagOf).filter(Boolean).map((x) => String(x).toLowerCase()))
+  let flow = base
+  for (let i = 2; taken.has(flow.toLowerCase()); i += 1) flow = `${base}-${i}`
+  return { flow, mark: true }
 }

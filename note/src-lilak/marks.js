@@ -310,6 +310,34 @@ export function mathFences(body) {
   return out
 }
 
+/** On a slide, the empty lines after the first of a run are lines of space:
+ *  markdown would fold them into one gap, so the renderer is handed `&nbsp;`
+ *  there (`keepBlanks`) and the editor draws them a line tall (`blankHeights`).
+ *  Only between two lines of the slide: not after a `---` or the tags that open
+ *  a note, not before a `---`, not at the end, not in a ``` block. 1-based. */
+export function extraBlanks(lines) {
+  const rules = new Set(ruleLines(lines.join('\n')))
+  const fences = fenceLines(lines)
+  const out = new Set()
+  for (let i = 1; i < lines.length; i += 1) {
+    if (lines[i].trim() || !lines[i - 1].trim()) continue
+    let j = i
+    while (j < lines.length && !lines[j].trim()) j += 1
+    const before = lines[i - 1]
+    if (j < lines.length && !rules.has(i) && !rules.has(j + 1) && !tagLine(before)
+      && !fences.some(([a, b]) => i + 1 > a && i + 1 < b)) {
+      for (let k = i + 1; k < j; k += 1) out.add(k + 1)
+    }
+    i = j
+  }
+  return out
+}
+export const keepBlanks = (text) => {
+  const lines = String(text || '').split('\n')
+  const extra = extraBlanks(lines)
+  return lines.map((l, i) => (extra.has(i + 1) ? '&nbsp;' : l)).join('\n')
+}
+
 /** The lines of a slide that take less room than a line, because the renderer
  *  sees none there. An empty line is the gap between two paragraphs ('gap'), or
  *  nothing ('none') beside a heading, which brings its own margin, after another
@@ -324,14 +352,15 @@ export function blankHeights(lines, caret, starts, cover = false) {
   const head = (t) => /^#{1,6}[ \t]/.test(t)
   const out = new Map()
   const fences = fenceLines(lines)
+  const extra = extraBlanks(lines)
   lines.forEach((t, i) => {
     const n = i + 1
-    if (t.trim() || fences.some(([a, b]) => n > a && n < b)) return
+    if (t.trim() || extra.has(n) || fences.some(([a, b]) => n > a && n < b)) return
     const prev = i ? lines[i - 1].trim() : ''
     let m = n + 1
     while (m <= lines.length && !lines[m - 1].trim()) m += 1
     const end = m > lines.length || starts.has(m) || rules.has(m)
-    const nothing = !prev || end || head(prev) || head(lines[m - 1])
+    const nothing = !prev || end || head(prev) || (!extra.has(n + 1) && head(lines[m - 1]))
     if (n !== caret) out.set(n, nothing ? 'none' : 'gap')
     else if (nothing) out.set(n, 'idle')
   })

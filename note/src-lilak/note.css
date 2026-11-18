@@ -1031,7 +1031,7 @@ body.nt-paper #root { height: auto; min-height: 100%; }
   /* `min-width: 0`: the cover and the lines reach past the margins on purpose,
      and flex would otherwise widen the page to hold them. */
   flex: 0 0 calc(1000px * var(--nt-k, 1)); min-width: 0;
-  padding: 0 calc(50px * var(--nt-k, 1)) calc(40px * var(--nt-k, 1));
+  padding: 0 calc(50px * var(--nt-k, 1));
   background: var(--nt-deck-bg); color: var(--nt-deck-ink);
   font-size: calc(var(--nt-deck-fs) * var(--nt-k, 1));
 }
@@ -1040,6 +1040,90 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 .nt-raw.nt-slide .cm-content { line-height: 1.45; }
 .nt-raw.nt-slide .cm-line { padding: 0; }
 .nt-raw.nt-slide .cm-line:is(.nt-cm-h1, .nt-cm-h2, .nt-cm-h3, .nt-cm-h4, .nt-cm-h5, .nt-cm-h6) { padding: .5em 0 .3em; }
+/* A heading straight under a heading: the renderer lets the two margins
+   between them collapse into the larger one, and the editor's lines add them
+   up — a slide of `# a` then `## b` came out a line's padding taller here, and
+   the white under it (deckFit) was redone on every scroll. So the space over
+   the second is what is left of its own .5em once the first's .3em is in:
+   max(0, .5 - .3 * size(first) / size(second)) em, the sizes being 1.45,
+   1.22, 1.07 and 1 (`.nt-deck h1`…). */
+.nt-raw.nt-slide .cm-line.nt-cm-h1 + .cm-line.nt-cm-h1,
+.nt-raw.nt-slide .cm-line.nt-cm-h1 + .cm-line.nt-deck-none + .cm-line.nt-cm-h1 { padding-top: 0.2em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h1 + .cm-line.nt-cm-h2,
+.nt-raw.nt-slide .cm-line.nt-cm-h1 + .cm-line.nt-deck-none + .cm-line.nt-cm-h2 { padding-top: 0.143em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h1 + .cm-line.nt-cm-h3,
+.nt-raw.nt-slide .cm-line.nt-cm-h1 + .cm-line.nt-deck-none + .cm-line.nt-cm-h3 { padding-top: 0.093em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h1 + .cm-line.nt-cm-h4,
+.nt-raw.nt-slide .cm-line.nt-cm-h1 + .cm-line.nt-deck-none + .cm-line.nt-cm-h4 { padding-top: 0.065em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h1 + .cm-line.nt-cm-h5,
+.nt-raw.nt-slide .cm-line.nt-cm-h1 + .cm-line.nt-deck-none + .cm-line.nt-cm-h5 { padding-top: 0.065em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h1 + .cm-line.nt-cm-h6,
+.nt-raw.nt-slide .cm-line.nt-cm-h1 + .cm-line.nt-deck-none + .cm-line.nt-cm-h6 { padding-top: 0.065em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h2 + .cm-line.nt-cm-h1,
+.nt-raw.nt-slide .cm-line.nt-cm-h2 + .cm-line.nt-deck-none + .cm-line.nt-cm-h1 { padding-top: 0.248em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h2 + .cm-line.nt-cm-h2,
+.nt-raw.nt-slide .cm-line.nt-cm-h2 + .cm-line.nt-deck-none + .cm-line.nt-cm-h2 { padding-top: 0.2em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h2 + .cm-line.nt-cm-h3,
+.nt-raw.nt-slide .cm-line.nt-cm-h2 + .cm-line.nt-deck-none + .cm-line.nt-cm-h3 { padding-top: 0.158em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h2 + .cm-line.nt-cm-h4,
+.nt-raw.nt-slide .cm-line.nt-cm-h2 + .cm-line.nt-deck-none + .cm-line.nt-cm-h4 { padding-top: 0.134em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h2 + .cm-line.nt-cm-h5,
+.nt-raw.nt-slide .cm-line.nt-cm-h2 + .cm-line.nt-deck-none + .cm-line.nt-cm-h5 { padding-top: 0.134em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h2 + .cm-line.nt-cm-h6,
+.nt-raw.nt-slide .cm-line.nt-cm-h2 + .cm-line.nt-deck-none + .cm-line.nt-cm-h6 { padding-top: 0.134em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h3 + .cm-line.nt-cm-h1,
+.nt-raw.nt-slide .cm-line.nt-cm-h3 + .cm-line.nt-deck-none + .cm-line.nt-cm-h1 { padding-top: 0.279em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h3 + .cm-line.nt-cm-h2,
+.nt-raw.nt-slide .cm-line.nt-cm-h3 + .cm-line.nt-deck-none + .cm-line.nt-cm-h2 { padding-top: 0.237em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h3 + .cm-line.nt-cm-h3,
+.nt-raw.nt-slide .cm-line.nt-cm-h3 + .cm-line.nt-deck-none + .cm-line.nt-cm-h3 { padding-top: 0.2em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h3 + .cm-line.nt-cm-h4,
+.nt-raw.nt-slide .cm-line.nt-cm-h3 + .cm-line.nt-deck-none + .cm-line.nt-cm-h4 { padding-top: 0.179em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h3 + .cm-line.nt-cm-h5,
+.nt-raw.nt-slide .cm-line.nt-cm-h3 + .cm-line.nt-deck-none + .cm-line.nt-cm-h5 { padding-top: 0.179em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h3 + .cm-line.nt-cm-h6,
+.nt-raw.nt-slide .cm-line.nt-cm-h3 + .cm-line.nt-deck-none + .cm-line.nt-cm-h6 { padding-top: 0.179em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h4 + .cm-line.nt-cm-h1,
+.nt-raw.nt-slide .cm-line.nt-cm-h4 + .cm-line.nt-deck-none + .cm-line.nt-cm-h1 { padding-top: 0.293em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h4 + .cm-line.nt-cm-h2,
+.nt-raw.nt-slide .cm-line.nt-cm-h4 + .cm-line.nt-deck-none + .cm-line.nt-cm-h2 { padding-top: 0.254em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h4 + .cm-line.nt-cm-h3,
+.nt-raw.nt-slide .cm-line.nt-cm-h4 + .cm-line.nt-deck-none + .cm-line.nt-cm-h3 { padding-top: 0.22em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h4 + .cm-line.nt-cm-h4,
+.nt-raw.nt-slide .cm-line.nt-cm-h4 + .cm-line.nt-deck-none + .cm-line.nt-cm-h4 { padding-top: 0.2em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h4 + .cm-line.nt-cm-h5,
+.nt-raw.nt-slide .cm-line.nt-cm-h4 + .cm-line.nt-deck-none + .cm-line.nt-cm-h5 { padding-top: 0.2em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h4 + .cm-line.nt-cm-h6,
+.nt-raw.nt-slide .cm-line.nt-cm-h4 + .cm-line.nt-deck-none + .cm-line.nt-cm-h6 { padding-top: 0.2em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h5 + .cm-line.nt-cm-h1,
+.nt-raw.nt-slide .cm-line.nt-cm-h5 + .cm-line.nt-deck-none + .cm-line.nt-cm-h1 { padding-top: 0.293em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h5 + .cm-line.nt-cm-h2,
+.nt-raw.nt-slide .cm-line.nt-cm-h5 + .cm-line.nt-deck-none + .cm-line.nt-cm-h2 { padding-top: 0.254em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h5 + .cm-line.nt-cm-h3,
+.nt-raw.nt-slide .cm-line.nt-cm-h5 + .cm-line.nt-deck-none + .cm-line.nt-cm-h3 { padding-top: 0.22em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h5 + .cm-line.nt-cm-h4,
+.nt-raw.nt-slide .cm-line.nt-cm-h5 + .cm-line.nt-deck-none + .cm-line.nt-cm-h4 { padding-top: 0.2em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h5 + .cm-line.nt-cm-h5,
+.nt-raw.nt-slide .cm-line.nt-cm-h5 + .cm-line.nt-deck-none + .cm-line.nt-cm-h5 { padding-top: 0.2em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h5 + .cm-line.nt-cm-h6,
+.nt-raw.nt-slide .cm-line.nt-cm-h5 + .cm-line.nt-deck-none + .cm-line.nt-cm-h6 { padding-top: 0.2em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h6 + .cm-line.nt-cm-h1,
+.nt-raw.nt-slide .cm-line.nt-cm-h6 + .cm-line.nt-deck-none + .cm-line.nt-cm-h1 { padding-top: 0.293em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h6 + .cm-line.nt-cm-h2,
+.nt-raw.nt-slide .cm-line.nt-cm-h6 + .cm-line.nt-deck-none + .cm-line.nt-cm-h2 { padding-top: 0.254em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h6 + .cm-line.nt-cm-h3,
+.nt-raw.nt-slide .cm-line.nt-cm-h6 + .cm-line.nt-deck-none + .cm-line.nt-cm-h3 { padding-top: 0.22em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h6 + .cm-line.nt-cm-h4,
+.nt-raw.nt-slide .cm-line.nt-cm-h6 + .cm-line.nt-deck-none + .cm-line.nt-cm-h4 { padding-top: 0.2em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h6 + .cm-line.nt-cm-h5,
+.nt-raw.nt-slide .cm-line.nt-cm-h6 + .cm-line.nt-deck-none + .cm-line.nt-cm-h5 { padding-top: 0.2em; }
+.nt-raw.nt-slide .cm-line.nt-cm-h6 + .cm-line.nt-cm-h6,
+.nt-raw.nt-slide .cm-line.nt-cm-h6 + .cm-line.nt-deck-none + .cm-line.nt-cm-h6 { padding-top: 0.2em; }
+/* A list straight under a paragraph or a picture, no blank line between: the
+   renderer gives the paragraph its .5em under it all the same (the list is a
+   block of its own), and the editor had nothing there. */
+.nt-raw.nt-slide :is(.nt-embed-row, .nt-embed-box) + .cm-line.nt-cm-li:not(.nt-deck-top),
+.nt-raw.nt-slide .cm-line:not([class*="nt-cm-"]):not([class*="nt-deck-"]) + .cm-line.nt-cm-li:not(.nt-deck-top) { padding-top: .5em; }
 .nt-raw.nt-slide .cm-line.nt-deck-top { padding-top: 0; }
 .nt-raw.nt-slide .cm-line.nt-deck-gap { height: .5em; line-height: .5em; overflow: hidden; }
 .nt-raw.nt-slide .cm-line.nt-deck-none,
@@ -1092,12 +1176,20 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 /* Between two slides: the empty end of the last (`--nt-gap`, page pixels), one
    solid line with a hair of room round it, and the next slide's top margin.
    Height rather than margin: CodeMirror measures the border box. */
+/* Between two slides: the empty end of one, a band of the ground between
+   them (--nt-band, SourceArea's BAND), the next one's top margin. The last
+   cut stops at its band (`nt-deck-end`): the note ends there. */
 .nt-deck-cut {
   --nt-above: calc(var(--nt-gap) * var(--nt-k, 1) * 1px);
-  height: calc(var(--nt-above) + 5px + 40px * var(--nt-k, 1));
+  --nt-band: 12px;
+  height: calc(var(--nt-above) + var(--nt-band) + 40px * var(--nt-k, 1));
   margin-inline: calc(-50px * var(--nt-k, 1));
-  background: linear-gradient(var(--rk-dim) 0 0) 0 calc(var(--nt-above) + 2px) / 100% 1px no-repeat;
+  background:
+    linear-gradient(var(--rk-edge) 0 0) 0 var(--nt-above) / 100% 1px no-repeat,
+    linear-gradient(var(--rk-edge) 0 0) 0 calc(var(--nt-above) + var(--nt-band) - 1px) / 100% 1px no-repeat,
+    linear-gradient(var(--nt-ground, var(--rk-ground)) 0 0) 0 var(--nt-above) / 100% var(--nt-band) no-repeat;
 }
+.nt-deck-cut.nt-deck-end { height: calc(var(--nt-above) + var(--nt-band)); }
 .cm-gutterElement .nt-deck-cut { margin-inline: -10px -8px; }
 
 /* The show. Above everything, with the page in the middle of black. */

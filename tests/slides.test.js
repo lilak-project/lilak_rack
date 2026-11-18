@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Rendered } from '../note/src-lilak/reading.jsx'
-import { cutPages as cut, plainRules, headingNumbers, numberHeadings, pageTexts, ruleLines, blankHeights, tagLine, mathFences, figureList, figureOf, isPicture, commentSpans, blankComments, dropComments, highlightSpans } from '../note/src-lilak/marks.js'
+import { cutPages as cut, plainRules, headingNumbers, numberHeadings, pageTexts, ruleLines, blankHeights, tagLine, mathFences, figureList, figureOf, isPicture, commentSpans, blankComments, dropComments, highlightSpans, keepBlanks } from '../note/src-lilak/marks.js'
 
 const b = (line, top, bottom, extra = {}) => ({ line, top, bottom, ...extra })
 const INF = Infinity
@@ -54,8 +54,8 @@ describe('cutting a note into slides', () => {
 
 describe('blankHeights', () => {
   const at = (body, caret = 0, starts = new Set()) => [...blankHeights(body.split('\n'), caret, starts)]
-  it('is a paragraph gap between text, once however many', () => {
-    expect(at('a\n\n\nb')).toEqual([[2, 'gap'], [3, 'none']])
+  it('is a paragraph gap between text, and each one past it a line of space', () => {
+    expect(at('a\n\n\nb')).toEqual([[2, 'gap']])
   })
   it('is nothing beside a heading or where a slide ends', () => {
     expect(at('# h\n\na\n\n# i')).toEqual([[2, 'none'], [4, 'none']])
@@ -147,5 +147,23 @@ describe('%% comments and ==highlights==', () => {
     expect(html).toContain('<mark class="nt-hl"><strong>굵게</strong> a[b]</mark>')
     expect(html).not.toContain('숨김')
     expect(html).not.toContain('%%')
+  })
+})
+
+describe('empty lines on a slide', () => {
+  it('past the first of a run, an empty line is a line of space', () => {
+    expect(keepBlanks('A\n\n\n\nB')).toBe('A\n\n&nbsp;\n&nbsp;\nB')
+    const h = blankHeights(['A', '', '', '', 'B'], 0, new Set())
+    expect([h.get(2), h.get(3), h.get(4)]).toEqual(['gap', undefined, undefined])
+  })
+  it('not at the end, around a ---, after the opening tags or in code', () => {
+    expect(keepBlanks('A\n\n\n')).toBe('A\n\n\n')
+    expect(keepBlanks('A\n\n\n---\n\n\nB')).toBe('A\n\n\n---\n\n\nB')
+    expect(keepBlanks('#t\n\n\nA')).toBe('#t\n\n\nA')
+    expect(keepBlanks('```\nx\n\n\ny\n```')).toBe('```\nx\n\n\ny\n```')
+  })
+  it('the show draws them', () => {
+    const html = renderToStaticMarkup(createElement(Rendered, null, keepBlanks('A\n\n\n\nB')))
+    expect(html).toContain(' ')
   })
 })

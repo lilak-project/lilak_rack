@@ -6,7 +6,7 @@ import { RackTextRows } from './fields.jsx'
 import { authHeaders, linkProject, openInService, serviceColor, remoteDocOf } from './portal.js'
 import { useSharedTags, spellTag, tagKey, uniqueTags } from './tags.js'
 import { parseRule, describe, withUntil, withCount, withoutEnd, DAYS, dow, nth } from './rrule.js'
-import { chainKey, flowOf, flowFor } from './chain.js'
+import { chainKey, flowOf, flowFor, isFlowTag, sameFlow, withFlow, withFlowTag } from './chain.js'
 
 /**
  * Field types — what a property of an [항목] IS, said once.
@@ -287,12 +287,12 @@ function Chips({ value, onChange, field, ctx, single, shared }) {
           /* `show` names a shorter field to wear — a journal's shortName. The
              chip stays one line; the full name is the title and one press
              away. The same rule the table's text() follows. */
-          <span key={t} className="rl-tag" title={nameOf(field, ctx, t)}>
+          <span key={t} className={isFlowTag(t) ? 'rl-tag rl-flow' : 'rl-tag'} title={nameOf(field, ctx, t)}>
             {/* A value that is a record of a stored class opens that record. */}
             {ctx.openClass && classRec(field, ctx, t)
               ? <button type="button" className="rl-lnk" onClick={() => ctx.openClass(field.of, classRec(field, ctx, t).id || t)}>
-                {shownAs(field, ctx, t)}</button>
-              : shownAs(field, ctx, t)}
+                {isFlowTag(t) ? String(t).trim().slice(1) : shownAs(field, ctx, t)}</button>
+              : isFlowTag(t) ? String(t).trim().slice(1) : shownAs(field, ctx, t)}
             <button type="button" className="rl-x" title={tr("rk_detach")}
               onClick={() => onChange(single ? '' : vals.filter((x) => x !== t))}>×</button>
           </span>
@@ -318,9 +318,17 @@ function TagChips(p) {
   const shared = useSharedTags()
   return <Chips {...p} shared={shared} />
 }
+/** A flow's tag (`>이름`, chain.js) as its own chip: the name, pointing on to what follows. */
+export const FlowChip = ({ t }) => <span className="rl-flow">{String(t).trim().slice(1)}</span>
 registerType('tags', {
   empty: () => [],
   text: (v) => nonBlank(v).join(' '),
+  // In the table a flow's tag is its chip, the others words as before.
+  cell: (v) => {
+    const all = nonBlank(v), flows = all.filter(isFlowTag)
+    if (!flows.length) return all.join(' ') || D
+    return <>{flows.map((t) => <FlowChip key={t} t={t} />)}{all.filter((t) => !isFlowTag(t)).map((t) => ` ${t}`)}</>
+  },
   Edit: (p) => <TagChips {...p} />,
   tidy: (v) => [...new Set(nonBlank(v))],
 })
@@ -863,7 +871,8 @@ export function NoteEdit({ value, onChange, field, rec, ctx, bare }) {
         const put = await noteApi(svc, proj, `/notes/${encodeURIComponent(n.id)}`,
           { method: 'PUT', body: JSON.stringify({ baseVersion: n.version, ...(tags ? { body: `${tags}\n\n` } : {}),
             ...(flow && day ? { date: day } : {}),
-            ...(flow ? { fields: { ...(n.fields || {}), chain: flow } } : {}) }) })
+            // A flow that is a tag is among the tags above; an old one (an id) goes where it went.
+            ...(flow && !isFlowTag(flow) ? { fields: { ...(n.fields || {}), chain: flow } } : {}) }) })
         if (put.ok) n = await put.json()
         else setErr(tr("rk_note_create_failed", put.status))
       }
@@ -918,10 +927,19 @@ export async function syncNoteFlows(def, doc) {
     const key = JSON.stringify([...want]), at = `${def.key}:${fl.k}`
     if (!want.size || NOTE_FLOWS.get(at) === key) continue
     NOTE_FLOWS.set(at, key)
-    const off = (await notesOf(svc, proj, true)).filter((n) => want.has(n.id) && (n.fields?.chain || '') !== want.get(n.id))
+    // A note is in a flow by its `#>name` (or, from before, its front matter's chain).
+    const has = (n) => (n.tags || []).find(isFlowTag) || n.fields?.chain || ''
+    const off = (await notesOf(svc, proj, true)).filter((n) => want.has(n.id) && !sameFlow(has(n), want.get(n.id)))
     for (const n of off) {
+      const to = want.get(n.id)
+      // The text is read whole first: a tag goes in the body, and the list holds no body.
+      const got = isFlowTag(to) ? await noteApi(svc, proj, `/notes/${encodeURIComponent(n.id)}`).then((r) => (r.ok ? r.json() : null)).catch(() => null) : null
+      if (isFlowTag(to) && typeof got?.body !== 'string') continue      // never write a text not read
+      const { chain, ...rest } = n.fields || {}
       await noteApi(svc, proj, `/notes/${encodeURIComponent(n.id)}`, { method: 'PUT',
-        body: JSON.stringify({ baseVersion: n.version, fields: { ...(n.fields || {}), chain: want.get(n.id) } }) }).catch(() => {})
+        body: JSON.stringify(isFlowTag(to)
+          ? { baseVersion: got.version, body: withFlowTag(got.body, to), fields: rest }
+          : { baseVersion: n.version, fields: { ...rest, chain: to } }) }).catch(() => {})
     }
     if (off.length) notesOf(svc, proj, true)
   }
@@ -939,11 +957,11 @@ registerType('note', {
 })
 
 // ─── the flow a record follows on in ─────────────────────────────────────
-/** `type: 'chain'` — the flow (흐름, chain.js) the record is in: the id of its
- *  first record. Shown as what is in it; put in by picking any record of that
+/** `type: 'chain'` — the flow (흐름, chain.js) the record is in: its `>name`
+ *  tag (or, from before, the id of its first record in this field). Shown as what is in it; put in by picking any record of that
  *  flow (one in none starts one, named after it), taken out by ×. Its steps are
  *  the editor's ‹ › — not here. */
-function ChainEdit({ value, onChange, rec, ctx }) {
+function ChainEdit({ value, rec, ctx, patch }) {
   const { def, doc } = ctx
   const key = def.item.key, idk = def.item.id || 'id', start = def.calendar?.start || 'start'
   const items = useMemo(() => doc?.[key] || [], [doc, key])
@@ -953,7 +971,9 @@ function ChainEdit({ value, onChange, rec, ctx }) {
   const name = (r) => String((typeof l === 'function' ? l(r) : r[l || 'name']) || r[idk])
   const flow = flowOf(def, rec, (x) => byId.get(x))
   const self = String(rec?.[idk] ?? '')
-  const inFlow = flow ? items.filter((r) => flowOf(def, r, (x) => byId.get(x)) === flow)
+  // In it by a tag (or, from before, this field) — not only by repeating.
+  const own = isFlowTag(flow) || !!value
+  const inFlow = flow ? items.filter((r) => sameFlow(flowOf(def, r, (x) => byId.get(x)), flow))
     .sort((a, b) => String(a[start]).localeCompare(String(b[start]))) : []
   // Any other record, newest first, as `name · day` (names repeat; days tell them apart).
   const options = useMemo(() => {
@@ -970,8 +990,8 @@ function ChainEdit({ value, onChange, rec, ctx }) {
     if (!t) return
     const { flow: to, mark } = flowFor(def, items, t)
     // A record in no flow starts one with this: it is given the flow as well.
-    if (mark) ctx.commit?.({ [key]: items.map((x) => (x === t ? { ...x, [ctx.field.k]: to, updatedAt: new Date().toISOString() } : x)) })
-    onChange(to)
+    if (mark) ctx.commit?.({ [key]: items.map((x) => (x === t ? { ...x, ...withFlow(def, x, to), updatedAt: new Date().toISOString() } : x)) })
+    patch(withFlow(def, rec, to))
     setQ('')
   }
   const id = `rl-chain-${ctx.field.k}`
@@ -979,14 +999,14 @@ function ChainEdit({ value, onChange, rec, ctx }) {
     <div className="rl-rows rl-chips">
       <div className="rl-rrow">
         {flow ? (
-          <span className="rl-tag">
-            {tr('rk_flow_in', name(inFlow[0] || rec), inFlow.length)}
-            {value && <button type="button" className="rl-x" title={tr('rk_flow_out')} onClick={() => onChange('')}>×</button>}
+          <span className={isFlowTag(flow) ? 'rl-tag rl-flow' : 'rl-tag'}>
+            {isFlowTag(flow) ? `${String(flow).trim().slice(1)} · ${inFlow.length}` : tr('rk_flow_in', name(inFlow[0] || rec), inFlow.length)}
+            {own && <button type="button" className="rl-x" title={tr('rk_flow_out')} onClick={() => patch(withFlow(def, rec, ''))}>×</button>}
           </span>
         ) : <span className="rl-hint">{tr('rk_flow_none')}</span>}
-        {flow && !value && <span className="rl-hint">{tr('rk_flow_repeat')}</span>}
+        {flow && !own && <span className="rl-hint">{tr('rk_flow_repeat')}</span>}
       </div>
-      {!value && (
+      {!own && (
         <div className="rl-rrow">
           <input className="rl-in" style={{ flex: '1 1 220px', minWidth: 0 }} list={id} value={q}
             placeholder={tr('rk_flow_pick')} onChange={(e) => setQ(e.target.value)}

@@ -64,7 +64,7 @@ function Body({ flow }) {
               <button type="button" className="nt-out" {...press(() => { flow.put(x); setQ('') })}>
                 <span className="rl-hint nt-out-n">{x.date}</span>
                 <span className="nt-out-text">{x.title}</span>
-                {x.chain ? <span className="rl-hint nt-flow-in">{tr('nt_flow_in')}</span> : null}
+                {x.chain || x.tags?.some((t) => String(t).startsWith('>')) ? <span className="rl-hint nt-flow-in">{tr('nt_flow_in')}</span> : null}
               </button>
             </li>
           ))}

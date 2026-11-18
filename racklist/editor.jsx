@@ -6,9 +6,10 @@ import { typeOf } from './types.jsx'
 import { ctxFor, labelOf, wornBy, valueOf } from './schema.js'
 import { useRackKeys } from './hooks.js'
 import { newId, openInService, PORTAL_SERVICE } from './portal.js'
+import { PathLine } from './pathline.jsx'
 import { useProjects, projectWears } from './tags.js'
 import { tr } from 'lilak-ui/i18n.jsx'
-import { chainKey, flowFor, flowSteps } from './chain.js'
+import { chainKey, flowFor, flowSteps, withFlow } from './chain.js'
 
 /**
  * The editor for one [항목] — or one stored [클래스] record — built from its
@@ -280,8 +281,8 @@ export function RackItemEditor({
     const c = cloneOf(def, tidy(f)), k = chainKey(def)
     if (k && rec) {
       const { flow, mark } = flowFor(def, doc[key] || [], f)
-      c[k] = flow
-      if (mark) setF((s) => ({ ...s, [k]: flow }))
+      Object.assign(c, withFlow(def, c, flow))
+      if (mark) setF((s) => ({ ...s, ...withFlow(def, s, flow) }))
     }
     onClone(c)
   }
@@ -300,6 +301,7 @@ export function RackItemEditor({
         deleteWarn={own.deleteWarn ? own.deleteWarn(f, doc) : undefined}
         extra={<>{actions?.(f, setF)}{nav}</>} />
       <div className="rl-rec">
+        {!draft && <PathLine kind={key} id={f.id} />}
         {segments(shown).map((seg) => {
           // One labelled line per field — or per group of fields that say one
           // thing between them (성 · 이름), each widget then named by its own label.

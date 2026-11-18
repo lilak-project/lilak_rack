@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { EditorState, RangeSet, StateEffect, StateField } from '@codemirror/state'
-import { EditorView, keymap, lineNumbers, gutterLineClass, GutterMarker, dropCursor, scrollPastEnd,
+import { EditorView, keymap, lineNumbers, gutterLineClass, GutterMarker, dropCursor,
   highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { syntaxHighlighting, defaultHighlightStyle, HighlightStyle, StreamLanguage } from '@codemirror/language'
@@ -13,9 +13,21 @@ import { shell } from '@codemirror/legacy-modes/mode/shell'
 import { json } from '@codemirror/legacy-modes/mode/javascript'
 import { yaml } from '@codemirror/legacy-modes/mode/yaml'
 import { livePreview, liveLook } from './livemd.js'
-import { deckField, deckGutter, setDeck } from './slides.jsx'
+import { deckField, deckFit, deckGutter, setDeck, setDeckScale } from './slides.jsx'
 import { commentFold, setFoldComments } from './comments.js'
 import { placeBack, placeSave } from './scrolled.js'
+import { retext } from './merge3.js'
+import { tagLine } from './marks.js'
+
+/** Where a deck's text begins: past the tag lines and blank lines at its top
+ *  (what `blankHeights` folds under the title slide). 0 when it has none. */
+const belowTags = (text) => {
+  const lines = String(text || '').split('\n')
+  if (!tagLine(lines[0])) return 0
+  let at = 0, i = 0
+  while (i < lines.length - 1 && (tagLine(lines[i]) || !lines[i].trim())) { at += lines[i].length + 1; i += 1 }
+  return at
+}
 import { tagComplete, citeComplete, dueKeys, jamoKeys, listKeys, markKeys, quotePaste, takeFiles, tableKeys, tableInput, wonCode } from './liveedit.js'
 
 /** The note as the file has it, in a real text editor — plain (`원문`) or with
@@ -139,7 +151,7 @@ const look = EditorView.theme({
 })
 
 // The line between two slides stands on top of the slide's own height.
-const CUT_LINE = 6
+const CUT_LINE = 12   // the band between two slides: note.css --nt-band
 
 export default function RawArea({ value, onChange, live = false, tex = false, at, fileSrc, onFiles, onOpenNote,
   pins, onPin, onEdit, onGutter, goto: go, openAt = 0, hold, fold = false, deck = null, numbered = false }) {
@@ -167,6 +179,11 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
       parent: host.current,
       state: EditorState.create({
         doc: value,
+        // A deck's first lines (its tags, the blanks under them) are folded
+        // under the title slide and open only for a caret that is IN them. A
+        // caret left at 0 opened them at the first click anywhere — the whole
+        // deck went down a line and came back. It starts below them.
+        ...(deck ? { selection: { anchor: belowTags(value) } } : {}),
         extensions: [
           // Clicking a number bookmarks that line, and clicking it again
           // takes the bookmark off — the gutter is the only place where a
@@ -179,8 +196,7 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
               },
             },
           }),
-          // Past the end: the last slide can come to the top of the box too.
-          ...(deck ? [deckField, scrollPastEnd()] : []),
+          ...(deck ? [deckField, deckFit] : []),
           pinField,
           ...(tex || deck ? [] : [blankField]),
           highlightActiveLineGutter(),
@@ -268,7 +284,7 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
       } catch { return null }
     }
     const was = placeBack(at)
-    if (was) {
+    if (was != null) {      // 0 is the top of the note, and that is a place too
       v.dispatch({ effects: EditorView.scrollIntoView(Math.min(was, v.state.doc.length), { y: 'start' }) })
     } else if (openAt >= 1 && openAt <= v.state.doc.lines) {
       // Nothing remembered means this note is being opened, not moved to the
@@ -279,9 +295,17 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
       v.dispatch({ selection: { anchor: line.from },
         effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: 24 }) })
     }
+    // Asked once the scrolling has stopped, never during it: asking CodeMirror
+    // where anything is makes it run its pending measure THEN, and in Safari a
+    // measure in the middle of a flick put the note back where the flick had
+    // started — ten lines up, over and over, all the way down.
+    let rest = 0
     v.scrollDOM.addEventListener('scroll', () => {
-      const p = top()
-      if (p != null) placeSave(at, p)
+      clearTimeout(rest)
+      rest = setTimeout(() => {
+        const p = top()
+        if (p != null) placeSave(at, p)
+      }, 250)
     }, { passive: true })
     // Measured now rather than on the next update: a note nobody has touched
     // produces no update, and the column at the top would be the wrong width
@@ -317,7 +341,7 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
       }),
       clear: () => {},
     }
-    return () => { v.destroy(); view.current = null; if (hold) hold.current = null }
+    return () => { clearTimeout(rest); v.destroy(); view.current = null; if (hold) hold.current = null }
   }, [])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Whether the `%` lines are folded (comments.js). A prop, not a mode of
@@ -342,7 +366,9 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
       if (!v) return
       const gutter = v.dom.querySelector('.cm-gutters')?.offsetWidth || 0
       el.style.setProperty('--nt-deck-h', `${deck.h}px`)
-      el.style.setProperty('--nt-k', Math.min((v.scrollDOM.clientWidth - gutter) / 1000, (el.clientHeight - CUT_LINE) / deck.h))
+      const k = Math.min((v.scrollDOM.clientWidth - gutter) / 1000, (el.clientHeight - CUT_LINE) / deck.h)
+      el.style.setProperty('--nt-k', k)
+      setDeckScale(k)
       v.requestMeasure()
     }
     const ro = new ResizeObserver(fit)
@@ -374,6 +400,10 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
   useEffect(() => {
     const v = view.current
     if (!v || !go?.line || go.line > v.state.doc.lines) return
+    // A jump is made once. `go` outlives this editor (a mode change builds a
+    // new one, and this effect runs as it is built): a bookmark pressed an
+    // hour ago threw the new editor back to its line. `n` is when it was asked.
+    if (go.n && Date.now() - go.n > 1500) return
     const line = v.state.doc.line(go.line)
     // `quiet`: the view moves and the caret does not; the focus leaves, so no
     // line is spelled out and no caret blinks on the slide.
@@ -388,7 +418,10 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
     const el = v.scrollDOM
     const place = () => Math.max(0, Math.min(el.scrollHeight - el.clientHeight,
       v.lineBlockAt(line.from).top + v.documentPadding.top
-        + (go.flush != null ? go.flush * parseFloat(host.current.style.getPropertyValue('--nt-k') || 1) : -v.defaultLineHeight * 2)))
+        // A slide (after the cover): the box starts halfway down the band before
+        // it — and the page being fitted to the box less one band, the band
+        // after it shows the same half at the bottom.
+        + (go.flush != null ? (v.state.field(deckField, false)?.gaps?.[go.slide] ?? go.flush) * parseFloat(host.current.style.getPropertyValue('--nt-k') || 1) + (go.slide ? CUT_LINE / 2 : 0) : -v.defaultLineHeight * 2)))
     // A jump of twenty screens is not something to watch — it is a blur, and
     // CodeMirror cannot draw the lines flying past it either. So a long one
     // ARRIVES a screen and a half away, and glides that: the eye still gets
@@ -413,10 +446,15 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
     // the pane hidden), and a glide frozen half way is a note left in the
     // wrong place. Timers still run, so one lands it.
     const land = setTimeout(() => { if (live) el.scrollTop = place() }, 400)
+    // The hand wins: a scroll or a press during the glide ends it where it is,
+    // rather than being overwritten each frame and snapped back at the end.
+    const yield_ = () => { live = false; clearTimeout(land) }
+    const HAND = ['wheel', 'touchstart', 'pointerdown']
+    HAND.forEach((t) => el.addEventListener(t, yield_, { passive: true, once: true }))
     // A second jump during the first STOPS the first: two glides setting the
     // same scrollTop in the same frames fight, and the older one can land
     // last — a button pressed while the note was still moving did nothing.
-    return () => { live = false; clearTimeout(land) }
+    return () => { live = false; clearTimeout(land); HAND.forEach((t) => el.removeEventListener(t, yield_)) }
   }, [go])
 
   // A note that changed underneath (a reload, another tab's save) is laid in;
@@ -425,7 +463,8 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
     const v = view.current
     if (!v || value === mine.current || value === v.state.doc.toString()) return
     mine.current = value
-    v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: value } })
+    // Only what differs: the whole text replaced took the caret to the top.
+    retext(v, value)
   }, [value])
 
   return <div className={`nt-raw${live ? ' nt-live' : ''}${deck ? ' nt-slide' : ''}`} ref={host} />

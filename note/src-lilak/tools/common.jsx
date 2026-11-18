@@ -1,7 +1,7 @@
 import Select from 'lilak-ui/components/Select.jsx'
 import '../strings.js'
 import { useState } from 'react'
-import { RackField } from 'racklist'
+import { RackField, PathLine } from 'racklist'
 import { press } from './press.js'
 import { tr } from 'lilak-ui/i18n.jsx'
 
@@ -15,6 +15,8 @@ function Body({ note, setNote, go, keep, where, read, slide, print, say, ask, ta
   const { pins, last, marks } = keep
   return (
     <div className="rl-rec nt-common">
+      {/* Where this note is, whole, to hand an agent (get_note takes it). */}
+      <PathLine kind="notes" id={note.id} />
       <RackField label={tr("nt_date")}>
         <input type="date" className="rl-in nt-date" value={note.date || ''}
           onChange={(e) => setNote((s) => ({ ...s, date: e.target.value }))} />

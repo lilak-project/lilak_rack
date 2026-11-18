@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { flowOf, flowSteps } from '../racklist/chain.js'
+import { flowOf, flowSteps, flowFor, withFlow, withFlowTag, flowName } from '../racklist/chain.js'
 
 const def = {
   item: { id: 'id', fields: [{ k: 'name' }, { k: 'chain', type: 'chain' }] },
@@ -37,5 +37,35 @@ describe('a flow', () => {
     const s = flowSteps(def, items, items[0], '', '2026-11-06')
     expect([s.prev?.occ, s.next?.occ, s.total]).toEqual(['2026-11-04', '2026-11-18', 0])
     expect(flowSteps(def, items, items[1])).toBe(null)
+  })
+})
+
+describe('a flow as a tag (#>name)', () => {
+  it('is read from the tags first, the old field after', () => {
+    const items = [{ id: 'a', tags: ['STARK', '>STARK-meeting'], chain: 'old' }, { id: 'b', chain: 'old' }]
+    expect(flowOf(def, items[0], byId(items))).toBe('>STARK-meeting')
+    expect(flowOf(def, items[1], byId(items))).toBe('old')
+  })
+  it('steps through records whatever case their tag is in', () => {
+    const items = [{ id: 'a', tags: ['>M'], start: '2026-11-01' }, { id: 'b', tags: ['>m'], start: '2026-11-02' }]
+    const s = flowSteps(def, items, items[0], '', '2026-11-01')
+    expect([s.next?.id, s.total]).toEqual(['b', 2])
+  })
+  it('puts a record in one: the tag replaces any other flow, the old field empties', () => {
+    expect(withFlow(def, { tags: ['a', '>old'], chain: 'x' }, '>new')).toEqual({ tags: ['a', '>new'], chain: '' })
+    expect(withFlow(def, { tags: ['a', '>old'] }, '')).toEqual({ tags: ['a'], chain: '' })
+  })
+  it('names a new flow after the record, one word, not taking a name in use', () => {
+    expect(flowName('sk meeting (10시)')).toBe('>sk-meeting-10시')
+    const items = [{ id: 'a', name: 'TPC meeting' }, { id: 'b', name: 'x', tags: ['>TPC-meeting'] }]
+    expect(flowFor(def, items, items[0])).toEqual({ flow: '>TPC-meeting-2', mark: true })
+    expect(flowFor(def, items, items[1])).toEqual({ flow: '>TPC-meeting', mark: false })
+  })
+  it('writes a note\'s flow on its tag line, or a line of its own', () => {
+    expect(withFlowTag('#a #b\n\nhello', '>X')).toBe('#a #b #>X\n\nhello')
+    expect(withFlowTag('hello', '>X')).toBe('#>X\n\nhello')
+    expect(withFlowTag('#a #>Old\n\nhi', '>New')).toBe('#a #>New\n\nhi')
+    expect(withFlowTag('#>Old\n\nhi', '')).toBe('hi')
+    expect(withFlowTag('# Title\nbody', '>X')).toBe('#>X\n\n# Title\nbody')
   })
 })

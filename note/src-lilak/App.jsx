@@ -16,7 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   RackService, RackTable, RackRow, RackActions, useRackKeys, useReloadKey, FAV, bumpSort, byKeys, PORTAL_BASE, brandStyle,
   projectKey, load, authHeaders, tagKey, tagWithin, mergeTags as tagCounts, useTagSources, uniqueTags, useProjects,
-  useReferences, useAuthors, save, addReference, referenceDoc, bibText,
+  useReferences, useAuthors, save, addReference, referenceDoc, bibText, isFlowTag, withFlowTag,
 } from 'racklist'
 import { linkProject, remoteDocOf } from 'racklist/portal.js'
 import { numberHeadings, TAG_RE, TAG_COMMENT, URGENT_RE, outsideCode, replaceOutsideCode, untagged, setTagChoices, setProjChoices, setCiteChoices, setAuthorChoices, setJobChoices, authorShow } from './marks.js'
@@ -1397,16 +1397,18 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
     <button type="button" className="rl-btn" disabled={!s} title={s ? `${titleOf(s)} · ${s.day}` : ''}
       {...press(() => notes.step(s.id, titleOf(s)))}>{dir < 0 ? '‹' : '›'}</button>
   )
+  // A flow is a `#>name` tag in the text (racklist chain.js); the front
+  // matter's chain is what came before, kept only for a flow not yet moved.
   const setChain = (v) => setF((st) => {
     const fields = { ...(st.fields || {}) }
-    if (v) fields.chain = v
+    if (v && !isFlowTag(v)) fields.chain = v
     else delete fields.chain
-    return { ...st, fields }
+    return { ...st, fields, body: withFlowTag(st.body, isFlowTag(v) ? v : '') }
   })
   const flowTool = !items ? null : {
     members: noteFlow(items, id).map((x) => ({ id: x.id, title: x.title, date: x.date })),
     here: id,
-    own: !!f.fields?.chain,
+    own: !!f.fields?.chain || /(^|[\s(])#>\S/.test(f.body || ''),
     // Any other note, newest first — the tool searches this itself and shows
     // what it found, so it is the notes rather than a list of labels.
     others: [...items].filter((x) => x.id !== id).sort((a, b) => String(b.date).localeCompare(String(a.date))),
@@ -1440,7 +1442,9 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
       try {
         if (mark) {
           const { body } = await ask(`/notes/${encodeURIComponent(t.id)}`)
-          await putNote(t.id, body.version, { ...body, fields: { ...(body.fields || {}), chain: to } })
+          const { chain, ...rest } = body.fields || {}
+          await putNote(t.id, body.version, isFlowTag(to) ? { ...body, body: withFlowTag(body.body, to), fields: rest }
+            : { ...body, fields: { ...rest, chain: to } })
         }
         setChain(to)
         notes.reload?.()
@@ -1454,7 +1458,8 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
       try {
         if (mark) setChain(to)
         const { body } = await ask('/notes', { method: 'POST', body: JSON.stringify({ title: f.title }) })
-        await putNote(body.id, body.version, { ...body, fields: { ...(body.fields || {}), chain: to } })
+        await putNote(body.id, body.version, isFlowTag(to) ? { ...body, body: withFlowTag(body.body, to) }
+          : { ...body, fields: { ...(body.fields || {}), chain: to } })
         notes.reload?.()
         notes.open(body.id)
       } catch (e) { say(String(e.message || e)) } finally { following = false }

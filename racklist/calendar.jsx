@@ -2,7 +2,8 @@ import Select from 'lilak-ui/components/Select.jsx'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import './strings.js'
 import { tr } from 'lilak-ui/i18n.jsx'
-import { typeOf } from './types.jsx'
+import { typeOf, FlowChip } from './types.jsx'
+import { isFlowTag } from './chain.js'
 import { ctxFor, labelOf, valueOf, favField } from './schema.js'
 import { tagKey, tagWithin, nameKey, useProjects, projectWears, useAuthors } from './tags.js'
 import { load, save, projectKey } from './portal.js'
@@ -926,7 +927,8 @@ export function RackCalendar({ def, doc, items, query, ctx, picked, editing, zon
                 onClick={() => setTagSel((s) => { const n = new Set(s); n.delete(k); return n })}>
                 {k.startsWith('+') ? <span className="rl-proj">{projOf(k)?.name || k.slice(1)}</span>
                   : k.startsWith('@') ? <span className="rl-auth">{whoIs(k)?.kor || whoIs(k)?.eng || k.slice(1)}</span>
-                    : <span className="rl-cal-key-t">#{allTags.find((x) => x.k === k)?.t || k}</span>}<b>×</b>
+                    : isFlowTag(k) ? <FlowChip t={allTags.find((x) => x.k === k)?.t || k} />
+                      : <span className="rl-cal-key-t">#{allTags.find((x) => x.k === k)?.t || k}</span>}<b>×</b>
               </button>
             ))}
             <input className="rl-cal-tag-in" list={`rl-cal-tags-${def.key}`} value={tagIn} placeholder={tr("rk_cal_tag_add")}
