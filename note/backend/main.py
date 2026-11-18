@@ -16,6 +16,7 @@ Concurrency: a note carries the file's mtime as its version. A PUT sends the
 current note, rather than overwriting someone's paragraph.
 """
 import array
+import difflib
 import io
 import os
 import re
@@ -31,6 +32,7 @@ import unicodedata
 import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
+from collections import OrderedDict
 from typing import Any, Optional
 from urllib.parse import quote
 
@@ -225,7 +227,10 @@ def _join(meta: dict, body: str) -> str:
         clean[k] = v
     head = yaml.safe_dump(clean, allow_unicode=True, sort_keys=False).strip()
     # One final newline, not one more each save: a read body already ends in it.
-    body = body.lstrip()
+    # Blank lines off the top, and only those — `_split` takes them off on the
+    # way in. The first line's own indentation is the note's (a code line): all
+    # leading whitespace went, and the editor, still holding it, saved for ever.
+    body = body.lstrip("\n")
     body += "" if body.endswith("\n") else "\n"
     return f"---\n{head}\n---\n\n{body}" if head else body
 
@@ -312,6 +317,7 @@ def _all(folder: Path) -> list:
 
 class SaveBody(BaseModel):
     baseVersion: Optional[str] = None
+    merge: Optional[bool] = None       # the page is leaving: put it together here (put_note)
     title: Optional[str] = None
     date: Optional[str] = None
     fields: Optional[dict] = None
@@ -350,13 +356,30 @@ CHROMES = (os.environ.get("NOTE_CHROME", ""),
            "chromium", "chromium-browser", "google-chrome")
 
 
+TICKET_LOCK = threading.Lock()
+# Two Chromes at once and no more: each holds a worker of this server for as
+# long as it prints, and calls back into the same server for the note.
+PDF_SLOTS = threading.BoundedSemaphore(2)
+
+
 def _ticket(note_id: str) -> str:
     now = time.time()
-    for k in [k for k, (_, until) in TICKETS.items() if until < now]:
-        TICKETS.pop(k, None)
-    t = secrets.token_urlsafe(24)
-    TICKETS[t] = (note_id, now + TICKET_SECONDS)
+    with TICKET_LOCK:                      # two requests swept the same dict at once
+        for k in [k for k, (_, until) in TICKETS.items() if until < now]:
+            TICKETS.pop(k, None)
+        t = secrets.token_urlsafe(24)
+        TICKETS[t] = (note_id, now + TICKET_SECONDS)
     return t
+
+
+def _note_files(note_id: str) -> set:
+    """The files this note shows: what a print ticket may read, and no more —
+    it used to open the whole files folder, every other note's pictures and
+    recordings with it."""
+    p = _path(note_id)
+    text = _read(p)["body"] if p.is_file() else ""
+    names = re.findall(r"!\[\[([^\]\n|]+)", text) + re.findall(r"!\[[^\]\n]*\]\(([^)\s]+)\)", text)
+    return {n.strip() for n in names}
 
 
 def _ticket_for(t: str) -> Optional[str]:
@@ -395,9 +418,15 @@ def slides_pdf(note_id: str, request: Request, _: dict = Depends(signed_in)):
     if not chrome:
         raise HTTPException(503, "이 서버에 PDF를 만들 Chrome이 없습니다.")
     port = request.scope["server"][1]
+    if not PDF_SLOTS.acquire(timeout=30):
+        raise HTTPException(503, "다른 PDF를 만드는 중입니다. 잠시 뒤에 다시 해 주세요.")
     t = _ticket(note_id)
+    profile = ""
     try:
-        with tempfile.TemporaryDirectory() as tmp:
+        # A helper of Chrome may still be writing as the folder goes: that is
+        # not a reason to lose a PDF already made.
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            profile = f"{tmp}/profile"
             out = Path(tmp) / "slides.pdf"
             # Everything a fresh profile would start doing besides printing, off.
             cmd = [chrome, "--headless=new", "--disable-gpu", "--no-pdf-header-footer",
@@ -435,6 +464,15 @@ def slides_pdf(note_id: str, request: Request, _: dict = Depends(signed_in)):
         raise HTTPException(504, "PDF를 만드는 데 너무 오래 걸립니다.")
     finally:
         TICKETS.pop(t, None)
+        STARTED.pop(t, None)
+        # The time-out killed what was started — on a Mac that is `open`, and
+        # Chrome itself lived on. Whatever still runs on this profile goes.
+        if profile:
+            try:
+                subprocess.run(["pkill", "-f", f"user-data-dir={profile}"], capture_output=True, timeout=10)
+            except (OSError, subprocess.SubprocessError):
+                pass
+        PDF_SLOTS.release()
     title = _read(_path(note_id)).get("title") or note_id
     return Response(data, media_type="application/pdf", headers={
         "Server-Timing": f"chrome;dur={took * 1000:.0f}",
@@ -448,6 +486,54 @@ def list_notes(_: dict = Depends(signed_in)) -> dict:
             "project": PROJECT, "updatedAt": _now()}
 
 
+# What each reader was last handed, by version: the copy BOTH sides started from
+# when a save arrives on a version that has moved on. In memory and not for
+# long — a miss is only the 409 it always was.
+BASES: "OrderedDict[tuple, dict]" = OrderedDict()
+BASES_LOCK = threading.Lock()
+
+
+def _seen(n: dict) -> dict:
+    with BASES_LOCK:
+        BASES[(n["id"], n["version"])] = {k: n[k] for k in ("title", "date", "fields", "body")}
+        while len(BASES) > 300:
+            BASES.popitem(last=False)
+    return n
+
+
+def _match(a: list, b: list) -> dict:
+    at = {}
+    for i, j, n in difflib.SequenceMatcher(None, a, b, autojunk=False).get_matching_blocks():
+        for k in range(n):
+            at[i + k] = j + k
+    return at
+
+
+def _merge3(base: str, mine: str, theirs: str) -> str:
+    """`mine` and `theirs`, both made from `base`, as one text — line by line,
+    and where both changed the same lines BOTH are kept (mine, then theirs).
+    The same rule as the editor's own merge (src-lilak/merge3.js)."""
+    if mine == base:
+        return theirs
+    if theirs == base or theirs == mine:
+        return mine
+    B, M, T = base.split("\n"), mine.split("\n"), theirs.split("\n")
+    in_m, in_t = _match(B, M), _match(B, T)
+    out: list = []
+    i = jm = jt = 0
+    for s in range(len(B) + 1):
+        end = s == len(B)
+        if not end and not (s in in_m and s in in_t):
+            continue
+        em, et = (len(M), len(T)) if end else (in_m[s], in_t[s])
+        b, m, t = B[i:s], M[jm:em], T[jt:et]
+        out.extend(t if m == b else m if (t == b or m == t) else m + t)
+        if not end:
+            out.append(B[s])
+            i, jm, jt = s + 1, em + 1, et + 1
+    return "\n".join(out)
+
+
 @app.get("/api/notes/{note_id}")
 def get_note(note_id: str, me: dict = Depends(reader)) -> dict:
     p = _path(note_id)
@@ -456,7 +542,7 @@ def get_note(note_id: str, me: dict = Depends(reader)) -> dict:
     # When this note's PDF was made, if it has one — so the editor can offer
     # to show it, and can tell whether it is still the note (its stamp is
     # later than the note's own `version`, which is the file's).
-    return {**_read(p), "pdf_at": _pdf_at(note_id)}
+    return {**_seen(_read(p)), "pdf_at": _pdf_at(note_id)}
 
 
 @app.post("/api/notes", status_code=201)
@@ -512,16 +598,29 @@ def put_note(note_id: str, body: SaveBody, _: dict = Depends(signed_in)):
         raise HTTPException(404, "그 노트가 없습니다.")
     cur = _read(p)
     if body.baseVersion is not None and body.baseVersion != cur["version"]:
-        return JSONResponse(status_code=409, content={
-            "detail": "이 노트가 그 사이에 바뀌었습니다. 최신 내용을 불러옵니다.",
-            "current": cur})
+        base = BASES.get((note_id, body.baseVersion)) if body.merge else None
+        if not base:
+            return JSONResponse(status_code=409, content={
+                "detail": "이 노트가 그 사이에 바뀌었습니다. 최신 내용을 불러옵니다.",
+                "current": _seen(cur)})
+        # `merge`: the page is leaving (a reload, a tab shut) and cannot take
+        # a 409 and try again, so the two are put together here, against the
+        # copy that page was handed: its text merged with what is on disk, and
+        # of the title, the date and the fields, each as that page left it only
+        # if that page changed it.
+        mine = lambda k, v: cur[k] if v is None or v == base[k] else v      # noqa: E731
+        body = SaveBody(
+            title=mine("title", None if body.title is None else body.title.strip()),
+            date=mine("date", None if body.date is None else body.date.strip()),
+            fields=mine("fields", body.fields),
+            body=cur["body"] if body.body is None else _merge3(base["body"], body.body, cur["body"]))
     meta = {
         "title": cur["title"] if body.title is None else body.title.strip(),
         "date": cur["date"] if body.date is None else body.date.strip(),
         **(cur["fields"] if body.fields is None else body.fields),
     }
     _atomic_write(p, _join(meta, cur["body"] if body.body is None else body.body))
-    return _read(p)
+    return _seen(_read(p))
 
 
 # A note deleted waits in the rack services' one bin (rackstore's Bin), 30
@@ -745,7 +844,7 @@ def list_files(note: str = "", _: dict = Depends(signed_in)) -> dict:
 
 
 @app.get("/api/file/{name:path}")
-def get_file(name: str, note: str = "", _: dict = Depends(reader)):
+def get_file(name: str, note: str = "", me: dict = Depends(reader)):
     """A file a note embeds — `![[name.png]]` in a markdown note, which is
     Obsidian's spelling, or `img/fig1.png` in a tex note, which keeps its files
     in folders (`_safe_rel`). Either way it never leaves the project's files
@@ -756,6 +855,8 @@ def get_file(name: str, note: str = "", _: dict = Depends(reader)):
     folder after it, so a picture already in the vault still shows."""
     if not name or name.startswith((".", "/")) or ".." in name.replace("\\", "/").split("/"):
         raise HTTPException(400, "잘못된 파일 이름입니다.")
+    if me.get("ticket") and name not in _note_files(me["ticket"]):
+        raise HTTPException(404, "그 파일이 없습니다.")
     root = FILES.resolve()
     for base in ([_files(note), FILES] if note else [FILES]):
         p = (base / name).resolve()

@@ -8,7 +8,7 @@ import { openTab as open, openJob } from './api.js'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Rendered } from './reading.jsx'
-import { headingNumbers, figureOf, figureList, isAudio, isProject, isAuthor, onProjChoices, onAuthorChoices, onJobChoices, jobOf, JOB_RE, mathFences, overdue, commentSpans, highlightSpans, arrowSpans, MATH, FIGURE_RE, URGENT_RE } from './marks.js'
+import { tickLine, headingNumbers, figureOf, figureList, picSizes, notePicSize, isAudio, isProject, isAuthor, onProjChoices, onAuthorChoices, onJobChoices, jobOf, JOB_RE, mathFences, overdue, commentSpans, highlightSpans, arrowSpans, MATH, FIGURE_RE, URGENT_RE } from './marks.js'
 
 /** Markdown drawn on top of the text that IS the file.
  *
@@ -36,7 +36,7 @@ const TAG = /(^|[\s(])#(?![0-9]+(?![^\s#.,;:!?()[\]{}'"]))([^\s#.,;:!?()[\]{}'"]
 const PROJ = /(^|[\s(])\+(?![0-9]+(?![^\s#+.,;:!?()[\]{}'"]))([^\s#+.,;:!?()[\]{}'"]+)/g
 const AUTH = /(^|[\s(])@(?![0-9]+(?![^\s#+@.,;:!?()[\]{}'"]))([^\s#+@.,;:!?()[\]{}'"]+)/g
 const DATE = /(»|📅|✓|✅)\s*(\d{4}-\d{1,2}-\d{1,2})/g
-const WIKI = /(?<!!)\[\[([^\]]+)\]\]/g
+const WIKI = /(?<!!)\[\[([^\]\n]+)\]\]/g
 const TASK = /^(\s*[-*]\s+)\[([ xX])\]/
 /** A list item, and how far in it sits. */
 const ITEM = /^(\s*)(?:[-*+]|\d{1,9}[.)])\s/
@@ -165,7 +165,14 @@ function caretAfter(view, dom, markup) {
 /** The picture this bar is over: the block right under the bar's line. Found
  *  through the DOM because the two are separate widgets; `null` until it is
  *  drawn. */
-const pictureUnder = (bar) => bar.closest('.cm-line')?.nextElementSibling?.querySelector?.('img.nt-embed') || null
+/** The picture a bar stands for: the one under its line, or — pictures side by
+ *  side (`PictureRow`) — the one in the same place in the row as the bar on the line. */
+const pictureUnder = (bar) => {
+  const line = bar.closest('.cm-line')
+  const imgs = line?.nextElementSibling?.querySelectorAll?.('img.nt-embed')
+  if (!imgs?.length) return null
+  return imgs[Math.max(0, [...line.querySelectorAll('.nt-fig-bar')].indexOf(bar))] || imgs[0]
+}
 
 /** A file that is not a picture (`![[paper.pdf]]`): a link, in the markup's place. */
 /** `::219c0f`, off its line: the job's ticket (reading.jsx draws the same). */
@@ -286,6 +293,13 @@ class Bar extends WidgetType {
     px.addEventListener('change', () => write(Math.max(0, Number(px.value) || 0)))
     bar.appendChild(px)
     button('nt-fig-fit', tr('nt_img_auto'), tr('nt_img_auto_hint'), () => write(0))
+    // Half the column, less the gap between two: two such pictures written on
+    // one line stand side by side (PictureRow, and the renderer the same).
+    button('nt-fig-half', '1/2', tr('nt_img_half_hint'), () => {
+      const c = view.contentDOM, cs = getComputedStyle(c)
+      const col = (c.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) / zoomOf(view)
+      write(Math.max(40, Math.floor((col - 20) / 2)))
+    })
     // Pressed anywhere else on it: the caret to its right.
     bar.addEventListener('mousedown', (e) => { e.preventDefault(); caretAfter(view, bar, this.markup) })
     return bar
@@ -307,11 +321,15 @@ class Picture extends WidgetType {
     img.className = 'nt-embed'
     img.src = url(this.src)
     img.alt = name
+    // Its size before it arrives, when this page has seen it (marks.js picSizes):
+    // the width and height attributes are the picture's ratio to the layout.
+    const known = picSizes.get(img.getAttribute('src'))
+    if (known) { img.width = known[0]; img.height = known[1] }
     // A width written in the note is meant: it is let out of the height cap
     // the pictures without one are kept under (note.css).
     if (w) { img.style.width = `${w}px`; img.style.maxHeight = 'none'; img.style.setProperty('--nt-w', w) }
     // A picture with no width is its own size on a slide, so that scales too.
-    img.addEventListener('load', () => img.style.setProperty('--nt-n', img.naturalWidth))
+    img.addEventListener('load', () => { img.style.setProperty('--nt-n', img.naturalWidth); notePicSize(img) })
     box.appendChild(img)
     const grip = document.createElement('span')
     grip.className = 'nt-embed-grip'
@@ -351,14 +369,33 @@ class Picture extends WidgetType {
  *  from a plugin (it changes how tall a line is), so this is a field: read
  *  from the whole note whenever the note changes, which is cheap — a note is
  *  a page, not a book. */
+/** The pictures written on one line, side by side under it while the column
+ *  holds them, the next row down when it does not — what the renderer does
+ *  with them too (note.css). One block, because block widgets stack. */
+class PictureRow extends WidgetType {
+  constructor(pics) { super(); this.pics = pics }
+  eq(other) { return other.pics.length === this.pics.length && other.pics.every((p, i) => p.eq(this.pics[i])) }
+  toDOM(view) {
+    const row = document.createElement('div')
+    row.className = 'nt-embed-row'
+    for (const p of this.pics) row.appendChild(p.toDOM(view))
+    return row
+  }
+  ignoreEvent() { return true }
+}
+
 const pictureBlocks = (fileSrc) => {
   const of = (state) => {
     const doc = state.doc
-    const marks = []
+    const byLine = new Map()
     for (const f of figureList(doc.toString())) {
-      marks.push(Decoration.widget({ widget: new Picture(f.markup, f.n, fileSrc), block: true, side: 1 })
-        .range(doc.lineAt(f.at).to))
+      const end = doc.lineAt(f.at).to
+      if (!byLine.has(end)) byLine.set(end, [])
+      byLine.get(end).push(new Picture(f.markup, f.n, fileSrc))
     }
+    const marks = [...byLine].map(([end, pics]) => Decoration.widget({
+      widget: pics.length === 1 ? pics[0] : new PictureRow(pics), block: true, side: 1,
+    }).range(end))
     return Decoration.set(marks, true)
   }
   return StateField.define({
@@ -429,7 +466,11 @@ const openLines = (state) => {
   const open = new Set()
   for (const r of state.selection.ranges) {
     const first = state.doc.lineAt(r.from).number
-    const last = state.doc.lineAt(r.to).number
+    const end = state.doc.lineAt(r.to)
+    // A selection that stops at the very start of a line is not IN it: a
+    // triple-click takes the line and its line break, and the table or the
+    // formula under it burst open as if it had been clicked.
+    const last = r.to > r.from && r.to === end.from ? end.number - 1 : end.number
     for (let n = first; n <= last; n += 1) open.add(n)
   }
   return open
@@ -452,7 +493,11 @@ function build(view, fileSrc, numbered) {
   const away = !view.hasFocus && slide
   const open = away ? new Set() : openLines(view.state)
   const shown = (pos) => open.has(view.state.doc.lineAt(pos).number)
-  const hide = (from, to) => { if (to > from) marks.push(Decoration.replace({}).range(from, to)) }
+  // Within one line only: a plugin's decoration may not replace a line break
+  // (CodeMirror throws, on every keystroke, until the text changes), so a
+  // span that reaches over one — a link whose title wraps — is left as text.
+  const oneLine = (from, to) => view.state.doc.lineAt(from).to >= to
+  const hide = (from, to) => { if (to > from && oneLine(from, to)) marks.push(Decoration.replace({}).range(from, to)) }
 
   // Asked of the whole note: one can start above the part on the screen. Line by
   // line, because a plugin may not hide a line break.
@@ -595,7 +640,7 @@ function build(view, fileSrc, numbered) {
       if (inCode(start) || inComment(start) || start === rawAt) continue     // being edited by hand: the text is the text
       const n = figAt.get(start)
       const widget = n ? new Bar(m[0], n) : m[1] ? new FileLink(m[1], fileSrc) : null
-      if (widget) bars.push(Decoration.replace({ widget }).range(start, start + m[0].length))
+      if (widget && oneLine(start, start + m[0].length)) bars.push(Decoration.replace({ widget }).range(start, start + m[0].length))
     }
     for (const m of text.matchAll(MATH)) {
       const start = at(m.index)
@@ -665,13 +710,17 @@ function build(view, fileSrc, numbered) {
   for (const { from, to } of view.visibleRanges) {
     let line = view.state.doc.lineAt(from)
     while (line.from <= to) {
-      const t = TASK.exec(line.text)
+      // A line of code is code: `- name: a` in a yaml block is not a list item,
+      // and `- [ ] x` there is not a box to press.
+      const t = inCode(line.from) ? null : TASK.exec(line.text)
       if (t) {
         const box = line.from + t[1].length
         marks.push(Decoration.replace({ widget: new Box(t[2] !== ' ') }).range(box, box + 3))
       }
       if (tables.some((t) => line.from >= t.from && line.to <= t.to)) {
         // a table drawn as one: its lines are not there to be styled
+      } else if (inCode(line.from)) {
+        // nothing of a list or a table is drawn inside code
       } else if (ROW.test(line.text)) {
         marks.push(Decoration.line({ class: 'nt-cm-row' }).range(line.from))
       } else {
@@ -750,7 +799,11 @@ function blockDecorations(state) {
 const tableBlocks = StateField.define({
   create: (state) => blockDecorations(state),
   update(deco, tr) {
-    return tr.docChanged || tr.selection || tr.effects.some((e) => e.is(redrawBlocks)) ? blockDecorations(tr.state) : deco
+    // …or the parser getting further: it reads only the top of a long note at
+    // once and the rest a moment later, in a transaction that changes nothing
+    // else — a note opened half way down stood undrawn until the first click.
+    return tr.docChanged || tr.selection || tr.effects.some((e) => e.is(redrawBlocks))
+      || syntaxTree(tr.startState) !== syntaxTree(tr.state) ? blockDecorations(tr.state) : deco
   },
   provide: (f) => EditorView.decorations.from(f),
 })
@@ -770,7 +823,8 @@ const paint = (fileSrc, onOpenNote, numbered) => ViewPlugin.fromClass(class {
   }
   take({ marks, bars }) { this.decorations = marks; this.bars = bars }
   update(u) {
-    if (u.docChanged || u.selectionSet || u.viewportChanged || u.focusChanged || this.again) {
+    if (u.docChanged || u.selectionSet || u.viewportChanged || u.focusChanged || this.again
+      || syntaxTree(u.startState) !== syntaxTree(u.state)) {
       this.again = false
       this.take(build(u.view, fileSrc, numbered))
     }
@@ -824,8 +878,9 @@ const paint = (fileSrc, onOpenNote, numbered) => ViewPlugin.fromClass(class {
       const line = view.state.doc.lineAt(pos)
       const t = TASK.exec(line.text)
       if (!t) return false
-      const at = line.from + t[1].length + 1
-      view.dispatch({ changes: { from: at, to: at + 1, insert: t[2] === ' ' ? 'x' : ' ' } })
+      // The whole line, as the to-do list writes it (main.py set_todo): ticked
+      // here is dated here (`✓ 2026-11-18`), unticked takes the date with it.
+      view.dispatch({ changes: { from: line.from, to: line.to, insert: tickLine(line.text, t[2] === ' ') } })
       return true
     },
   },

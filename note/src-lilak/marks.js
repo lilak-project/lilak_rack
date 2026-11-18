@@ -115,14 +115,27 @@ export const untagged = (text) => replaceOutsideCode(
   .trim()
 
 /** `![[name.png]]` — Obsidian's embed, which is not markdown. */
-export const EMBED_RE = /!\[\[([^\]]+)\]\]/g
+export const EMBED_RE = /!\[\[([^\]\n]+)\]\]/g
 
 /** Either way a note writes a picture: `![[a.png|400]]`, or markdown's own
  *  `![설명|400](a.png)`. */
-export const FIGURE_RE = /!\[\[([^\]]+)\]\]|!\[([^\]]*)\]\(([^)\s]+)\)/g
+/*  Never across a line: `![[` typed above a later `]]` is an embed not yet
+ *  closed, not one picture three lines long. */
+export const FIGURE_RE = /!\[\[([^\]\n]+)\]\]|!\[([^\]\n]*)\]\(([^)\s]+)\)/g
 const ONE_FIGURE = new RegExp(`^(?:${FIGURE_RE.source})$`)
-/** A line holding one and nothing else. */
-export const figureLine = (t) => ONE_FIGURE.test(t.trim())
+/** Every picture's own size, once seen anywhere on this page (the editor, or
+ *  the slides' off-screen page, which loads them all at once). A picture the
+ *  editor draws again — it drops what scrolls far away — is given its size
+ *  before it loads, so it does not stand 0px tall for a moment and move
+ *  everything round it while the note is being scrolled. url → [w, h]. */
+export const picSizes = new Map()
+export const notePicSize = (img) => {
+  if (img?.naturalWidth && img.naturalHeight) picSizes.set(img.getAttribute('src'), [img.naturalWidth, img.naturalHeight])
+}
+
+/** A line holding pictures and nothing else: one, or several side by side. */
+const FIGURES_ONLY = new RegExp(`^(?:(?:${FIGURE_RE.source})[ \\t]*)+$`)
+export const figureLine = (t) => FIGURES_ONLY.test(t.trim())
 
 /** The day a todo is due, and the day it was done. `»` and `✓` are what this
  *  app writes; `📅` and `✅` (Obsidian Tasks) are still read, because the
@@ -132,7 +145,23 @@ export const DONE_RE = /(?:✓|✅)\s*(\d{4}-\d{1,2}-\d{1,2})/g
 /** `!!`, a word of its own on a todo's line: it is urgent. */
 export const URGENT_RE = /(^|\s)!!(?=\s|$)/g
 /** A due day (as written, `2026-1-5` too) that has gone by. */
-export const overdue = (day) => day.replace(/-(\d)(?!\d)/g, '-0$1') < new Date().toISOString().slice(0, 10)
+/*  Today is the day HERE: `toISOString` is UTC's, and in Korea that was still
+ *  yesterday until nine in the morning. */
+export const today = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+export const overdue = (day) => day.replace(/-(\d)(?!\d)/g, '-0$1') < today()
+
+/** A to-do's line with its box ticked or cleared — and dated, the way the
+ *  to-do list does it (main.py `_todo_line`): `✓ day` goes on at the end when
+ *  it is ticked, and comes off with the tick. A due date stays where it is. */
+export const tickLine = (line, done, day = today()) => {
+  const m = /^(\s*[-*+]\s+\[)([ xX])(\].*)$/.exec(line)
+  if (!m) return line
+  const rest = m[3].replace(/\s*(?:✓|✅)\s*\d{4}-\d{1,2}-\d{1,2}/g, '').replace(/\s+$/, '')
+  return `${m[1]}${done ? 'x' : ' '}${rest}${done ? ` ✓ ${day}` : ''}`
+}
 
 /** A name a browser can draw. Anything else — a pdf, a sheet, a document — is
  *  a file you open, not a picture to put on the page. */

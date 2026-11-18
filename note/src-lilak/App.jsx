@@ -24,6 +24,7 @@ import SourceArea from './SourceArea.jsx'
 import { wrapSel } from './liveedit.js'
 import { Rendered } from './reading.jsx'
 import { DeckMeasure, SlidePrint, SlideShow, enterFull, gapBefore, slideH } from './slides.jsx'
+import { rebase, retext } from './merge3.js'
 import { toolsFor } from './tools/index.js'
 import { flowItems, noteSteps, noteFlow, joinFlow } from './flow.js'
 import { press } from './tools/press.js'
@@ -335,27 +336,22 @@ const NOTE_DEF = {
  *  toolbar is turned off — the pane is too narrow to give its top half to one
  *  — and the buttons worth having are drawn in the rack's own row instead.
  *
- *  Zoom and fit come from the viewer's URL parameters, which cost nothing to
- *  use but are read only as the document LOADS. So changing one remounts the
- *  frame (`key`), and the PDF comes back from the browser's cache because its
- *  URL has not changed. What the viewer will not tell us is which page is on
- *  screen, so there are no page buttons: `btab` opens the whole viewer.
+ *  Zoom is the FRAME's width, not the viewer's: every browser's viewer draws a
+ *  page to the width it is given (`view=FitH` asks Chrome's to; Safari's does
+ *  nothing else), so a frame twice as wide as the pane is the page at twice
+ *  the size, scrolled sideways in the pane. It used to be `#zoom=150` in the
+ *  address, which Chrome's viewer reads and Safari's ignores: the number went
+ *  up and the page stayed as it was. The width is read as the document LOADS
+ *  (Safari does not fit again when the frame changes), so a new size remounts
+ *  the frame (`key`), and the PDF comes back from the browser's cache.
+ *  What the viewer will not tell us is which page is on screen, so there are
+ *  no page buttons: `btab` opens the whole viewer.
  */
-const ZOOMS = [50, 75, 100, 125, 150, 200, 300]
+const ZOOMS = [50, 75, 100, 125, 150, 200, 300]      // of the pane's width: 100 is the page fitted to it
 
 function PdfPane({ t }) {
-  // 'fit' is the width-fitting view a paper wants to open at; anything else is
-  // a percentage from ZOOMS.
-  const [zoom, setZoom] = useState('fit')
-  const step = (d) => setZoom((z) => {
-    // From 맞춤 the first press lands on 100% rather than past it: fitting the
-    // width of a narrow pane is usually smaller than actual size, so stepping
-    // from an imagined 100 would skip the one size a reader asks for by name.
-    if (z === 'fit') return d > 0 ? 100 : ZOOMS[ZOOMS.indexOf(100) - 1]
-    const i = ZOOMS.indexOf(z)
-    return ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, i + d))]
-  })
-  const frag = `#toolbar=0&navpanes=0&${zoom === 'fit' ? 'view=FitH' : `zoom=${zoom}`}`
+  const [zoom, setZoom] = useState(100)
+  const step = (d) => setZoom((z) => ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, ZOOMS.indexOf(z) + d))])
   return (
     <div className="nt-pdfpane">
       <div className="nt-pdfbar">
@@ -366,14 +362,17 @@ function PdfPane({ t }) {
         {/* What it is at, and the way back to the width — one control, because
             a reading saying 맞춤 beside a button saying 맞춤 says it twice. */}
         <button type="button" className="rl-btn nt-pdfzoom" title={tr("nt_pdf_fit_hint")}
-          disabled={zoom === 'fit'} onClick={() => setZoom('fit')}>
-          {zoom === 'fit' ? tr("nt_pdf_fit") : `${zoom}%`}</button>
+          disabled={zoom === 100} onClick={() => setZoom(100)}>
+          {zoom === 100 ? tr("nt_pdf_fit") : `${zoom}%`}</button>
         <button type="button" className="rl-btn" title={tr("nt_pdf_in")}
           disabled={zoom === ZOOMS[ZOOMS.length - 1]} onClick={() => step(1)}>+</button>
         <a className="rl-btn" href={t.src} target="_blank" rel="noreferrer">{tr("nt_tex_btab")}</a>
         <a className="rl-btn" href={t.src} download={`${t.who}.pdf`}>{tr("nt_tex_save")}</a>
       </div>
-      <iframe key={frag} className="nt-pdf" src={t.src + frag} title={t.label} />
+      <div className="nt-pdfscroll">
+        <iframe key={zoom} className="nt-pdf" style={{ width: `${zoom}%` }}
+          src={`${t.src}#toolbar=0&navpanes=0&view=FitH`} title={t.label} />
+      </div>
     </div>
   )
 }
@@ -677,10 +676,12 @@ function Todos({ a, tscope, who, kind, system = false }) {
 const sameNote = (a, b) => a.title === b.title && (a.date || '') === (b.date || '')
   && JSON.stringify(a.fields || {}) === JSON.stringify(b.fields || {})
   && String(a.body || '').trimEnd() === String(b.body || '').trimEnd()
-const putNote = (id, baseVersion, v, o) => ask(`/notes/${encodeURIComponent(id)}`, {
+/** `o.merge`: this page is leaving and cannot come back for a 409, so the
+ *  server puts the two together itself (main.py put_note). */
+const putNote = (id, baseVersion, v, { merge, ...o } = {}) => ask(`/notes/${encodeURIComponent(id)}`, {
   ...o, method: 'PUT',
   body: JSON.stringify({ baseVersion, title: v.title, date: v.date, body: v.body,
-    fields: v.fields }),
+    fields: v.fields, ...(merge ? { merge: true } : {}) }),
 })
 
 /** The note is read when the tab opens, not from the list — the list carries a
@@ -813,6 +814,15 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   // A slide note: where the renderer cut it, and whether it is being shown.
   const [pages, setPages] = useState([])
   const [showing, setShowing] = useState(null)       // the slide it started on
+  // The editor over the whole page, the title bar and the list included —
+  // everything inside the portal's panel; the portal's own sidebar stays.
+  const [wide, setWide] = useState(false)
+  useEffect(() => {
+    if (!wide) return undefined
+    const key = (e) => { if (e.key === 'Escape' && !e.defaultPrevented && !document.fullscreenElement) setWide(false) }
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [wide])
   // Which tool is open, '' for shut. The toolbox belongs to THIS tab: moving
   // to another takes it away with this editor, and that tab opens and shuts
   // its own. Kept with the rest of where-you-were (scrolled.js).
@@ -848,11 +858,29 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
        *  left where it is. No anchor: at the caret. */
       after(anchor, text) {
         const v = now()
-        if (!v) return
+        if (!v) {
+          // No editor to write in — the reading sheet is up, or the editor is
+          // being rebuilt: into the note's text itself, which the editor shows
+          // when it is back. Said and not written, it was simply lost.
+          // `false`: not even the note is here yet, and the recorder sends it
+          // to the server instead.
+          if (!live.current?.f) return false
+          setF((st) => {
+            if (!st) return st
+            const at = placeAt(st.body, anchor)
+            const to = at < 0 ? st.body.length : at
+            return { ...st, body: st.body.slice(0, to) + text + st.body.slice(to) }
+          })
+          return true
+        }
         const at = placeAt(v.state.doc.toString(), anchor)
-        if (at >= 0) { v.dispatch({ changes: { from: at, insert: text } }); return }
+        if (at >= 0) { v.dispatch({ changes: { from: at, insert: text } }); return true }
+        // At the caret, and beside what is selected, not instead of it: the
+        // first words arrive seconds after record was pressed, and whatever
+        // had been selected by then was replaced by them.
         const r = v.state.selection.main
-        v.dispatch({ changes: { from: r.from, to: r.to, insert: text }, selection: { anchor: r.from + text.length } })
+        v.dispatch({ changes: { from: r.head, insert: text }, ...(r.empty ? { selection: { anchor: r.head + text.length } } : {}) })
+        return true
       },
       /** Something that is a LINE and not a word — a picture, a file. It goes
        *  on a line of its own under the caret's, and the caret goes PAST it.
@@ -897,6 +925,17 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
           }
         }
         if (changes.length) v.dispatch({ changes })
+        v.focus()
+      },
+      /** What is selected, made into something else in one change — the
+       *  lines of a list inside their `\\begin{itemize}`. One undo. */
+      swap(fn) {
+        const v = now()
+        if (!v) return
+        const r = v.state.selection.main
+        const next = fn(v.state.sliceDoc(r.from, r.to))
+        if (typeof next !== 'string') return
+        v.dispatch({ changes: { from: r.from, to: r.to, insert: next }, selection: { anchor: r.from + next.length }, scrollIntoView: true })
         v.focus()
       },
       at: () => { const v = now(); return v ? v.state.doc.lineAt(v.state.selection.main.head).number : 0 },
@@ -964,7 +1003,7 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   const toSlide = (i, quiet = false) => {
     const n = Math.max(0, Math.min(pages.length - 1, i))
     const p = pages[n]
-    if (p) setGo({ line: n ? p.from : 1, flush: gapBefore(pages, n), quiet, n: Date.now() })
+    if (p) setGo({ line: n ? p.from : 1, flush: gapBefore(pages, n), slide: n, quiet, n: Date.now() })
     return n
   }
   // `<<` `>>`: from the slide in front of you, or the one still being glided
@@ -1011,6 +1050,7 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   // the file it would land on already holds someone's bibliography, and the
   // keys reference_manager has never heard of are the ones worth seeing.
   const [plan, setPlan] = useState(null)
+  const [lib, setLib] = useState(null)       // reference_manager's document: null not asked, false no answer
   // Which paper this document IS — reference_manager's record, named by the
   // cite key, which is both what `\cite{…}` writes and what reads as a word
   // in the file. The key is stored; the record behind it is looked up, so a
@@ -1052,6 +1092,13 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   const live = useRef({})                    // the latest, for the last save
   const titleRef = useRef(null)
   live.current = { f, n }
+  // What the last good save SENT. The server may spell it differently (a title
+  // trimmed, an empty field dropped, blank lines taken off the top), and a note
+  // compared with the server's copy alone was then "unsaved" for ever: a save
+  // every 0.8 s for as long as the tab stood open.
+  const sent = useRef(null)
+  const saved = (v, disk) => sameNote(v, disk) || (!!sent.current && sameNote(v, sent.current))
+  const saving = useRef(null)                // the save that is out, if one is
   useEffect(() => {
     let alive = true
     setN(null)
@@ -1070,7 +1117,7 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   // decision worth confirming, and a note that is only on screen is a note you
   // can lose; what you can still undo is the whole sitting, with revert.
   useEffect(() => {
-    if (!f || !n || sameNote(f, n)) return
+    if (!f || !n || saved(f, n)) return
     const t = setTimeout(() => { saveNote() }, 800)
     return () => clearTimeout(t)
   }, [f, n])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -1082,13 +1129,20 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   useEffect(() => {
     const flush = (o) => {
       const { f: cur, n: disk } = live.current
-      if (cur && disk && !sameNote(cur, disk)) return putNote(id, disk.version, cur, o)
+      if (!cur || !disk || saved(cur, disk)) return null
+      // Changed elsewhere meanwhile: put together and sent once more, as
+      // saveNote does — the tab is gone, so there is nobody left to ask.
+      return putNote(id, disk.version, cur, o).then(({ conflict, body }) => {
+        if (!conflict) return null
+        const { note } = rebase(disk, cur, body.current)
+        return sameNote(note, body.current) ? null : putNote(id, body.current.version, note, o)
+      })
     }
-    const leave = () => { flush({ keepalive: true })?.catch(() => {}) }
+    const leave = () => { flush({ keepalive: true, merge: true })?.catch(() => {}) }
     window.addEventListener('pagehide', leave)
     return () => {
       window.removeEventListener('pagehide', leave)
-      flush()?.then(() => onSaved?.())
+      flush()?.then(() => onSaved?.()).catch(() => {})
     }
   }, [id])   // eslint-disable-line react-hooks/exhaustive-deps
   // A note just opened: the caret goes to its title. A name the app chose is
@@ -1096,10 +1150,15 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   // end. In an EFFECT, not in the fetch's `then`: the field does not exist
   // until React has drawn the loaded note, and a focus aimed at a ref that is
   // still null is a focus that silently does not happen.
+  const tookCaret = useRef(false)
   useEffect(() => {
-    if (!takeCaret || !n) return
+    // Once. `n` changes again at the first autosave, while `takeCaret` is still
+    // what the list said when it drew this tab — and the caret was pulled out
+    // of the sentence being written, back up to the title.
+    if (!takeCaret || !n || tookCaret.current) return
     const el = titleRef.current
     if (!el) return
+    tookCaret.current = true
     el.focus()
     // Untitled in this language, or in Korean (notes made before English existed).
     if (n.title === tr("nt_untitled") || n.title === '제목 없음') el.select()
@@ -1117,7 +1176,7 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   // first drawn, so this return happens on the first render and React counts
   // the hooks it saw. A useState added below it is a blank screen.
   if (!f || !n) return <p className="rl-msg">{tr("nt_loading")}</p>
-  const dirty = !sameNote(f, n)
+  const dirty = !saved(f, n)
   // How many lines there are, for `맨 뒤` and for the box: a line nobody has
   // is not a place, so every jump is clamped to the document.
   const lines = f.body.split('\n').length
@@ -1197,6 +1256,34 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
     } catch (e) { say(String(e.message || e)) } finally { setBusy(false) }
   }
 
+  /** reference_manager's records, whole — the bib tool searches them by
+   *  author and year, which the list every note loads (`useReferences`: key
+   *  and title) does not carry. Asked when that tool is opened, and again
+   *  when it asks. */
+  async function seeLib() {
+    try { setLib((await referenceDoc()) || false) } catch { setLib(false) }
+  }
+  /** One paper of the library written into this note's `.bib`, at its end —
+   *  what is in the file stays (a co-author's entries the library has never
+   *  heard of are not this button's to drop; `.bib 맞추기` is the one that
+   *  rewrites the file, and it shows its plan first). */
+  async function addToBib(key) {
+    setBusy(true)
+    try {
+      const doc = lib || await referenceDoc()
+      const r = (doc?.references || []).find((x) => String(x.citeKey || '').trim() === key)
+      if (!r) { say(tr("nt_ref_unknown")); return }
+      const name = `${bibName(f.body)}.bib`
+      const had = await fetch(fileSrc(name, id), { headers: authHeaders() }).then((x) => (x.ok ? x.text() : '')).catch(() => '')
+      const text = (had.trim() ? `${had.replace(/\s+$/, '')}\n\n` : '') + bibText(doc, [r])
+      await putFile(new File([text], name, { type: 'text/plain' }), id, true)
+      if (tab === 'files') seeFiles()
+      const { body } = await ask(`/bib/${encodeURIComponent(id)}`)
+      setBib(body.keys || [])
+      say(tr("nt_bib_added", key, name))
+    } catch (e) { say(String(e.message || e)) } finally { setBusy(false) }
+  }
+
   async function writeBib() {
     setBusy(true)
     try {
@@ -1209,18 +1296,45 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
       say(tr("nt_bib_written", plan.name, plan.have.length))
     } catch (e) { say(String(e.message || e)) } finally { setBusy(false) }
   }
+  /** One save at a time: two on the same version are a conflict with oneself.
+   *  A failed one says so — it used to be an unhandled rejection and silence. */
   async function saveNote() {
-    const { conflict, body } = await putNote(id, n.version, f)
-    if (conflict) {
-      say(body.detail || tr("nt_changed_elsewhere"))
-      setN(body.current); setF(body.current)
-      return
+    while (saving.current) await saving.current.catch(() => {})
+    const run = saveOnce()
+    saving.current = run
+    try { await run } catch (e) { say(String(e.message || e)) } finally { if (saving.current === run) saving.current = null }
+  }
+  async function saveOnce() {
+    let { f: mine, n: base } = live.current
+    if (!mine || !base || saved(mine, base)) return
+    for (let turn = 0; turn < 2; turn += 1) {
+      const { conflict, body } = await putNote(id, base.version, mine)
+      if (!conflict) {
+        // Only what is on disk: `f` is what is being typed, and a save that
+        // lands mid-sentence must not take the caret back with it.
+        sent.current = mine
+        setN(body)
+        live.current = { ...live.current, n: body }   // a close right after: nothing left for the last save
+        onSaved?.()
+        return
+      }
+      // Changed somewhere else since it was read (a to-do ticked in the list,
+      // the recorder, an agent, a sync). It used to REPLACE what was on the
+      // screen, typing and all; now the two are put together (merge3.js) and
+      // saved again. The editor's own text is what is mine — read and written
+      // back in one go, so a key pressed meanwhile cannot fall between.
+      const theirs = body.current
+      const view = cm.current
+      const now = { ...live.current.f, ...(view ? { body: view.state.doc.toString() } : {}) }
+      const { note, clash, lost } = rebase(base, now, theirs)
+      if (view) retext(view, note.body)
+      sent.current = null
+      setN(theirs); setF(note)
+      live.current = { f: note, n: theirs }
+      say(tr(lost ? "nt_merge_lost" : clash ? "nt_merge_clash" : "nt_merged"))
+      if (sameNote(note, theirs)) return
+      mine = note; base = theirs
     }
-    // Only what is on disk: `f` is what is being typed, and a save that lands
-    // mid-sentence must not take the caret back with it.
-    setN(body)
-    live.current = { ...live.current, n: body }   // a close right after: nothing left for the last save
-    onSaved?.()
   }
   /** The note, typeset. It compiles what is ON DISK, so what is being typed
    *  is saved first — otherwise the PDF is of the note as it was. */
@@ -1397,13 +1511,14 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
       // The stamp is nanoseconds; what is worth reading is the clock time.
       madeAt: pdfAt ? new Date(Number(pdfAt) / 1e6).toLocaleString() : '',
       refKey, references, ref, makeRef, plan, setPlan, planBib, writeBib, missing, keys: bib,
+      lib, seeLib, addToBib,
       rtab: onPdf ? () => onPdf(id, f.title, pdfAt) : null,
       btab: () => openTab(pdfUrl(false)),
     },
   }
 
   return (
-    <div className="nt-edit" ref={root}
+    <div className={`nt-edit${wide ? ' nt-wide' : ''}`} ref={root}
       style={!push ? undefined : push.side === 'left' ? { paddingLeft: push.px } : { paddingRight: push.px }}>
       {/* The buttons sit above the title: everything below them is the note.
           The same bar every editor in every rack-list service wears. */}
@@ -1437,6 +1552,8 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
           {(mode === 'raw' && recording.state === 'idle') || recording.note === id
             ? <>{recording.state === 'idle' ? <LangPick /> : null}<RecButton note={id} title={f.title} /></> : null}
           {isDeck ? <button type="button" className="rl-btn" title={tr("nt_show_hint")} {...press(startShow)}>{tr("nt_show_btn")}</button> : null}
+          <button type="button" className={`rl-btn${wide ? ' on' : ''}`} aria-pressed={wide}
+            title={tr(wide ? "nt_wide_off_hint" : "nt_wide_hint")} {...press(() => setWide((w) => !w))}>{tr("nt_wide_btn")}</button>
           {/* Every tool behind ONE button. The dot is the only thing a shut
               toolbox still says: something inside it wants reading. */}
           <button type="button" className={`rl-btn${tab ? ' on' : ''}`} aria-expanded={!!tab}
@@ -1474,6 +1591,17 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
               {...press(() => setMarking(!marking))}>
               <Ribbon on={marking} />
             </button>
+            {/* Expanded, the editor's own bar is put away (note.css): the way
+                back is beside the ribbon, the same size as it. */}
+            {wide ? (
+              <button type="button" className="nt-linetop" title={tr("nt_wide_off_hint")} aria-label={tr("nt_wide_off")}
+                {...press(() => setWide(false))}>
+                <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor"
+                  strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4" />
+                </svg>
+              </button>
+            ) : null}
             {marking ? (
               /* Bookmark mode takes the title's PLACE rather than finding room
                  beside it: in this mode the line is what you are naming, not the

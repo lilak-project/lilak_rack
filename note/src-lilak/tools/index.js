@@ -25,6 +25,7 @@
  *               put(text)             at the caret
  *               wrap(before, after)   round what is selected
  *               lines((text, n) => next)  over the selected lines
+ *               swap((selected) => text)  what is selected, replaced by what it is made into
  *               at()                  the caret's line number
  *               text()                the body (reading)
  *             It wraps CodeMirror; no tool is handed the view.
@@ -49,13 +50,14 @@
  */
 import common from './common.jsx'
 import format from './format.jsx'
+import latex from './latex.jsx'
 import outline from './outline.jsx'
 import files from './files.jsx'
 import bib from './bib.jsx'
 import flow from './flow.jsx'
 import record from './record.jsx'
 
-export const TOOLS = [common, format, outline, files, bib, flow, record]
+export const TOOLS = [common, format, latex, outline, files, bib, flow, record]
 
 /** The tools of a kind of note, in the order they are declared. */
 export const toolsFor = (kind) => TOOLS.filter((t) => t.modes.includes(kind))

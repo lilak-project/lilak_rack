@@ -72,6 +72,19 @@ describe('the figure bar', () => {
   })
 })
 
+describe('an embed left open', () => {
+  it('is text, not one picture reaching down to the next `]]`', () => {
+    // `![[` typed above another embed or a [[link]]: read across the lines it
+    // made a bar that replaced line breaks, which CodeMirror refuses — every
+    // keystroke threw until the brackets were closed.
+    const v = view('글 \n\n사이\n![[a.png]] [[노트]]\n끝\n')
+    expect(() => v.dispatch({ changes: { from: 2, insert: '![[' } })).not.toThrow()
+    expect(bars(v)).toBe(1)
+    expect(figureList('글 ![[\n\n사이\n![[a.png]]\n').map((f) => f.line)).toEqual([4])
+    v.destroy()
+  })
+})
+
 describe('figureList: the pictures of a note, numbered', () => {
   it('numbers only the pictures, with their lines', () => {
     expect(figureList('![[a.png]]\n![[x.pdf]]\n\n![[b.jpg|300]]').map(({ n, line, name }) => [n, line, name]))

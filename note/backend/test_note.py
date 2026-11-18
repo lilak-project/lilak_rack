@@ -221,4 +221,16 @@ _tk = _m._ticket("deck")
 assert _m._ticket_for(_tk) == "deck" and _m._ticket_for("") is None and _m._ticket_for("nope") is None
 _m.TICKETS[_tk] = ("deck", _t.time() - 1)
 assert _m._ticket_for(_tk) is None
+# ── a save keeps the first line's indentation, and settles in one round ───
+from backend.main import _join, _split   # noqa: E402
+_once = _join({"title": "t"}, "\n\n    code\nnext")
+assert _split(_once)[1] == "    code\nnext\n"
+assert _join(*_split(_once)) == _once
+# ── a leaving page's save, merged against what it was handed ──────────────
+from backend.main import _merge3   # noqa: E402
+_b = "# 회의\n- [ ] 보내기\n- [ ] 확인\n\n메모\n"
+assert _merge3(_b, _b + "새 문단\n", _b.replace("[ ] 보내기", "[x] 보내기")) == "# 회의\n- [x] 보내기\n- [ ] 확인\n\n메모\n새 문단\n"
+assert _merge3(_b, _b.replace("메모", "내 메모"), _b.replace("메모", "받아쓴 말")) == "# 회의\n- [ ] 보내기\n- [ ] 확인\n\n내 메모\n받아쓴 말\n"
+assert _merge3("a\nb\nc", "a\n1\nb\nc", "a\nb\n2\nc") == "a\n1\nb\n2\nc"
+assert _merge3(_b, _b, "x") == "x" and _merge3(_b, "y", _b) == "y" and _merge3(_b, "z", "z") == "z"
 print("note: ok")

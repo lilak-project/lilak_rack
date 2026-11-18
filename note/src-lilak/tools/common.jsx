@@ -2,7 +2,6 @@ import Select from 'lilak-ui/components/Select.jsx'
 import '../strings.js'
 import { useState } from 'react'
 import { RackField } from 'racklist'
-import { comments } from '../comments.js'
 import { press } from './press.js'
 import { tr } from 'lilak-ui/i18n.jsx'
 
@@ -12,7 +11,7 @@ import { tr } from 'lilak-ui/i18n.jsx'
  *  things and no more. It is a field grid now, the same one activity's editor
  *  is: label on the left, the thing on the right.
  */
-function Body({ note, setNote, go, keep, where, read, slide, print, say, ask, tags, words, fold, tex, make }) {
+function Body({ note, setNote, go, keep, where, read, slide, print, say, ask, tags, words, make }) {
   const { pins, last, marks } = keep
   return (
     <div className="rl-rec nt-common">
@@ -82,50 +81,7 @@ function Body({ note, setNote, go, keep, where, read, slide, print, say, ask, ta
         </RackField>
       )}
 
-      {/* What a LaTeX note DOES, as against what it is: typeset it, and put
-          the commented-out half of it out of the way. Both are one press, so
-          both are a row here rather than a tab of their own. */}
-      {tex ? (<>
-        <RackField label={tr("nt_tab_compile")}>
-          <button type="button" className="rl-btn nt-go" disabled={tex.busy || tex.asPdf}
-            title={tex.asPdf ? tr("nt_tex_fresh") : undefined} {...press(tex.compile)}>
-            {tex.busy ? tr("nt_tex_running") : tr("nt_tex_compile")}</button>
-          {/* Two ways to read what came out: a tab of this app's own beside
-              the text, or a browser tab with the whole PDF viewer in it. */}
-          {tex.pdfAt ? (<>
-            {/* Solo — one note inside another service — has no tab strip of
-                its own to open one in. */}
-            {tex.rtab ? <button type="button" className="rl-btn" title={tr("nt_tex_rtab_hint")}
-              {...press(tex.rtab)}>{tr("nt_tex_rtab")}</button> : null}
-            <button type="button" className="rl-btn" title={tr("nt_tex_btab_hint")}
-              {...press(tex.btab)}>{tr("nt_tex_btab")}</button>
-          </>) : <span className="rl-hint">{tr("nt_tex_nopdf")}</span>}
-        </RackField>
-        {/* When it last came out, and whether that is still this text. */}
-        {tex.pdfAt ? (
-          <RackField label={tr("nt_tex_made")}>
-            <span className="rl-hint">{tex.madeAt}</span>
-            {tex.asPdf ? null : <span className="rl-hint nt-ref-no">{tr("nt_tex_stale")}</span>}
-          </RackField>
-        ) : null}
-        {tex.errs?.length ? (
-          <RackField label={tr("nt_tex_stopped")}>
-            <div className="nt-texerr">
-              {tex.errs.map((e, i) => (
-                <div key={i}>{e.line ? (
-                  <button type="button" className="rl-btn nt-pin-go" title={tr("nt_pin_go", e.line)}
-                    {...press(() => go(e.line))}>{e.line}</button>
-                ) : null}{e.text}</div>
-              ))}
-            </div>
-          </RackField>
-        ) : null}
-        <RackField label={tr("nt_tool_comments")}>
-          <button type="button" className={`rl-btn${fold.on ? ' on' : ''}`} aria-pressed={fold.on}
-            title={tr("nt_cmt_hint")} {...press(() => fold.set(!fold.on))}>{tr("nt_cmt_fold")}</button>
-          <span className="rl-hint">{tr("nt_cmt_n", comments(note.body).length)}</span>
-        </RackField>
-      </>) : null}
+      {/* Compiling and the comments fold are the LaTeX tab's (tools/latex.jsx). */}
 
       <RackField label={tr("nt_tool_note")}>
         <span className="rl-hint">{tr("nt_n_words", words)}</span>

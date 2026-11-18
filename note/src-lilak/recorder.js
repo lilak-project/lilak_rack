@@ -116,21 +116,31 @@ let shown = true
 window.addEventListener('message', (e) => {
   if (e.origin === window.location.origin && e.data?.type === 'lilak:shown') shown = !!e.data.on
 })
+/** Is the note's editor tab still open? Read from the panes racklist keeps for
+ *  THIS page: `note.panes.<project>` (the def's key is `note` — this read
+ *  `notes`, found nothing, and so a recording never stopped with its tab), or
+ *  `note.bare…` on a bare page. A note framed alone (`?solo=`) has no tabs:
+ *  its frame closing ends the page, and the recording with it. */
+const HERE = new URLSearchParams(window.location.search)
+const PANES = HERE.has('solo') ? null : projectKey(HERE.has('bare') ? 'note.bare' : 'note', 'panes')
 const noteTabOpen = (id) => {
-  const tabs = load(projectKey('notes', 'panes'), null)?.tabs
+  const tabs = PANES ? load(PANES, null)?.tabs : null
   return !Array.isArray(tabs) || tabs.some((t) => t.kind === 'item' && t.who === id)
 }
 
 /** `text` into the note after `anchor`; the anchor to use next. */
 async function put(note, anchor, text) {
-  const edit = editors.get(note)
-  if (edit) return edit.after(anchor, text)
+  // `false`: an editor is there but has nothing to write in yet (still loading).
+  if (editors.get(note)?.after(anchor, text) !== false && editors.has(note)) return
   // The editor that just left saves what it had (Editor's unmount): after it.
   const wait = 2500 - (Date.now() - leftAt)
   if (wait > 0) await new Promise((ok) => setTimeout(ok, wait))
   const path = `/notes/${encodeURIComponent(note)}`
   for (let i = 0; i < 3; i += 1) {
-    const n = await (await api(path)).json()
+    const got = await api(path)
+    // The note is gone (deleted, or signed out): say so once, not a TypeError a piece.
+    if (!got.ok) throw new Error(tr('nt_rec_failed', got.status))
+    const n = await got.json()
     const at = placeAt(n.body, anchor)
     const to = at < 0 ? n.body.length : at
     const body = n.body.slice(0, to) + text + n.body.slice(to)
@@ -270,7 +280,9 @@ export async function start(note, title) {
     }
     whole.start(1000)
     r.anchor = `![[${name}]]\n`
-    editors.get(note).after('', `${r.lead}${r.anchor}`)
+    // Through `put`: the editor may have gone while the file was being opened,
+    // and a throw here left the microphone on with nothing on screen to stop it.
+    await put(note, '', `${r.lead}${r.anchor}`).catch((e) => say(String(e.message || e)))
     r.lead = ''
   }
 

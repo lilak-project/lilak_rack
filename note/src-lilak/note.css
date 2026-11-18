@@ -57,6 +57,17 @@
    the text under it would otherwise be selected on the way past. */
 .nt-sizing, .nt-sizing * { cursor: nwse-resize !important; user-select: none !important; }
 .nt-sheet img { margin: 3mm 0; }
+/* Pictures written on ONE line stand side by side while the column holds
+   them and wrap when it does not; a line of their own each, they stack (the
+   renderer keeps the note's line breaks). The editor's row is PictureRow. */
+.nt-sheet img, .nt-deck img, .nt-deck .nt-fig-wrap { display: inline-block; vertical-align: top; }
+.nt-sheet img + img, .nt-deck :is(img, .nt-fig-wrap) + :is(img, .nt-fig-wrap) { margin-left: 8px; }
+.nt-deck .nt-fig-wrap > img, .nt-fig-wrap > img { display: block; }
+.nt-embed-row {
+  display: flex; flex-wrap: wrap; align-items: flex-start;
+  column-gap: calc(8px * var(--nt-k, 1)); margin-left: 6px;
+}
+.nt-embed-row > .nt-embed-box { margin-left: 0; min-width: 0; }
 
 /* A tag, drawn as a tag: a label with its point to the left and the hole it
    hangs by. The shape is one clip-path, so changing it to a plain pill is one
@@ -321,6 +332,15 @@ body.nt-paper #root { height: auto; min-height: 100%; }
    Everything that is not the title or the body is behind one fold, because a
    note is mostly body and the pane was mostly fields. */
 .nt-edit { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* expand: the editor over the whole page (the portal's sidebar is outside it). */
+.nt-edit.nt-wide { position: fixed; inset: 0; z-index: 40; background: var(--rk-panel); border-top: 1px solid var(--rk-edge); }
+/* Expanded, the editor's own bar (mode, show, tools, close…) is put away: the
+   page is the note. The way back is a button at the end of the title row. */
+.nt-edit.nt-wide > .rl-acts { display: none; }
+/* The ground round the slides a shade deeper than the page's: the slides
+   stand out from it, and the band between two reads as a gap. */
+.nt-raw.nt-slide { --nt-ground: color-mix(in srgb, var(--rk-edge) 55%, var(--rk-ground)); }
+:root[data-lilak-theme="dark"] .nt-raw.nt-slide { --nt-ground: color-mix(in srgb, var(--rk-ground) 60%, #000); }
 /* The actions are RackActions now (.rl-acts, sticky at the top of the pane),
    so this service no longer dresses its own. */
 /* Reading, the sheet carries the title itself — and `display: flex` here would
@@ -433,7 +453,11 @@ body.nt-paper #root { height: auto; min-height: 100%; }
    sideways as the number grows. Disabled it is the reading; enabled it is the
    way back to fitting the width. */
 .nt-pdfzoom { min-width: 46px; text-align: center; font-family: var(--rk-mono); }
-.nt-pdf { flex: 1; min-height: 0; width: 100%; border: 0; border-top: 1px solid var(--rk-line); background: var(--rk-gut); }
+/* The frame is as wide as the zoom says (App.jsx PdfPane): wider than the pane
+   it scrolls sideways here, narrower it stands in the middle. Up and down is
+   the viewer's own scrolling, inside the frame. */
+.nt-pdfscroll { flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; border-top: 1px solid var(--rk-line); background: var(--rk-gut); }
+.nt-pdf { display: block; height: 100%; width: 100%; margin: 0 auto; border: 0; background: var(--rk-gut); }
 
 /* What stopped it, and nothing else: a LaTeX log is thousands of words long
    and the three lines that matter are these. */
@@ -627,6 +651,19 @@ body.nt-paper #root { height: auto; min-height: 100%; }
   color: #b91c1c; font-size: var(--fs-small);
 }
 .nt-refs .nt-out { flex: 1; min-width: 0; }
+/* 참고문헌: the search, and where each paper is kept. */
+.nt-cite-find { padding: 6px 10px 0; }
+.nt-cite-q { flex: 1; min-width: 120px; }
+.nt-cite-at { flex: 0 0 auto; padding: 0 5px; border: 1px solid var(--rk-edge); font-size: var(--fs-small); color: var(--rk-ink); }
+.nt-cite-at.off { color: var(--rk-mute); border-style: dashed; }
+/* One paper, on two lines: its key with what can be done to it, then what it is. */
+.nt-bibs li { display: block; padding: 3px 10px 4px; }
+.nt-cite-row { display: flex; align-items: center; gap: 6px; }
+.nt-cite-row .nt-cite-key { flex: 1; min-width: 0; padding-left: 0; }
+.nt-cite-n { flex: 0 0 auto; font-size: var(--fs-small); color: var(--rk-mute); }
+.nt-cite-n.on { color: var(--rk-ink); font-weight: 600; }
+.nt-cite-what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-small); }
+.nt-cite-row + .nt-cite-row { margin-top: 2px; }
 .nt-refs .nt-out:disabled { cursor: default; }
 /* A bib entry says what it is, after its key: the title is why you know which
    paper `Pain2007` is. */
@@ -953,10 +990,10 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 .nt-deck h4, .nt-deck h5, .nt-deck h6 { font-size: 1em; }
 .nt-deck p, .nt-deck ul, .nt-deck ol, .nt-deck blockquote, .nt-deck pre, .nt-deck table { margin: 0 0 .5em; }
 .nt-deck ul, .nt-deck ol { padding-left: 1.4em; }
-.nt-deck img { display: block; max-width: 100%; max-height: calc(var(--nt-deck-h) - 80px - 1em); width: auto; height: auto; object-fit: contain; }
+.nt-deck img { display: inline-block; vertical-align: top; max-width: 100%; max-height: calc(var(--nt-deck-h) - 80px - 1em); width: auto; height: auto; object-fit: contain; }
 /* A picture's number, under it. Only a slide numbers them out loud. */
 .nt-fig-cap { display: none; }
-.nt-deck .nt-fig-wrap { display: block; }
+
 .nt-deck .nt-fig-cap, .nt-raw.nt-slide .nt-fig-cap { display: block; margin-top: .2em; font-size: .6em; line-height: 1.45; color: var(--nt-deck-dim); }
 /* The rest of what the editor draws on a slide, drawn the same here: the box
    and margins below are the editor's, in `em` so both scale with the page. */
@@ -989,7 +1026,7 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 /* In the editor: the page, drawn at `--nt-k` of its size (SourceArea) with the
    same type and margins, so a line breaks where it breaks in the show. What
    the pane has left over at the sides is not slide, and looks it. */
-.nt-raw.nt-slide .cm-scroller { justify-content: center; background: var(--rk-ground); scrollbar-gutter: stable; }
+.nt-raw.nt-slide .cm-scroller { justify-content: center; background: var(--nt-ground, var(--rk-ground)); scrollbar-gutter: stable; }
 .nt-raw.nt-slide .cm-content {
   /* `min-width: 0`: the cover and the lines reach past the margins on purpose,
      and flex would otherwise widen the page to hold them. */
@@ -1022,12 +1059,14 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 .nt-raw.nt-slide .nt-cm-b0::before { content: '•'; }
 .nt-raw.nt-slide .nt-cm-b1::before { content: '◦'; }
 .nt-raw.nt-slide .nt-cm-b2::before { content: '▪'; }
-.nt-raw.nt-slide .nt-embed-box { margin-left: 0; padding-bottom: 0; }
+.nt-raw.nt-slide :is(.nt-embed-box, .nt-embed-row) { margin-left: 0; padding-bottom: 0; }
 .nt-raw.nt-slide .nt-embed-grip { bottom: 1em; }
 /* A picture's bar takes no room on a slide: it comes up just above the picture. */
 .nt-raw.nt-slide .cm-line.nt-deck-figline:has(.nt-fig-bar) { position: relative; z-index: 2; height: 0; }
-.nt-raw.nt-slide .nt-deck-figline .nt-fig-bar { position: absolute; left: 0; bottom: 0; opacity: 0; transition: opacity .12s; }
-.nt-raw.nt-slide .cm-line.nt-deck-figline:has(+ .nt-embed-box:hover) .nt-fig-bar,
+/* Lifted by their own height rather than pinned to one corner: two pictures
+   on a line have two bars, and they stand side by side. */
+.nt-raw.nt-slide .nt-deck-figline .nt-fig-bar { position: relative; transform: translateY(-100%); opacity: 0; transition: opacity .12s; }
+.nt-raw.nt-slide .cm-line.nt-deck-figline:has(+ :is(.nt-embed-box, .nt-embed-row):hover) .nt-fig-bar,
 .nt-raw.nt-slide .nt-deck-figline .nt-fig-bar:hover,
 .nt-raw.nt-slide .nt-deck-figline .nt-fig-bar:focus-within { opacity: 1; }
 .nt-raw.nt-slide .cm-editor:not(.cm-focused) .cm-activeLine,

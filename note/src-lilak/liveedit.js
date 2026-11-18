@@ -2,7 +2,18 @@ import { EditorView, Decoration, WidgetType } from '@codemirror/view'
 import { EditorState, StateEffect, StateField } from '@codemirror/state'
 import { autocompletion, completionStatus, CompletionContext, pickedCompletion, startCompletion } from '@codemirror/autocomplete'
 import { keymap } from '@codemirror/view'
+import { syntaxTree } from '@codemirror/language'
 import { authorsFor, choicesFor, citesFor, jobsFor, projectsFor, projText } from './marks.js'
+
+/** In code — a fence, an indented block, a `chip`: there what is typed is what
+ *  is meant, and none of the rules below turn it into something else
+ *  (`echo hi >> log.txt` lost its `>>` to the calendar). */
+const inCode = (state, pos) => {
+  for (let n = syntaxTree(state).resolveInner(pos, -1); n; n = n.parent) {
+    if (n.name === 'FencedCode' || n.name === 'CodeBlock' || n.name === 'InlineCode') return true
+  }
+  return false
+}
 
 /** What typing does in the source editor.
  *
@@ -203,7 +214,10 @@ class Calendar extends WidgetType {
     const take = (day) => {
       // A date put IN brings its own spacing; one being changed keeps the
       // line's, so only the day itself moves.
-      const insert = this.to > this.at ? `» ${day}` : `» ${day} `
+      // …and its own mark: a day picked on `✓ 2026-11-05` is the day it was
+      // DONE changed, not a deadline made of it.
+      const done = /^[✓✅]/.exec(view.state.doc.sliceString(this.at, this.to))
+      const insert = this.to > this.at ? `${done ? done[0] : '»'} ${day}` : `» ${day} `
       view.dispatch({
         changes: { from: this.at, to: this.to, insert },
         selection: { anchor: this.at + insert.length },
@@ -258,7 +272,10 @@ class Calendar extends WidgetType {
         cell.type = 'button'
         cell.textContent = String(d.getDate())
         cell.className = `nt-cal-d${d.getMonth() === m - 1 ? '' : ' off'}${day === today ? ' now' : ''}`
-        cell.addEventListener('mouseenter', () => { cur = day; mark() })
+        // Only a day of the month drawn: one of the grey days at either end
+        // moved `cur` into ITS month without drawing it, and the arrow pressed
+        // next went two months instead of one.
+        if (d.getMonth() === m - 1) cell.addEventListener('mouseenter', () => { cur = day; mark() })
         cell.addEventListener('mousedown', (e) => e.preventDefault())
         cell.addEventListener('click', () => take(day))
         cells.set(day, cell)
@@ -354,7 +371,7 @@ export const duePick = EditorView.domEventHandlers({
  *  own (typing) or at the end of a longer insert (a paste, or a tool that
  *  types a whole string at once), so the line is read as it WILL be. */
 const dueInput = EditorView.inputHandler.of((view, from, to, text) => {
-  if (!text.endsWith(' ')) return false
+  if (!text.endsWith(' ') || inCode(view.state, from)) return false
   const line = view.state.doc.lineAt(from)
   const before = line.text.slice(0, from - line.from) + text.slice(0, -1)
   const typed = DUE_TYPED.exec(before)
@@ -408,7 +425,7 @@ export const wonPair = (before) => {
 /** The second ₩ turns both into backticks, in ONE change so one undo is one
  *  undo (and a second undo gives the ₩ back). */
 export const wonCode = EditorView.inputHandler.of((view, from, to, text) => {
-  if (text !== '₩') return false
+  if (text !== '₩' || inCode(view.state, from)) return false
   const line = view.state.doc.lineAt(from)
   const i = wonPair(line.text.slice(0, from - line.from))
   if (i < 0) return false
@@ -597,7 +614,7 @@ export const isText = (file) => !!file && file.size <= TEXT_MAX
  *  its TEXT — nothing is stored and nothing is linked, the file's lines land
  *  where the drop cursor is. In 라이브 (and for a picture either way) the file
  *  is stored beside the notes and the document points at it, as before. */
-export const takeFiles = (upload, tex = false, raw = false) => EditorView.domEventHandlers({
+export const takeFiles = (upload, tex = false, raw = false) => [followLanding, EditorView.domEventHandlers({
   // Saying yes to the drag is what makes the drop arrive at all, and the
   // class is the editor saying it will take it. `false` all the way: the
   // drop cursor (`dropCursor`) wants these same events, to draw the line
@@ -626,13 +643,32 @@ export const takeFiles = (upload, tex = false, raw = false) => EditorView.domEve
   paste(e, view) {
     const files = filesOf(e.clipboardData)
     if (!upload || !files.length) return false
+    // Cells copied from a sheet, a paragraph from a document: the clipboard
+    // carries the words AND a picture of them. The words are what is pasted.
+    // (A file copied in Finder has its name as text but no html; a picture
+    // copied in a browser has html but no text. Both are still files.)
+    const cd = e.clipboardData
+    if (cd.getData('text/plain').trim() && (cd.getData('text/html') || cd.getData('text/rtf'))) return false
     e.preventDefault()
     stow(view, view.state.selection.main.from, files, upload, tex, raw)
     return true
   },
+})]
+
+/** Where files still going up will land, kept true while the note is typed in. */
+const landing = new Set()
+const followLanding = EditorView.updateListener.of((u) => {
+  if (u.docChanged) for (const spot of landing) if (spot.view === u.view) spot.at = u.changes.mapPos(spot.at, 1)
 })
 
-async function stow(view, at, files, upload, tex, raw) {
+async function stow(view, from, files, upload, tex, raw) {
+  // `at` was a number taken before the upload: a sentence typed above the drop
+  // meanwhile put the link that many characters early, inside a word.
+  const spot = { view, at: from }
+  landing.add(spot)
+  try { await stowAt(view, spot, files, upload, tex, raw) } finally { landing.delete(spot) }
+}
+async function stowAt(view, spot, files, upload, tex, raw) {
   for (const file of files) {
     let text
     if (raw && isText(file)) {
@@ -643,8 +679,9 @@ async function stow(view, at, files, upload, tex, raw) {
       if (!name) continue
       text = dropped(name, tex)
     }
-    view.dispatch({ changes: { from: at, insert: text } })
-    at += text.length
+    if (!view.dom.isConnected) return        // the editor was rebuilt meanwhile (a mode change)
+    // Its own insert is followed too (mapPos, to the right of it).
+    view.dispatch({ changes: { from: Math.min(spot.at, view.state.doc.length), insert: text } })
   }
 }
 
@@ -656,6 +693,20 @@ async function stow(view, at, files, upload, tex, raw) {
 export const wrapSel = (view, before, after = before) => {
   const r = view.state.selection.main
   const had = view.state.sliceDoc(r.from, r.to)
+  // Already wearing them: off they come. (`*` beside `**` is the bold's, not
+  // an italic's — an odd run of stars is what holds an italic.)
+  const pre = view.state.sliceDoc(Math.max(0, r.from - before.length - 2), r.from)
+  const post = view.state.sliceDoc(r.to, r.to + after.length)
+  const stars = /\*+$/.exec(pre)?.[0].length || 0
+  const worn = pre.endsWith(before) && post === after
+    && (before === '*' ? stars % 2 === 1 : before === '**' ? stars >= 2 : true)
+  if (worn) {
+    view.dispatch({
+      changes: [{ from: r.from - before.length, to: r.from }, { from: r.to, to: r.to + after.length }],
+      selection: { anchor: r.from - before.length, head: r.to - before.length },
+    })
+    return true
+  }
   view.dispatch({
     changes: { from: r.from, to: r.to, insert: before + had + after },
     selection: { anchor: r.from + before.length, head: r.from + before.length + had.length },
@@ -697,7 +748,7 @@ export const quotePaste = EditorView.clipboardInputFilter.of((text, state) => {
 const TABLE_NEW = /(^[ \t]*)(\|{2,})$/
 
 export const tableInput = EditorView.inputHandler.of((view, from, to, text) => {
-  if (text !== ' ') return false
+  if (text !== ' ' || inCode(view.state, from)) return false
   const line = view.state.doc.lineAt(from)
   const m = TABLE_NEW.exec(line.text.slice(0, from - line.from))
   if (!m) return false
@@ -721,11 +772,14 @@ const wallsOf = (text) => {
   return at
 }
 
+/** The table row the position is in. A row is `| … |`, pipe to pipe: a line
+ *  of prose that merely begins with one (`|x| = 3`) keeps its Enter and Tab. */
 const inTable = (state, pos) => {
   const line = state.doc.lineAt(pos)
-  if (!/^\s*\|/.test(line.text)) return null
+  if (!/^\s*\|.*\|\s*$/.test(line.text) || inCode(state, line.from)) return null
   return line
 }
+const EMPTY_ROW = /^\s*\|(\s*\|)+\s*$/
 
 /** The cell after this position, or the row below, or a row that did not
  *  exist a moment ago. */
@@ -774,8 +828,19 @@ export const tableKeys = keymap.of([
   {
     key: 'Enter',
     run: (view) => {
-      const line = inTable(view.state, view.state.selection.main.head)
+      const { state } = view
+      const line = inTable(state, state.selection.main.head)
       if (!line) return false
+      // Enter in an empty last row is the way OUT, as it is out of a list: the
+      // row goes and the caret stands on a line clear of the table (a line
+      // straight under a row would be read as one more row). Before this
+      // Enter only ever made another row, for ever.
+      const next = line.number < state.doc.lines ? state.doc.line(line.number + 1) : null
+      if (EMPTY_ROW.test(line.text) && !(next && /^\s*\|/.test(next.text))) {
+        view.dispatch({ changes: { from: line.from, to: line.to, insert: '\n' },
+          selection: { anchor: line.from + 1 }, scrollIntoView: true })
+        return true
+      }
       return step(view, false)
     },
   },

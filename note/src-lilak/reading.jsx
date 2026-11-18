@@ -142,7 +142,7 @@ export function Rendered({ children, lines = false, figures }) {
     const f = figureOf(all)
     const cap = figures != null && f.picture ? ` "${tr('nt_fig_n', n += 1)}"` : ''
     return `![${spec ?? alt}](${f.url(fileSrc)}${cap})`
-  })
+  }).replace(/\)[ \t]+(?=!\[)/g, ')')   // pictures side by side: the gap is the CSS's, as in the editor
   return (
     <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath, remarkSoftBreaks]}
       rehypePlugins={lines ? [rehypeDisplay, rehypeLines, rehypeKatex] : [rehypeDisplay, rehypeKatex]} components={RENDER}>
