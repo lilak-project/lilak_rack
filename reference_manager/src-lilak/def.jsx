@@ -12,14 +12,19 @@
 import './strings.js'
 import {
   firstAuthor, jShort, refLabel, mainTag, tagsOf, abbrevName, bibOrder, handleFor,
-  TOKENS, PRESETS, TYPES, place, partsOf,
+  TOKENS, PRESETS, KINDS, kindOf, usedBy, place, partsOf,
 } from './paper.js'
 import { citedBy, papersOf, authorStats, NameWith } from './widgets.jsx'
 import { tr } from 'lilak-ui/i18n.jsx'
 import { tagKey } from 'racklist'
 
-/** What belongs to the source, not to a place inside it. */
-const notPart = (r) => r.type !== 'part'
+/** A field the record shows: one its type uses, one already holding
+ *  something (a type changed under a filled field keeps it in sight), or any
+ *  once 'more fields' is ticked — a part's authors and journal are its
+ *  parent's, out of the way but there to open. */
+const filled = (v) => (Array.isArray(v) ? v.length > 0 : v && typeof v === 'object' ? !!v.id : String(v ?? '').trim() !== '')
+const shows = (k) => (r) => usedBy(r.type).includes(k) || filled(r[k]) || !!r.more
+const TYPE_OPTIONS = KINDS.map((g) => ({ group: tr(`rm_kind_${g.k}`), options: Object.keys(g.types).map((t) => [t, t]) }))
 
 /** Every paper wearing one of `gone` wears `to` instead — once — and its main
  *  tag follows. A key is filed under the main tag, so one left naming a tag
@@ -73,38 +78,63 @@ export default {
       : String(r.citeKey || '').trim() || String(r.title || '').trim() ? '' : tr("rm_need_key_or_title")),
     // The table reads type · key · who · when · where · what; the form reads
     // the way a citation is written down.
+    // The fields the record's type uses, lit in its bundle's colour.
+    applies: (r) => ({ color: kindOf(r.type).color, fields: usedBy(r.type) }),
     columns: ['type', 'citeKey', 'parent', 'a1', 'year', 'jl', 'title', 'tags', 'pdf', 'parts', 'cites', 'by'],
     fields: [
       { k: 'paste', label: tr("rm_paste"), type: 'paste', store: false, search: false,
         when: (r, { draft }) => draft },
-      { k: 'type', label: tr("rm_type"), type: 'select', options: TYPES, default: 'paper', required: true, bulk: true,
+      { k: 'type', label: tr("rm_type"), type: 'select', options: TYPE_OPTIONS, default: 'paper', required: true, bulk: true,
         col: { w: 56, min: 40, drop: 1180, label: 'type' }, tone: 'dim' },
       { k: 'citeKey', label: 'cite key', type: 'citekey', col: { w: 150, min: 80, label: 'key' } },
       { k: 'title', label: tr("rm_title_field"), type: 'longtext', rows: 2, col: { w: 260, min: 120, label: 'title' }, tone: 'ink' },
       // A part points into another reference and says where. Everything
       // bibliographic stays on that one — a part repeats none of it.
       { k: 'parent', label: tr("rm_parent"), type: 'ref', col: { w: 150, min: 70, drop: 1400, label: 'in' },
-        tone: 'dim', when: (r) => r.type === 'part', hint: tr("rm_parent_hint") },
+        tone: 'dim', when: shows('parent'), hint: tr("rm_parent_hint") },
       { k: 'locator', label: tr("rm_locator"), type: 'text', width: 180, placeholder: 'Figure 3',
-        when: (r) => r.type === 'part', hint: tr("rm_locator_hint") },
-      { k: 'authors', label: tr("rm_authors"), type: 'authors', of: 'authors', when: notPart },
+        when: shows('locator'), hint: tr("rm_locator_hint") },
+      // A term: what the name means, in a line, and where it is done here.
+      { k: 'summary', label: tr("rm_summary"), type: 'longtext', rows: 2, when: shows('summary') },
+      { k: 'impl', label: tr("rm_impl"), type: 'text', placeholder: 'FRESCO iter=1', when: shows('impl'),
+        hint: tr("rm_impl_hint") },
+      { k: 'authors', label: tr("rm_authors"), type: 'authors', of: 'authors', when: shows('authors') },
       // Worked out from the parts, so they cannot drift from what is stored.
       { k: 'a1', label: 'first author', get: (r, ctx) => firstAuthor(ctx.doc, r),
         col: { w: 134, min: 70 }, tone: 'dim', search: false },
       { k: 'jl', label: 'journal', get: (r, ctx) => jShort(ctx.doc, r), col: { w: 86, min: 40 }, tone: 'dim' },
-      { k: 'inst', label: tr("rm_institution"), type: 'class', placeholder: 'RIKEN',
-        when: (r) => r.type === 'proposal' },
-      { k: 'pac', label: 'PAC', type: 'text', mono: true, width: 90, placeholder: '27',
-        when: (r) => r.type === 'proposal',
+      // A mail, and a file someone sent: who, to whom, when, and the header's
+      // Message-ID — the one thing that stops the same mail going in twice.
+      { k: 'from', label: tr("rm_from"), type: 'text', when: shows('from') },
+      { k: 'to', label: tr("rm_to"), type: 'text', when: shows('to') },
+      { k: 'msgId', label: 'Message-ID', type: 'text', mono: true, when: shows('msgId') },
+      // A proposal under review: which one. Its record holds the rest.
+      { k: 'about', label: tr("rm_about"), type: 'ref', tone: 'dim', when: shows('about') },
+      { k: 'inst', label: tr("rm_institution"), type: 'class', placeholder: 'RIKEN', when: shows('inst') },
+      { k: 'pac', label: 'PAC', type: 'text', mono: true, width: 90, placeholder: '27', when: shows('pac'),
         hint: tr("rm_pac_hint") },
+      { k: 'number', label: tr("rm_number"), type: 'text', mono: true, width: 160, when: shows('number') },
+      { k: 'date', label: tr("rm_date"), type: 'date', when: shows('date') },
+      // A web page as it was read, and a database value as it was looked up.
+      { k: 'fetched', label: tr("rm_fetched"), type: 'date', group: tr("rm_fetched"), when: shows('fetched') },
+      { k: 'fetchedTime', label: tr("rm_fetched"), type: 'time', group: tr("rm_fetched"), when: shows('fetchedTime') },
+      { k: 'keyInfo', label: tr("rm_key_info"), type: 'longtext', rows: 3, when: shows('keyInfo'), hint: tr("rm_key_info_hint") },
+      { k: 'hash', label: tr("rm_hash"), type: 'text', mono: true, when: shows('hash'), hint: tr("rm_hash_hint") },
+      { k: 'db', label: tr("rm_db"), type: 'text', width: 140, placeholder: 'AME2020', when: shows('db') },
+      { k: 'query', label: tr("rm_query"), type: 'text', mono: true, placeholder: '12C mass excess', when: shows('query') },
+      { k: 'value', label: tr("rm_value"), type: 'text', mono: true, placeholder: '0 ± 0 keV', when: shows('value') },
+      { k: 'version', label: tr("rm_version"), type: 'text', mono: true, width: 160, when: shows('version') },
+      { k: 'publisher', label: tr("rm_publisher"), type: 'text', when: shows('publisher') },
+      { k: 'edition', label: tr("rm_edition"), type: 'text', width: 110, when: shows('edition') },
+      { k: 'isbn', label: 'ISBN', type: 'text', mono: true, width: 160, when: shows('isbn') },
       // The chip wears the short name: 'Nuclear Instruments and Methods in
       // Physics Research Section A: …' wrapped onto three lines in the editor.
-      { k: 'journal', label: tr("rm_journal"), type: 'class', of: 'journals', show: 'shortName', when: notPart },
-      { k: 'volume', label: tr("rm_volume"), type: 'text', width: 80, placeholder: 'volume', when: notPart },
-      { k: 'pages', label: tr("rm_pages"), type: 'text', width: 110, placeholder: 'pages', when: notPart },
+      { k: 'journal', label: tr("rm_journal"), type: 'class', of: 'journals', show: 'shortName', when: shows('journal') },
+      { k: 'volume', label: tr("rm_volume"), type: 'text', width: 80, placeholder: 'volume', when: shows('volume') },
+      { k: 'pages', label: tr("rm_pages"), type: 'text', width: 110, placeholder: 'pages', when: shows('pages') },
       { k: 'year', label: tr("rm_year"), type: 'text', width: 70, placeholder: 'year',
-        col: { w: 46, min: 38, num: true, label: 'year' }, sort: (v) => Number(v) || null, when: notPart },
-      { k: 'doi', label: 'doi', type: 'text', mono: true, href: (v) => `https://doi.org/${v}`, when: notPart },
+        col: { w: 46, min: 38, num: true, label: 'year' }, sort: (v) => Number(v) || null, when: shows('year') },
+      { k: 'doi', label: 'doi', type: 'text', mono: true, href: (v) => `https://doi.org/${v}`, when: shows('doi') },
       { k: 'url', label: 'url', type: 'url' },
       // Tags are what one most often sets on many papers at once (선택 편집).
       { k: 'tags', label: tr("rm_tags"), type: 'maintags', bulk: true, col: { w: 180, min: 60, drop: 1320, label: 'tags' },
@@ -121,8 +151,9 @@ export default {
         get: (r, ctx) => (citedBy(ctx.doc).get(r.id) || []).length,
         col: { w: 44, min: 34, num: true, drop: 860, label: 'cited by' }, when: (r, { draft }) => !draft },
       // A part has no file of its own: it is a place in the parent's.
-      { k: 'pdf', label: 'pdf', type: 'file', roots: 'pdfRoots', find: 'citeKey', search: false,
-        col: { w: 38, min: 30, num: true }, when: notPart },
+      // The file: a paper's pdf, a mail's attachment, a page's figure.
+      { k: 'pdf', label: tr("rm_file"), type: 'file', roots: 'pdfRoots', find: 'citeKey', search: false,
+        col: { w: 38, min: 30, num: true, label: 'pdf' }, when: shows('pdf') },
       { k: 'parts', label: tr("rm_parts"), type: 'parts', search: false,
         get: (r, ctx) => partsOf(ctx.doc, r.id).length,
         col: { w: 44, min: 34, num: true, drop: 1000, label: 'parts' },
@@ -133,6 +164,7 @@ export default {
       // it. Theirs is the only copy of the link; each opens there.
       { k: 'talks', label: tr("rm_talks"), type: 'backlinks', search: false,
         from: { svc: 'academic_activities', item: 'activities', field: 'papers', label: 'name' } },
+      { k: 'more', label: tr("rm_more"), type: 'check', store: false, search: false, hint: tr("rm_more_hint") },
     ],
   },
   classSort: { k: 'name', dir: 1 },

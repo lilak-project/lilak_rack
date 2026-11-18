@@ -60,3 +60,20 @@ same(partsOf(d2, 'p1').map((r) => r.locator).join(' '), 'Figure 2 Figure 3 Figur
 same(partsOf(d2, 'nobody').length, 0, 'a source with no parts')
 
 console.log('parts.check: ok')
+
+// ─── Kinds of reference ─────────────────────────────────────────────────────
+import { kindOf, usedBy, TYPES } from './paper.js'
+same(kindOf('paper').k, 'pub', 'a paper is published')
+same(kindOf('web').k, 'record', 'a page is our record of it')
+same(kindOf('data').k, 'data', 'a database value is looked up')
+same(kindOf('term').k, 'term', 'a method name')
+same(kindOf('nonsense').k, 'pub', 'an unknown type reads as a paper')
+assert.ok(usedBy('book').includes('edition'), 'a book keeps its edition')
+assert.ok(!usedBy('part').includes('authors'), "a part's authors are its parent's")
+assert.equal(new Set(TYPES).size, TYPES.length, 'a type is in one bundle only')
+const none = { references: [] }
+same(citeKeyFor(none, { type: 'web', url: 'https://www.nndc.bnl.gov/ensdf/', fetched: '2026-11-18' }),
+  'nndc_bnl_gov_2026-11-18', 'a page by its site and the day it was read')
+same(citeKeyFor(none, { type: 'data', db: 'AME2020', query: '12C mass excess' }), 'AME2020_12C_mass_excess', 'a value by where and what')
+same(citeKeyFor(none, { type: 'software', title: 'FRESCO', version: '3.4' }), 'FRESCO_3_4', 'a program by its version')
+same(citeKeyFor(none, { type: 'term', title: 'DWBA' }), 'DWBA', 'a term by its name')

@@ -160,7 +160,19 @@ export const KEY_RULES = {
   // A part is read as a place inside its source, so its key is the source's
   // with the place after it. The '/' is the same slash tags nest with.
   part: '{pkey}/{loc}',
+  book: '{a1}_{year}',
+  regulation: '{inst}_{number}',
+  report: '{inst}_{number}_{year}',
+  mail: '{from}_{date}',
+  web: '{host}_{fetched}',
+  review: '{inst}_PAC{pac}_review_{date}',
+  file: '{from}_{date}',
+  data: '{db}_{query}',
+  software: '{title}_{version}',
+  term: '{title}',
 }
+/** 'https://www.nndc.bnl.gov/ensdf/' → 'nndc.bnl.gov'. */
+const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, '') } catch { return '' } }
 export const ruleFor = (r, settings) => (settings?.keyRules || {})[r?.type]
   || KEY_RULES[r?.type] || KEY_RULES.paper
 /** The key a record would be given. Parts nobody filled in leave no gap. */
@@ -183,6 +195,9 @@ export const citeKeyFor = (doc, r, rule = ruleFor(r, doc?.settings)) => rule
       // whatever spelling arrived, and a key written while typing 'Fig.3'
       // would otherwise keep a name the place no longer has.
       loc: place(r.locator),
+      title: r.title, number: r.number, edition: r.edition, version: r.version,
+      from: r.from, date: r.date, fetched: r.fetched, db: r.db, query: r.query,
+      host: hostOf(r.url),
     }[k.trim()]
     return v === undefined ? m : slug(v)
   })
@@ -297,7 +312,44 @@ export function parseRis(src) {
   return got
 }
 
-export const TYPES = ['paper', 'proposal', 'thesis', 'report', 'writing', 'part']
+// ─── What a reference is ────────────────────────────────────────────────────
+// Four bundles, by how a thing is pointed at and how it goes stale (decided
+// 2026-11-11, note 'CENS AI 레퍼런스 종류 검토'): what is published, what only
+// our copy keeps (a mail, a web page as it was that day), what is looked up
+// (a database value, a program's version), and names with no document of
+// their own (a method). A part is a place inside any of them. Each bundle is
+// one colour in the editor, lighting the fields its kinds use; a field no kind
+// of the record uses is out of the way until asked for.
+const BIB = ['authors', 'journal', 'volume', 'pages', 'year', 'doi', 'pdf']
+export const KINDS = [
+  { k: 'pub', color: '#2f6fde', types: {
+    paper: BIB, thesis: BIB, writing: BIB,
+    report: ['authors', 'inst', 'number', 'year', 'doi', 'pdf'],
+    proposal: ['authors', 'inst', 'pac', 'year', 'pdf'],
+    // A textbook's page means nothing without its edition.
+    book: ['authors', 'publisher', 'edition', 'isbn', 'year', 'pdf'],
+    regulation: ['inst', 'number', 'date', 'pdf'],
+  } },
+  { k: 'record', color: '#d9822b', types: {
+    mail: ['from', 'to', 'date', 'msgId', 'pdf'],
+    // A page changes: when it was read, what it said, and the hash that tells
+    // a later reading whether what it said has changed.
+    web: ['url', 'fetched', 'fetchedTime', 'keyInfo', 'hash', 'pdf'],
+    review: ['about', 'inst', 'pac', 'date', 'pdf'],
+    file: ['from', 'date', 'hash', 'pdf'],
+  } },
+  { k: 'data', color: '#13a06e', types: {
+    data: ['db', 'edition', 'query', 'value', 'fetched', 'fetchedTime'],
+    software: ['version', 'url'],
+  } },
+  { k: 'term', color: '#8b3fd9', types: { term: ['summary', 'impl'] } },
+  { k: 'part', color: '#8a919c', types: { part: ['parent', 'locator'] } },
+]
+export const TYPES = KINDS.flatMap((g) => Object.keys(g.types))
+/** The bundle a type is in (a type nobody knows reads as a paper). */
+export const kindOf = (type) => KINDS.find((g) => g.types[type]) || KINDS[0]
+/** The fields a type uses beyond those every reference has. */
+export const usedBy = (type) => kindOf(type).types[type] || BIB
 
 // ─── Parts of a source ──────────────────────────────────────────────────────
 // A part is a place inside another reference kept as a reference of its own:
