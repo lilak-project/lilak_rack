@@ -12,10 +12,11 @@
  *   paste      a BibTeX/RIS box that fills the form (a draft's helper)
  *   rolecount  an author's papers in one role, a count you can press
  *   authorpapers  the same, in the author's own form
+ *   webfetch   a web page read now: its title, hash and when; read again, whether it changed
  */
 import './strings.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { registerType, newId, useSharedTags, spellTag, tagKey, uniqueTags } from 'racklist'
+import { registerType, newId, useSharedTags, spellTag, tagKey, uniqueTags, PORTAL_BASE, authHeaders } from 'racklist'
 import {
   authorRows, autRoles, handleFor, refLabel, linkedCites, citesOf, mainTag, tagsOf,
   ruleFor, citeKeyFor, parseCitation, splitAuthors, authorList, ROLE_LABEL,
@@ -578,3 +579,54 @@ export function NameWith({ value, onChange, rec, patch, width = 280, mono, place
     </>
   )
 }
+
+/** A web reference, read by the service (backend/webread.py). The first
+ *  reading fills what is empty — the title, a start at the key information —
+ *  and keeps the hash and the time. A later one only compares: a different
+ *  hash marks the page changed, and nothing the person wrote is touched
+ *  until they take the new reading. */
+function WebFetch({ rec, patch }) {
+  const [state, setState] = useState({ busy: false, msg: '' })
+  const read = async () => {
+    setState({ busy: true, msg: '' })
+    try {
+      const r = await fetch(`${PORTAL_BASE}/api/fetch`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ url: rec.url }) })
+      const got = await r.json().catch(() => ({}))
+      if (!r.ok) return setState({ busy: false, msg: got.detail || `${r.status}` })
+      if (!rec.hash) {
+        patch({ hash: got.hash, fetched: got.fetched, fetchedTime: got.fetchedTime,
+          ...(String(rec.title || '').trim() ? {} : { title: got.title }),
+          ...(String(rec.keyInfo || '').trim() ? {} : { keyInfo: got.keyInfo }) })
+        return setState({ busy: false, msg: tr("rm_fetch_done") })
+      }
+      if (got.hash === rec.hash) {
+        patch({ changedAt: '', newHash: '' })
+        return setState({ busy: false, msg: tr("rm_fetch_same", `${got.fetched} ${got.fetchedTime}`) })
+      }
+      patch({ changedAt: `${got.fetched} ${got.fetchedTime}`, newHash: got.hash })
+      setState({ busy: false, msg: '' })
+    } catch (e) {
+      setState({ busy: false, msg: String(e.message || e) })
+    }
+  }
+  // Taking the new reading: it is now the one the evidence stands on.
+  const take = () => {
+    const [d, t] = String(rec.changedAt).split(' ')
+    patch({ hash: rec.newHash, fetched: d, fetchedTime: t, changedAt: '', newHash: '' })
+  }
+  return (
+    <>
+      <button type="button" className="rl-btn" disabled={state.busy || !String(rec.url || '').trim()}
+        title={tr("rm_fetch_hint")} onClick={read}>{tr(rec.hash ? "rm_fetch_again" : "rm_fetch")}</button>
+      {rec.changedAt && (
+        <>
+          <span className="rl-hint" style={{ color: '#b91c1c' }}>{tr("rm_fetch_changed", rec.changedAt)}</span>
+          <button type="button" className="rl-btn" title={tr("rm_fetch_take_hint")} onClick={take}>{tr("rm_fetch_take")}</button>
+        </>
+      )}
+      {state.msg && <span className="rl-hint">{state.msg}</span>}
+    </>
+  )
+}
+registerType('webfetch', { text: () => '', Edit: WebFetch })

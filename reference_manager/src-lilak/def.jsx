@@ -85,7 +85,9 @@ export default {
       { k: 'paste', label: tr("rm_paste"), type: 'paste', store: false, search: false,
         when: (r, { draft }) => draft },
       { k: 'type', label: tr("rm_type"), type: 'select', options: TYPE_OPTIONS, default: 'paper', required: true, bulk: true,
-        col: { w: 56, min: 40, drop: 1180, label: 'type' }, tone: 'dim' },
+        col: { w: 64, min: 40, drop: 1180, label: 'type' }, tone: 'dim',
+        // Its bundle's colour beside it, so a page or a mail stands out among papers.
+        cell: (r) => <><i style={{ display: 'inline-block', width: 7, height: 7, marginRight: 4, background: kindOf(r.type).color }} />{r.type || 'paper'}</> },
       { k: 'citeKey', label: 'cite key', type: 'citekey', col: { w: 150, min: 80, label: 'key' } },
       { k: 'title', label: tr("rm_title_field"), type: 'longtext', rows: 2, col: { w: 260, min: 120, label: 'title' }, tone: 'ink' },
       // A part points into another reference and says where. Everything
@@ -116,6 +118,7 @@ export default {
       { k: 'number', label: tr("rm_number"), type: 'text', mono: true, width: 160, when: shows('number') },
       { k: 'date', label: tr("rm_date"), type: 'date', when: shows('date') },
       // A web page as it was read, and a database value as it was looked up.
+      { k: 'fetch', label: tr("rm_page"), type: 'webfetch', store: false, search: false, when: shows('fetch') },
       { k: 'fetched', label: tr("rm_fetched"), type: 'date', group: tr("rm_fetched"), when: shows('fetched') },
       { k: 'fetchedTime', label: tr("rm_fetched"), type: 'time', group: tr("rm_fetched"), when: shows('fetchedTime') },
       { k: 'keyInfo', label: tr("rm_key_info"), type: 'longtext', rows: 3, when: shows('keyInfo'), hint: tr("rm_key_info_hint") },

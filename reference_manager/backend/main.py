@@ -16,9 +16,13 @@ the path is resolved (store.mount_files). The screen is the kit's RackService.
 import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from pydantic import BaseModel
 
+from lilak_portal_auth import signed_in
 from rackstore.store import Document, mount_files, mount_spa
+
+from webread import read_page
 
 # The portal hands each project process its own data dir via {project_data}.
 DATA = Path(os.environ.get("REFERENCE_DATA_DIR", "./data"))
@@ -31,6 +35,18 @@ DOC = Document(DATA / "data.json", keys=("references", "journals", "authors", "s
 app = FastAPI(title="reference_manager")
 DOC.mount(app, project=PROJECT)
 mount_files(app, DOC, setting="pdfRoots", exts=(".pdf",))
+
+
+class Fetch(BaseModel):
+    url: str
+
+
+@app.post("/api/fetch")
+def fetch(body: Fetch, me: dict = Depends(signed_in)):
+    """A web reference as it reads now: its title, its text's hash and a few
+    lines to start the key information from. The page decides nothing here —
+    the person keeps what they want of it."""
+    return read_page(body.url)
 
 # Must stay last: the catch-all would shadow /api/*.
 mount_spa(app, DIST, name="reference_manager")
