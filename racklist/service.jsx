@@ -4,7 +4,7 @@ import './strings.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RackTable, RackRow, RackTabs } from './table.jsx'
 import { RackFrame } from './frame.jsx'
-import { RackPaneStrip, RackPaneTools, paneLayout, paneStyles, useTabSpread, FULL } from './panes.jsx'
+import { RackPaneStrip, RackPaneTools, paneLayout, paneStyles, useTabSpread, FULL, colInUse } from './panes.jsx'
 import { RackBar, useReloadKey } from './bar.jsx'
 import { RackMenu, RackRail, MenuRow, useRackMenu } from './menu.jsx'
 import { PaneFind } from './panefind.jsx'
@@ -418,7 +418,7 @@ function RackList({ def: declared, slots = {} }) {
 
   useRackKeys({
     onNew: () => (cls?.stored ? openClass(cls, null) : openItem(null)),
-    onClose: () => { const cur = panes.showing && panes.current(panes.cols[0]); if (cur) panes.leave(cur.id) },
+    onClose: () => { const cur = panes.showing && panes.current(colInUse(panes)); if (cur) panes.leave(cur.id) },
   })
 
   /** A record of ANOTHER service, in a pane here: that service's page for it

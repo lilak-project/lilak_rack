@@ -37,6 +37,15 @@ export function shownAfter(list, was, id) {
   return (list[i - 1] || list[i + 1])?.id ?? null
 }
 
+/** The column being worked in, for a key that acts on "this" tab (⌘X): where
+ *  the focus is, else the one last pressed, else the first. It was always the
+ *  first — with an editor on each side of the list, ⌘X in the right one
+ *  closed the left one's tab. */
+export function colInUse(panes, el = document.activeElement) {
+  const at = el?.closest?.('.rl-epane')?.dataset.col
+  return panes.cols.find((c) => String(c) === at) ?? (panes.cols.includes(panes.col) ? panes.col : panes.cols[0])
+}
+
 export function useEditorPanes(key) {
   const was = useMemo(() => {
     const w = (key ? load(key, null) : null) || {}
@@ -144,7 +153,7 @@ export function useEditorPanes(key) {
   }, [inCol, active])
 
   return {
-    tabs, cols, open, close, closeAll, guard, leave, leaveAll, step, dock, dockAll, keep, inCol, current, setCol,
+    tabs, cols, open, close, closeAll, guard, leave, leaveAll, step, dock, dockAll, keep, inCol, current, col, setCol,
     pick: (c, id) => setActive((a) => ({ ...a, [c]: id })),
     full, setFull, hidden, setHidden, count: tabs.length, showing: tabs.length > 0 && !hidden,
   }
