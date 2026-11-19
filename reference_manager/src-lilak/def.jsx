@@ -122,6 +122,7 @@ export default {
       { k: 'fetched', label: tr("rm_fetched"), type: 'date', group: tr("rm_fetched"), when: shows('fetched') },
       { k: 'fetchedTime', label: tr("rm_fetched"), type: 'time', group: tr("rm_fetched"), when: shows('fetchedTime') },
       { k: 'keyInfo', label: tr("rm_key_info"), type: 'longtext', rows: 3, when: shows('keyInfo'), hint: tr("rm_key_info_hint") },
+      { k: 'images', label: tr("rm_images"), type: 'webimages', search: false, when: shows('images'), hint: tr("rm_images_hint") },
       { k: 'hash', label: tr("rm_hash"), type: 'text', mono: true, when: shows('hash'), hint: tr("rm_hash_hint") },
       { k: 'db', label: tr("rm_db"), type: 'text', width: 140, placeholder: 'AME2020', when: shows('db') },
       { k: 'query', label: tr("rm_query"), type: 'text', mono: true, placeholder: '12C mass excess', when: shows('query') },

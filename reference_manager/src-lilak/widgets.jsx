@@ -13,6 +13,7 @@
  *   rolecount  an author's papers in one role, a count you can press
  *   authorpapers  the same, in the author's own form
  *   webfetch   a web page read now: its title, hash and when; read again, whether it changed
+ *   webimages  a web page's figures, kept in the project (shrunk past 2MB)
  */
 import './strings.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -630,3 +631,70 @@ function WebFetch({ rec, patch }) {
   )
 }
 registerType('webfetch', { text: () => '', Edit: WebFetch })
+
+// ─── A web page's figures ───────────────────────────────────────────────────
+const SHRINK_AT = 2_000_000
+/** Over 2MB, a figure is kept at 2000px on its long side, JPEG at 85 — still
+ *  readable, and what is kept stays small. SVG is never touched. */
+async function shrink(blob) {
+  const bm = await createImageBitmap(blob)
+  const k = Math.min(1, 2000 / Math.max(bm.width, bm.height))
+  const c = document.createElement('canvas')
+  c.width = Math.round(bm.width * k); c.height = Math.round(bm.height * k)
+  const g = c.getContext('2d')
+  g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height)    // JPEG has no transparency
+  g.drawImage(bm, 0, 0, c.width, c.height)
+  return new Promise((ok) => c.toBlob(ok, 'image/jpeg', 0.85))
+}
+const imageSrc = (name) => `${PORTAL_BASE}/api/web-image?name=${encodeURIComponent(name)}`
+
+function WebImages({ value, onChange }) {
+  const list = Array.isArray(value) ? value : []
+  const [url, setUrl] = useState('')
+  const [state, setState] = useState({ busy: false, msg: '' })
+  const add = async () => {
+    setState({ busy: true, msg: '' })
+    try {
+      const r = await fetch(`${PORTAL_BASE}/api/web-image`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ url }) })
+      if (!r.ok) return setState({ busy: false, msg: (await r.json().catch(() => ({}))).detail || `${r.status}` })
+      const hash = r.headers.get('X-Hash')
+      const orig = await r.blob()
+      const small = orig.size > SHRINK_AT && orig.type !== 'image/svg+xml'
+      const keep = small ? await shrink(orig) : orig
+      const k = await fetch(`${PORTAL_BASE}/api/web-image?hash=${hash}`, { method: 'PUT', headers: authHeaders(), body: keep })
+      const got = await k.json().catch(() => ({}))
+      if (!k.ok) return setState({ busy: false, msg: got.detail || `${k.status}` })
+      const now = new Date()
+      onChange([...list.filter((x) => x.hash !== hash), { name: got.name, src: url, hash, size: orig.size,
+        kept: got.size, shrunk: small, at: `${now.toISOString().slice(0, 10)} ${now.toTimeString().slice(0, 5)}` }])
+      setUrl('')
+      setState({ busy: false, msg: small ? tr("rm_img_shrunk", Math.round(orig.size / 1e5) / 10, Math.round(got.size / 1e5) / 10) : '' })
+    } catch (e) {
+      setState({ busy: false, msg: String(e.message || e) })
+    }
+  }
+  return (
+    <div className="rl-rows">
+      {list.map((x) => (
+        <div key={x.hash} className="rl-rrow" style={{ alignItems: 'flex-start', gap: 8 }}>
+          <a href={imageSrc(x.name)} target="_blank" rel="noreferrer">
+            <img src={imageSrc(x.name)} alt="" style={{ width: 96, height: 72, objectFit: 'contain', border: '1px solid var(--rk-line)', background: '#fff' }} />
+          </a>
+          <span className="rl-hint" style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
+            <a href={x.src} target="_blank" rel="noreferrer">{x.src}</a><br />
+            {x.at} · {tr(x.shrunk ? "rm_img_kept_shrunk" : "rm_img_kept", Math.round((x.kept || 0) / 1e3))} · <span className="rl-mono" title={tr("rm_img_hash_hint")}>{String(x.hash).slice(0, 12)}</span>
+          </span>
+          <button type="button" className="rl-btn" title={tr("rm_img_remove")} onClick={() => onChange(list.filter((y) => y !== x))}>×</button>
+        </div>
+      ))}
+      <div className="rl-rrow">
+        <input className="rl-in" style={{ flex: 1 }} placeholder="https://…/figure.png" value={url}
+          onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && url.trim()) { e.preventDefault(); add() } }} />
+        <button type="button" className="rl-btn" disabled={state.busy || !url.trim()} onClick={add}>{tr("rm_img_add")}</button>
+        {state.msg && <span className="rl-hint">{state.msg}</span>}
+      </div>
+    </div>
+  )
+}
+registerType('webimages', { text: (v) => (Array.isArray(v) ? v.map((x) => x.src).join(' ') : ''), Edit: WebImages })

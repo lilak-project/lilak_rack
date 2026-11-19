@@ -334,7 +334,7 @@ export const KINDS = [
     mail: ['from', 'to', 'date', 'msgId', 'pdf'],
     // A page changes: when it was read, what it said, and the hash that tells
     // a later reading whether what it said has changed.
-    web: ['url', 'fetch', 'fetched', 'fetchedTime', 'keyInfo', 'hash', 'pdf'],
+    web: ['url', 'fetch', 'fetched', 'fetchedTime', 'keyInfo', 'images', 'hash', 'pdf'],
     review: ['about', 'inst', 'pac', 'date', 'pdf'],
     file: ['from', 'date', 'hash', 'pdf'],
   } },

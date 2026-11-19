@@ -81,7 +81,24 @@ def extract(html: str) -> dict:
 
 
 def read_page(url: str) -> dict:
-    """Follow at most HOPS redirects, checking each address, and read the page."""
+    """A page as it reads now: title, a start at the key information, hash, time."""
+    body, kind, enc = get(url, MAX_BYTES)
+    if "html" not in kind and "text" not in kind:
+        raise HTTPException(415, f"글로 된 페이지가 아닙니다 ({kind or '형식 모름'}).")
+    page = extract(body.decode(enc or "utf-8", errors="replace"))
+    now = datetime.now().astimezone()
+    return {"url": url, "title": page["title"], "hash": page["hash"],
+            "keyInfo": page["desc"] or page["text"][:600],
+            "fetched": now.strftime("%Y-%m-%d"), "fetchedTime": now.strftime("%H:%M")}
+
+
+IMAGE_BYTES = 30_000_000   # what may come in; what is kept is shrunk to about 2MB by the page
+KINDS = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp", "image/svg+xml": ".svg"}
+MAGIC = ((b"\x89PNG", ".png"), (b"\xff\xd8", ".jpg"), (b"GIF8", ".gif"), (b"RIFF", ".webp"))
+
+
+def get(url: str, cap: int):
+    """(bytes, content type) of a public url, every redirect checked."""
     with httpx.Client(timeout=20, follow_redirects=False, headers={"User-Agent": "lilak-reference/1"}) as c:
         for _ in range(HOPS + 1):
             url = public(url)
@@ -94,17 +111,31 @@ def read_page(url: str) -> dict:
                 body = b""
                 for chunk in r.iter_bytes():
                     body += chunk
-                    if len(body) > MAX_BYTES:
-                        raise HTTPException(413, "페이지가 너무 큽니다.")
-                kind = r.headers.get("content-type", "")
-                if "html" not in kind and "text" not in kind:
-                    raise HTTPException(415, f"글로 된 페이지가 아닙니다 ({kind or '형식 모름'}).")
-                page = extract(body.decode(r.encoding or "utf-8", errors="replace"))
-                now = datetime.now().astimezone()
-                return {"url": url, "title": page["title"], "hash": page["hash"],
-                        "keyInfo": page["desc"] or page["text"][:600],
-                        "fetched": now.strftime("%Y-%m-%d"), "fetchedTime": now.strftime("%H:%M")}
+                    if len(body) > cap:
+                        raise HTTPException(413, "너무 큽니다.")
+                return body, r.headers.get("content-type", "").split(";")[0].strip().lower(), r.encoding
     raise HTTPException(502, "다시 보내기가 너무 많습니다.")
+
+
+def read_image(url: str):
+    """A figure off the web: its bytes, kind and the hash of the ORIGINAL bytes —
+    what tells a later reading whether the figure changed, whatever it was
+    shrunk to here (decided 2026-11-11)."""
+    body, kind, _ = get(url, IMAGE_BYTES)
+    if kind not in KINDS:
+        raise HTTPException(415, f"그림이 아닙니다 ({kind or '형식 모름'}).")
+    return body, kind, hashlib.sha256(body).hexdigest()
+
+
+def image_ext(body: bytes) -> str:
+    """The kind of a kept file, read off its bytes rather than taken on trust."""
+    for sig, ext in MAGIC:
+        if body.startswith(sig) and (ext != ".webp" or body[8:12] == b"WEBP"):
+            return ext
+    head = body[:400].lstrip().lower()
+    if head.startswith(b"<svg") or (head.startswith(b"<?xml") and b"<svg" in body[:2000].lower()):
+        return ".svg"
+    return ""
 
 
 if __name__ == "__main__":
@@ -121,4 +152,7 @@ if __name__ == "__main__":
     assert a["title"] == "A page" and a["desc"] == "Short." and a["text"] == "Hello world", a
     assert extract("<p>Hello   world</p>")["hash"] == a["hash"], "whitespace must not change the hash"
     assert extract("<p>Hello world!</p>")["hash"] != a["hash"], "a changed word must"
+    assert image_ext(b"\x89PNG\r\n\x1a\n...") == ".png" and image_ext(b"\xff\xd8\xff") == ".jpg"
+    assert image_ext(b"RIFF\0\0\0\0WEBPVP8") == ".webp" and image_ext(b"RIFF\0\0\0\0WAVE") == ""
+    assert image_ext(b"<?xml version='1.0'?><svg xmlns=...>") == ".svg" and image_ext(b"<html>") == ""
     print("webread: ok")
