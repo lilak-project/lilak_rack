@@ -38,6 +38,8 @@ function Body({ note, setNote, go, keep, where, read, slide, print, say, ask, ta
       <RackField label={tr("nt_tool_tags")}>
         {tags.length ? <span className="nt-tagline">{tags.map((t) => `#${t}`).join(' ')}</span>
           : <span className="rl-hint">{tr("rk_none")}</span>}
+        {/* LaTeX has no `#tag` of its own: `#` is a macro's argument there. */}
+        {note.tex ? <span className="rl-hint">{tr("nt_tags_tex_hint")}</span> : null}
       </RackField>
 
       {/* The lines worth coming back to. A number is a button that goes

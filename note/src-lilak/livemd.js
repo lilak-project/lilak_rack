@@ -654,8 +654,9 @@ function build(view, fileSrc, numbered) {
       if (inCode(at(m.index))) continue
       const start = at(m.index), end = start + m[0].length
       marks.push(Decoration.mark({ class: 'nt-cm-wiki' }).range(start, end))
-      // A slide says what the show says, and at the width the show says it.
-      if (slide && !shown(start)) { hide(start, start + 2 + m[1].lastIndexOf('|') + 1); hide(end - 2, end) }
+      // Off the line being written it is the note's label (note.css): its
+      // name, or the words after `|`, without the brackets.
+      if (!shown(start)) { hide(start, start + 2 + m[1].lastIndexOf('|') + 1); hide(end - 2, end) }
     }
     for (const m of text.matchAll(TAG)) {
       const start = at(m.index + m[1].length)

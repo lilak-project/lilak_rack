@@ -351,6 +351,23 @@ const ZOOMS = [50, 75, 100, 125, 150, 200, 300]      // of the pane's width: 100
 
 function PdfPane({ t }) {
   const [zoom, setZoom] = useState(100)
+  // A PDF viewer that has the focus keeps every key to itself — Esc, Enter and
+  // ⌘X never reach this page, and nothing here can read them out of it. So the
+  // focus comes back whenever the pointer is not on the PDF: as it leaves, and
+  // when the viewer takes the focus unasked (as it loads, after a compile).
+  // Pressed and still pointed at, it keeps the keys: that is reading it.
+  const frame = useRef(null)
+  const over = useRef(false)
+  const back = () => {
+    if (document.activeElement !== frame.current) return
+    frame.current.blur()
+    window.focus()
+  }
+  useEffect(() => {
+    const lost = () => setTimeout(() => { if (!over.current) back() }, 0)
+    window.addEventListener('blur', lost)
+    return () => window.removeEventListener('blur', lost)
+  }, [])
   const step = (d) => setZoom((z) => ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, ZOOMS.indexOf(z) + d))])
   return (
     <div className="nt-pdfpane">
@@ -369,8 +386,9 @@ function PdfPane({ t }) {
         <a className="rl-btn" href={t.src} target="_blank" rel="noreferrer">{tr("nt_tex_btab")}</a>
         <a className="rl-btn" href={t.src} download={`${t.who}.pdf`}>{tr("nt_tex_save")}</a>
       </div>
-      <div className="nt-pdfscroll">
-        <iframe key={zoom} className="nt-pdf" style={{ width: `${zoom}%` }}
+      <div className="nt-pdfscroll" onMouseEnter={() => { over.current = true }}
+        onMouseLeave={() => { over.current = false; back() }}>
+        <iframe key={zoom} ref={frame} className="nt-pdf" style={{ width: `${zoom}%` }}
           src={`${t.src}#toolbar=0&navpanes=0&view=FitH`} title={t.label} />
       </div>
     </div>
@@ -828,6 +846,17 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   // its own. Kept with the rest of where-you-were (scrolled.js).
   const [tab, setTab] = useState(() => placeBack(`${id}:tab`) || '')
   useEffect(() => { placeSave(`${id}:tab`, tab); if (tab) placeSave(`${id}:was`, tab) }, [id, tab])
+  // One toolbox at a time: it hangs over the pane next door, so a press in
+  // ANOTHER editor's pane (its tab, its text) shuts this one's.
+  useEffect(() => {
+    if (!tab) return undefined
+    const on = (e) => {
+      const pane = e.target.closest?.('.rl-epane')
+      if (pane && !pane.contains(root.current)) setTab('')
+    }
+    window.addEventListener('pointerdown', on, true)
+    return () => window.removeEventListener('pointerdown', on, true)
+  }, [tab])
   // What the toolbox hangs off: this editor's own box. It is drawn OVER the
   // pane next door, not inside this one, so it measures rather than flows.
   const root = useRef(null)

@@ -17,6 +17,7 @@ import { deckField, deckFit, deckGutter, setDeck, setDeckScale } from './slides.
 import { commentFold, setFoldComments } from './comments.js'
 import { placeBack, placeSave } from './scrolled.js'
 import { retext } from './merge3.js'
+import { tail, toggleTail, isTailKey } from './tail.js'
 import { tagLine } from './marks.js'
 
 /** Where a deck's text begins: past the tag lines and blank lines at its top
@@ -190,13 +191,16 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
           // line and its number are the same thing to point at.
           (deck ? deckGutter : lineNumbers)({
             domEventHandlers: {
-              click: (ed, block) => {
+              click: (ed, block, e) => {
+                // The button under the last number: room below (tail.js).
+                if (isTailKey(e)) { toggleTail(ed); return true }
                 hit.current?.(ed.state.doc.lineAt(block.from).number)
                 return true
               },
             },
           }),
-          ...(deck ? [deckField, deckFit] : []),
+          // A deck ends on its own band; any other note can ask for room below.
+          ...(deck ? [deckField, deckFit] : tail),
           pinField,
           ...(tex || deck ? [] : [blankField]),
           highlightActiveLineGutter(),

@@ -758,6 +758,30 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 .nt-cm-em { font-style: italic; }
 .nt-cm-del { text-decoration: line-through; color: var(--rk-mute); }
 .nt-cm-link, .nt-cm-wiki { color: var(--rk-cite-t); text-decoration: underline; text-underline-offset: 2px; }
+/* `[[another note]]` — a label, as a tag, a project and a person are: it says
+   what it is by its left end, a sheet with its corner folded, and pressed it
+   opens that note in a tab of its own. The sheet is a mask in the label's own
+   colour (as .nt-auth's face is). */
+.nt-cm-wiki {
+  --sheet: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 1h6.5L13 4.5V15H3z M9 1.5V5h3.5' fill='none' stroke='%23000' stroke-width='1.4' stroke-linejoin='round'/%3E%3Cpath d='M5.5 8h5M5.5 10.5h5' stroke='%23000' stroke-width='1.2'/%3E%3C/svg%3E");
+  display: inline-block; position: relative; max-width: 100%;
+  padding: 0 7px 0 22px; line-height: 1.6;
+  border: 1px solid var(--rk-cite-t, #1d4ed8);
+  background: color-mix(in srgb, var(--rk-cite-t, #1d4ed8) 9%, var(--rk-panel, #fff));
+  font-size: .92em; text-decoration: none; cursor: pointer;
+}
+.nt-cm-wiki::before {
+  content: ''; position: absolute; left: 5px; top: .8em;
+  width: 13px; height: 13px; margin-top: -6.5px;
+  background: currentColor;
+  -webkit-mask: var(--sheet) no-repeat center / 13px 13px;
+  mask: var(--sheet) no-repeat center / 13px 13px;
+}
+.nt-cm-wiki * { text-decoration: none; }
+/* Under the last line: a row for the button that makes room below (tail.js). */
+.nt-tail { height: 1.6em; }
+.nt-tail-key { display: block; text-align: center; cursor: pointer; color: var(--rk-mute); }
+.nt-tail-key:hover, .nt-tail-key.on { color: var(--rk-ink); }
 /* Drawn as a link, so it opens like one — except on the line being edited. */
 .nt-cm-link { cursor: pointer; }
 /* A link is the link's colour all through: CodeMirror's own url colour (#219)
@@ -1225,7 +1249,11 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 }
 :root[data-lilak-theme="dark"] .nt-due-in.nt-due-late { background: color-mix(in srgb, var(--rk-danger, #f87171) 18%, var(--rk-panel)); }
 :root[data-lilak-theme="dark"] .nt-urgent { color: #fb923c; }
-:root[data-lilak-theme="dark"] .nt-hl { background: var(--rk-hl); color: var(--rk-ink); }
+/* A marker pen on a dark page: the pen's own yellow under dark ink, as on
+   paper. (--rk-hl, the list's quiet search mark, was all but the page's own
+   colour here.) */
+:root[data-lilak-theme="dark"] .nt-hl { background: #e3c44f; color: #17150a; }
+:root[data-lilak-theme="dark"] .nt-hl * { color: inherit; }
 :root[data-lilak-theme="dark"] :is(.nt-ref-no, .nt-dot) { color: var(--rk-danger, #f87171); }
 :root[data-lilak-theme="dark"] .nt-texerr { color: var(--rk-danger, #f87171); }
 :root[data-lilak-theme="dark"] .nt-dupmark { border-color: var(--rk-danger, #f87171); color: var(--rk-danger, #f87171); }
