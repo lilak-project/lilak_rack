@@ -203,26 +203,26 @@ export const isAudio = (src) => /\.(webm|m4a|mp3|ogg|wav|aac)$/i.test(String(src
  *  `line` the (1-based) line it is on. Files that are not pictures (a pdf, a
  *  .tex) are embeds too, but not figures, and get no number. */
 /** A note cut into slides. `blocks` are what the renderer drew, top to bottom:
- *  { line, top, bottom, rule, h1, tags }. The first line, after any that are just
- *  the note's tags, is the title slide's one line of content, and only it; empty
- *  or a `#` heading, the title stands alone and that content opens the next slide. After that a slide ends at a `---` (`rule`, on neither
- *  side), before a `#` heading, or before a block that would run past `room`
- *  — one too tall for any slide is left alone at the top of its own, to be cut.
+ *  { line, top, bottom, rule, h1, tags }. Slide 1 is the title slide, and none
+ *  of the body: the title and what the deck's own fields say (subtitle,
+ *  presenter, date — slides.jsx Cover), always `{ from: 0, to: -1 }`. The body
+ *  starts on slide 2, past any lines at the top that are just the note's tags.
+ *  A slide ends at a `---` (`rule`, on neither side), before a `#` heading, or
+ *  before a block that would run past `room` — one too tall for any slide is
+ *  left alone at the top of its own, to be cut.
  *  → [{ from, to, spare }], source lines, 1-based and inclusive, and how much of
- *  `room` the slide left empty; [0] is the title slide, `{ from: 0, to: -1 }`
- *  when a `---` came first. */
+ *  `room` the slide left empty. */
 export function cutPages(blocks, room) {
   const pages = []
-  let page = null, top = 0, first = 1
+  let page = null, top = 0
   for (const b of blocks) {
-    if (b.tags && !pages.length) { first = b.line + 1; continue }
-    if (!pages.length && !b.rule && (b.line !== first || b.h1)) pages.push({ from: 0, to: -1, spare: 0 })
+    if (b.tags && !pages.length) continue
+    if (!pages.length) pages.push({ from: 0, to: -1, spare: 0 })
     if (b.rule) {
       if (page) page.to = b.line - 1
-      else if (!pages.length) pages.push({ from: 0, to: -1, spare: 0 })
       page = null
     } else {
-      if (!page || pages.length === 1 || b.h1 || b.bottom - top > room) {
+      if (!page || b.h1 || b.bottom - top > room) {
         if (page) page.to = b.line - 1
         page = { from: b.line, to: Infinity, spare: 0 }
         top = b.top
@@ -381,7 +381,14 @@ export function blankHeights(lines, caret, starts, cover = false) {
 }
 export function pageTexts(body, pages) {
   const lines = String(body || '').split('\n')
-  return pages.map((p) => lines.slice(p.from - 1, p.to).join('\n'))
+  return pages.map((p) => outdent(lines.slice(p.from - 1, p.to)).join('\n'))
+}
+/** A slide that starts inside a list, on an item of a list within a list: its
+ *  lines as far to the left as that first item. Indented four spaces with
+ *  nothing above, it was a block of code. */
+function outdent(lines) {
+  const ind = /^[ \t]+(?=(?:[-*+]|\d+[.)])[ \t])/.exec(lines[0] || '')?.[0].length || 0
+  return ind ? lines.map((l) => l.replace(new RegExp(`^[ \\t]{0,${ind}}`), '')) : lines
 }
 
 export function figureList(body) {

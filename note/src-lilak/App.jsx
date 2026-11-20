@@ -21,9 +21,10 @@ import {
 import { linkProject, remoteDocOf } from 'racklist/portal.js'
 import { numberHeadings, TAG_RE, TAG_COMMENT, URGENT_RE, outsideCode, replaceOutsideCode, untagged, setTagChoices, setProjChoices, setCiteChoices, setAuthorChoices, setJobChoices, authorShow } from './marks.js'
 import SourceArea from './SourceArea.jsx'
+import ReviewPane from './review.jsx'
 import { wrapSel } from './liveedit.js'
 import { Rendered } from './reading.jsx'
-import { DeckMeasure, SlidePrint, SlideShow, enterFull, gapBefore, slideH } from './slides.jsx'
+import { DeckMeasure, SlidePrint, SlideShow, coverOf, enterFull, gapBefore, slideH } from './slides.jsx'
 import { rebase, retext } from './merge3.js'
 import { toolsFor } from './tools/index.js'
 import { flowItems, noteSteps, noteFlow, joinFlow } from './flow.js'
@@ -782,6 +783,9 @@ const MODES = {
   live: { kind: 'md', label: () => 'MD', paint: true },
   raw: { kind: 'md', label: () => tr("nt_raw") },
   slide: { kind: 'md', label: () => tr("nt_slide"), paint: true },
+  // Markdown read in pieces, with evidence and comments (review.jsx): no
+  // editor, so none of the markdown tools.
+  review: { kind: 'review', label: () => 'Review', hint: () => tr("nt_rv_hint") },
   tex: { kind: 'tex', label: () => 'LaTeX', hint: () => tr("nt_tex"), format: 'tex' },
 }
 
@@ -841,6 +845,23 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
   }, [wide])
+  // The title slide's fields, typed on the slide itself (slides.jsx Cover).
+  useEffect(() => {
+    const el = root.current
+    if (!el) return undefined
+    const typed = (e) => {
+      const { k, v } = e.detail
+      setF((st) => {
+        if (!st) return st
+        const fields = { ...(st.fields || {}) }
+        if (v.trim()) fields[k] = v
+        else delete fields[k]
+        return { ...st, fields }
+      })
+    }
+    el.addEventListener('nt-cover', typed)
+    return () => el.removeEventListener('nt-cover', typed)
+  }, [!!f])   // eslint-disable-line react-hooks/exhaustive-deps
   // Which tool is open, '' for shut. The toolbox belongs to THIS tab: moving
   // to another takes it away with this editor, and that tab opens and shuts
   // its own. Kept with the rest of where-you-were (scrolled.js).
@@ -1573,7 +1594,7 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
                 const fields = { ...(st.fields || {}) }
                 if (MODES[v].format) fields.format = MODES[v].format
                 else delete fields.format
-                if (v === 'slide' || v === 'raw') fields.mode = v
+                if (v === 'slide' || v === 'raw' || v === 'review') fields.mode = v
                 else delete fields.mode
                 return { ...st, fields }
               })
@@ -1611,7 +1632,7 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
       {/* One line: the title, its tags, and the fold — a button with a word on
           it, big enough to hit — which opens the date and the file's name below. */}
       {isDeck ? <DeckMeasure body={headed(f)} h={deckH} onPages={setPages} /> : null}
-      {showing != null ? <SlideShow title={f.title} body={headed(f)} pages={pages} h={deckH} start={showing} onClose={() => setShowing(null)} /> : null}
+      {showing != null ? <SlideShow title={f.title} cover={coverOf(f.fields)} body={headed(f)} pages={pages} h={deckH} start={showing} onClose={() => setShowing(null)} /> : null}
       <div className="nt-work">
         <div className="nt-main">
               <div className="nt-titlerow" style={gut ? { '--nt-gut': `${gut}px` } : undefined}>
@@ -1680,7 +1701,17 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
           {/* Reading, in place of the text — the same sheet the print page
               draws. Everything else about the tab stays where it was, tools
               and all, so it is one press back. */}
-          {read && !tex && view !== 'slide' ? (
+          {mode === 'review' ? (
+            <ReviewPane id={id} version={n?.version} references={references} say={say}
+              flush={async () => { if (dirty) await saveNote() }}
+              onNote={(note) => { sent.current = null; setN(note); setF(note); live.current = { f: note, n: note } }}
+              // The file's new version, and its comments in what is held here,
+              // so the next save is neither a conflict nor a change of its own.
+              onTouched={() => ask(`/notes/${encodeURIComponent(id)}`).then(({ body }) => {
+                setN(body)
+                setF((s) => ({ ...s, fields: { ...s.fields, reviews: body.fields?.reviews } }))
+              }).catch((e) => say(String(e.message || e)))} />
+          ) : read && !tex && view !== 'slide' ? (
             <div className="nt-read" ref={(el) => { if (el) el.scrollTop = placeBack(`${id}:read`) || 0 }}
               onScroll={(e) => placeSave(`${id}:read`, e.currentTarget.scrollTop)}>
               <article className="nt-sheet">
@@ -1696,7 +1727,7 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
               is saved is what is typed, character for character. */}
           <SourceArea key={`${view}${tex}${!!f.fields?.numbered}`} live={view !== 'raw'} tex={tex} at={id}
             numbered={!!f.fields?.numbered}
-            deck={isDeck ? { pages, title: f.title, h: deckH } : null}
+            deck={isDeck ? { pages, title: f.title, h: deckH, cover: coverOf(f.fields) } : null}
             pins={gutter} goto={go} openAt={openAt}
             onGutter={setGut}
             // A number pressed means whichever the ribbon says it means.
@@ -1771,7 +1802,7 @@ export function PrintView({ ids }) {
         <span>{busy || (deck ? tr("nt_slides_pdf_hint") : tr("nt_print_hint"))}</span>
       </div>
       {notes.map((n) => n.fields?.mode === 'slide' && !texNote(n) ? (
-        <SlidePrint key={n.id} title={n.title} body={headed(n)} ratio={n.fields.ratio}
+        <SlidePrint key={n.id} title={n.title} cover={coverOf(n.fields)} body={headed(n)} ratio={n.fields.ratio}
           only={notes.every((m) => m.fields?.mode === 'slide' && !texNote(m) && slideH(m.fields.ratio) === slideH(n.fields.ratio))} />
       ) : (
         <article key={n.id} className="nt-sheet">

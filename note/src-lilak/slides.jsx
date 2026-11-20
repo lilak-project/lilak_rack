@@ -35,9 +35,15 @@ export function blocksOf(root) {
   const base = root.getBoundingClientRect().top
   const out = []
   const push = (line, r, rule, h1) => { if (line) out.push({ line, top: r.top - base, bottom: r.bottom - base, rule, h1 }) }
+  // A list item's own words, then each item of a list inside it: a top item
+  // with a long list under it was ONE block, taller than a slide, and no
+  // slide could start inside it — it ran off the bottom of its page.
+  const nested = (n) => n.nodeType === 1 && n.matches('ul,ol')
   const lines = (el) => {
     const line = Number(el.dataset.line)
-    if (!el.querySelector(':scope > br')) { push(line, el.getBoundingClientRect()); return }
+    const kids = [...el.childNodes]
+    const inner = kids.filter(nested)
+    if (!inner.length && !el.querySelector(':scope > br')) { push(line, el.getBoundingClientRect()); return }
     let k = 0, first = null, last = null
     const flush = () => {
       if (!first) return
@@ -47,16 +53,18 @@ export function blocksOf(root) {
       push(line + k, r.getBoundingClientRect())
       first = null
     }
-    for (const n of el.childNodes) {
-      if (n.nodeName === 'BR') { flush(); k += 1 } else { first ??= n; last = n }
+    for (const n of kids) {
+      if (nested(n)) break
+      if (n.nodeName === 'BR') { flush(); k += 1 } else if (n.nodeType === 1 || n.textContent.trim()) { first ??= n; last = n }
     }
     flush()
+    for (const list of inner) for (const li of list.children) item(li)
   }
+  // An item in a loose list holds its words in a <p>.
+  const item = (li) => lines(li.children.length === 1 && li.firstElementChild.matches('p') ? li.firstElementChild : li)
   for (const el of root.children) {
-    if (el.matches('ul,ol')) {
-      // An item in a loose list holds its words in a <p>.
-      for (const li of el.children) lines(li.children.length === 1 && li.firstElementChild.matches('p') ? li.firstElementChild : li)
-    } else if (el.matches('p')) lines(el)
+    if (el.matches('ul,ol')) for (const li of el.children) item(li)
+    else if (el.matches('p')) lines(el)
     else push(Number(el.dataset.line), el.getBoundingClientRect(), el.matches('hr'), el.matches('h1'))
   }
   return out
@@ -105,19 +113,46 @@ export function DeckMeasure({ body, h, onPages }) {
 }
 
 // ── in the editor ─────────────────────────────────────────────────────────
-/** The top of the title slide. With a line of content under it, it is the
- *  upper half and `Fill` is what is left below that line. */
+/** What the title slide says under the title: the deck's own fields, never
+ *  the body (cutPages). `when` is the date of the talk, not the note's. */
+export const COVER = ['subtitle', 'presenter', 'when']
+export const coverOf = (fields) => Object.fromEntries(COVER.map((k) => [k, String(fields?.[k] ?? '')]))
+
+/** The title slide in the editor: the title, and the cover's fields written
+ *  where they stand on the slide. A word typed goes up as `nt-cover` (App.jsx
+ *  keeps it in the note's fields); the boxes are updated in place, never drawn
+ *  anew, so the one being typed in keeps its caret. */
 class Cover extends WidgetType {
-  constructor(title, alone) { super(); this.title = title; this.alone = alone }
-  eq(other) { return other.title === this.title && other.alone === this.alone }
+  constructor(title, cover) { super(); this.title = title; this.cover = cover || coverOf() }
+  eq(other) { return other.title === this.title && COVER.every((k) => other.cover[k] === this.cover[k]) }
   toDOM() {
     const box = document.createElement('div')
-    box.className = `nt-deck-cover-ed${this.alone ? ' nt-deck-cover-alone' : ''}`
+    box.className = 'nt-deck-cover-ed'
     const h = document.createElement('h1')
-    h.textContent = this.title
     box.appendChild(h)
+    const field = (k, cls) => {
+      const i = document.createElement('input')
+      i.className = `nt-cover-in ${cls}`
+      i.dataset.k = k
+      i.placeholder = tr(`nt_cover_${k}`)
+      i.spellcheck = false
+      i.addEventListener('input', () => i.dispatchEvent(new CustomEvent('nt-cover', { bubbles: true, detail: { k, v: i.value } })))
+      return i
+    }
+    box.appendChild(field('subtitle', 'nt-cover-sub'))
+    const by = document.createElement('div')
+    by.className = 'nt-cover-by'
+    by.append(field('presenter', 'nt-cover-who'), field('when', 'nt-cover-when'))
+    box.appendChild(by)
+    this.updateDOM(box)
     return box
   }
+  updateDOM(box) {
+    box.querySelector('h1').textContent = this.title
+    for (const i of box.querySelectorAll('input')) if (i !== document.activeElement) i.value = this.cover[i.dataset.k] || ''
+    return true
+  }
+  ignoreEvent() { return true }
 }
 /** How much empty page stands above the line into slide `i`: what the slide
  *  before it left over, and its bottom margin. The title slide fills itself. */
@@ -143,16 +178,6 @@ class Cut extends WidgetType {
 // side at different sizes only get a rougher guess for cuts not yet drawn.
 let deckK = 1
 export const setDeckScale = (k) => { deckK = k }
-class Fill extends WidgetType {
-  eq() { return true }
-  toDOM() {
-    const box = document.createElement('div')
-    box.className = 'nt-deck-fill'
-    return box
-  }
-}
-const FILL = Decoration.widget({ widget: new Fill(), block: true, side: 1 })
-const SUB = Decoration.line({ class: 'nt-deck-sub' })
 
 class Num extends GutterMarker {
   constructor(n) { super(); this.n = n }
@@ -219,11 +244,9 @@ function spaceLines(state, pages) {
   return Decoration.set(marks, true)
 }
 
-function drawDeck(state, { pages, title }, gaps) {
+function drawDeck(state, { pages, title, cover }, gaps) {
   const gap = (i) => gaps?.[i] ?? gapBefore(pages, i)
-  const first = pages[0]?.from > 0 && pages[0].from <= state.doc.lines ? state.doc.line(pages[0].from) : null
-  const marks = [Decoration.widget({ widget: new Cover(title, !first), block: true, side: -2 }).range(0)]
-  if (first) marks.push(SUB.range(first.from), FILL.range(first.to))
+  const marks = [Decoration.widget({ widget: new Cover(title, cover), block: true, side: -2 }).range(0)]
   const nums = []
   pages.slice(1).forEach((p, i) => {
     if (p.from > state.doc.lines) return
@@ -358,7 +381,16 @@ export const deckGutter = (config) => gutter({
  *  and by the time the show has been drawn the gesture is over. */
 export const enterFull = () => { document.documentElement.requestFullscreen?.().catch(() => {}) }
 
-export function SlideShow({ title, body, pages, h, start, onClose }) {
+/** The title slide's words under the title, as the show and the paper draw them. */
+function CoverText({ cover }) {
+  const by = [cover?.presenter, cover?.when].filter(Boolean).join(' · ')
+  return (<>
+    {cover?.subtitle ? <p className="nt-cover-sub">{cover.subtitle}</p> : null}
+    {by ? <p className="nt-cover-by">{by}</p> : null}
+  </>)
+}
+
+export function SlideShow({ title, cover, body, pages, h, start, onClose }) {
   const slides = useMemo(() => pageTexts(keepBlanks(dropComments(body)), pages), [body, pages])
   const total = Math.max(slides.length, 1)
   const fit = () => Math.min(window.innerWidth / W, window.innerHeight / h)
@@ -402,8 +434,8 @@ export function SlideShow({ title, body, pages, h, start, onClose }) {
     <div className="nt-show" style={{ '--nt-deck-h': `${h}px` }} onClick={(e) => { if (!e.target.closest('a')) move(-1) }}
       onContextMenu={(e) => { e.preventDefault(); move(1) }}>
       <div key={at} className={`nt-deck nt-deck-page${at ? '' : ' nt-deck-cover'}`} style={page}>
-        {at ? null : <h1>{title}</h1>}
-        <Rendered figures={before}>{slides[at] || ''}</Rendered>
+        {at ? null : <><h1>{title}</h1><CoverText cover={cover} /></>}
+        {at ? <Rendered figures={before}>{slides[at] || ''}</Rendered> : null}
         <span className="nt-deck-no">{at + 1} / {total}</span>
       </div>
       <button type="button" className="nt-show-x" aria-label={tr('nt_show_exit')} title={tr('nt_show_exit')}
@@ -418,7 +450,7 @@ export function SlideShow({ title, body, pages, h, start, onClose }) {
 /** The deck for the print page: cut exactly as the show cuts it, one slide to
  *  a sheet of paper the slide's own size (`size` below, in the page's px, so
  *  the PDF is the show and not an A4 with a picture of it). */
-export function SlidePrint({ title, body, ratio, only }) {
+export function SlidePrint({ title, cover, body, ratio, only }) {
   const h = slideH(ratio)
   const [pages, setPages] = useState(null)
   const slides = useMemo(() => (pages ? pageTexts(keepBlanks(dropComments(body)), pages) : []), [body, pages])
@@ -432,8 +464,8 @@ export function SlidePrint({ title, body, ratio, only }) {
       <DeckMeasure body={body} h={h} onPages={setPages} />
       {slides.map((text, at) => (
         <div key={at} className={`nt-deck nt-deck-sheet${at ? '' : ' nt-deck-cover'}`}>
-          {at ? null : <h1>{title}</h1>}
-          <Rendered figures={figs.filter((f) => f.line < (pages[at]?.from ?? 0)).length}>{text}</Rendered>
+          {at ? null : <><h1>{title}</h1><CoverText cover={cover} /></>}
+          {at ? <Rendered figures={figs.filter((f) => f.line < (pages[at]?.from ?? 0)).length}>{text}</Rendered> : null}
           <span className="nt-deck-no">{at + 1} / {slides.length}</span>
         </div>
       ))}

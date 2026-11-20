@@ -234,3 +234,34 @@ assert _merge3(_b, _b.replace("메모", "내 메모"), _b.replace("메모", "받
 assert _merge3("a\nb\nc", "a\n1\nb\nc", "a\nb\n2\nc") == "a\n1\nb\n2\nc"
 assert _merge3(_b, _b, "x") == "x" and _merge3(_b, "y", _b) == "y" and _merge3(_b, "z", "z") == "z"
 print("note: ok")
+
+# ── review: comments kept through saves, evidence written in ──────────────
+from backend.main import NOTES as _RN, SaveBody, ReviewBody, ReplyBody, StateBody, CiteBody, add_review, cite, note_units, put_note, reply_review, review_state   # noqa: E402
+_RN.mkdir(parents=True, exist_ok=True)
+(_RN / "rv.md").write_text("---\ntitle: rv\n---\n\n첫 문장은 3 MeV. 둘째.\n", encoding="utf-8")
+_me = {"authenticated": True, "username": "jw"}
+_r = add_review("rv", ReviewBody(text="근거?", level="sentence", n=1), _me)
+reply_review("rv", _r["id"], ReplyBody(text="고침", via="agent"), _me)
+_v = note_units("rv", "paragraph", _me)
+assert _v["units"][0]["comments"][0]["replies"][0]["via"] == "agent" and _v["counts"]["none"] == 1
+# a save that never saw the comment does not take it away
+put_note("rv", SaveBody(fields={}, body="첫 문장은 3 MeV. 둘째.\n"), _me)
+_u = note_units("rv", "sentence", _me)["units"][0]
+assert _u["comments"][0]["id"] == _r["id"]
+_n = cite("rv", CiteBody(level="sentence", n=1, hash=_u["hash"], key="kim2026"), _me)
+assert _n["body"] == "첫 문장은 3 MeV [@kim2026]. 둘째.\n"
+_u = note_units("rv", "sentence", _me)
+assert _u["counts"]["none"] == 0 and _u["units"][0]["comments"]        # the hash ignores the mark
+# one piece rewritten in Review: only if it is still what the page showed
+from backend.main import PieceBody, edit_piece   # noqa: E402
+_was = _u["units"][1]["text"]
+assert edit_piece("rv", PieceBody(level="sentence", n=2, was=_was, text="둘째는 고침."), _me)["body"].endswith("둘째는 고침.\n")
+try:
+    edit_piece("rv", PieceBody(level="sentence", n=2, was=_was, text="x"), _me)
+    raise AssertionError("an edit over a changed piece went through")
+except HTTPException as e:
+    assert e.status_code == 409
+review_state("rv", _r["id"], StateBody(state="resolved"), _me)
+assert note_units("rv", "doc", _me)["counts"]["resolved"] == 1
+(_RN / "rv.md").unlink()
+print("review ok")

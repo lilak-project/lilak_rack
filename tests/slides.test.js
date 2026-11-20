@@ -9,16 +9,16 @@ const INF = Infinity
 const cutPages = (blocks, room) => cut(blocks, room).map(({ from, to }) => ({ from, to }))
 
 describe('cutting a note into slides', () => {
-  it('the first line is the title slide, alone', () => {
-    expect(cutPages([b(1, 0, 40), b(3, 50, 90)], 1000)).toEqual([{ from: 1, to: 2 }, { from: 3, to: INF }])
+  it('the title slide holds none of the body: the first line opens slide 2', () => {
+    expect(cutPages([b(1, 0, 40), b(3, 50, 90)], 1000)).toEqual([{ from: 0, to: -1 }, { from: 1, to: INF }])
   })
   it('a block that would run past the page starts the next one', () => {
     expect(cutPages([b(1, 0, 10), b(2, 20, 60), b(4, 70, 110), b(6, 120, 160)], 100))
-      .toEqual([{ from: 1, to: 1 }, { from: 2, to: 5 }, { from: 6, to: INF }])
+      .toEqual([{ from: 0, to: -1 }, { from: 1, to: 3 }, { from: 4, to: INF }])
   })
   it('`---` ends a slide and is on neither side', () => {
     expect(cutPages([b(1, 0, 10), b(2, 20, 40), b(3, 50, 52, { rule: true }), b(4, 60, 90)], 1000))
-      .toEqual([{ from: 1, to: 1 }, { from: 2, to: 2 }, { from: 4, to: INF }])
+      .toEqual([{ from: 0, to: -1 }, { from: 1, to: 2 }, { from: 4, to: INF }])
   })
   it('a `---` before anything leaves the title slide on its own', () => {
     expect(cutPages([b(1, 0, 2, { rule: true }), b(2, 10, 30)], 1000))
@@ -26,14 +26,14 @@ describe('cutting a note into slides', () => {
   })
   it('a # heading starts a slide', () => {
     expect(cutPages([b(1, 0, 10), b(2, 20, 30), b(3, 40, 50, { h1: true }), b(4, 60, 70)], 1000))
-      .toEqual([{ from: 1, to: 1 }, { from: 2, to: 2 }, { from: 3, to: INF }])
+      .toEqual([{ from: 0, to: -1 }, { from: 1, to: 2 }, { from: 3, to: INF }])
   })
   it('a block too tall for any page stays on its own, to be cut', () => {
     expect(cutPages([b(1, 0, 10), b(2, 20, 500), b(3, 510, 540)], 100))
-      .toEqual([{ from: 1, to: 1 }, { from: 2, to: 2 }, { from: 3, to: INF }])
+      .toEqual([{ from: 0, to: -1 }, { from: 1, to: 1 }, { from: 2, to: 2 }, { from: 3, to: INF }])
   })
   it('a slide knows how much of its page it left empty', () => {
-    expect(cut([b(1, 0, 10), b(2, 20, 50), b(4, 60, 70), b(6, 80, 400)], 100).map((p) => p.spare)).toEqual([90, 50, 0])
+    expect(cut([b(1, 0, 10), b(2, 20, 50), b(4, 60, 70), b(6, 80, 400)], 100).map((p) => p.spare)).toEqual([0, 30, 0])
   })
   it('a slide is the lines it covers', () => {
     expect(pageTexts('a\nb\nc\nd', [{ from: 1, to: 2 }, { from: 4, to: INF }])).toEqual(['a\nb', 'd'])
@@ -84,7 +84,7 @@ describe('blankHeights', () => {
 describe('what the show and the editor both read', () => {
   it('passes tags over when it looks for the title slide\'s line', () => {
     expect(cutPages([b(1, 0, 10, { tags: true }), b(2, 20, 30), b(5, 40, 50)], 100))
-      .toEqual([{ from: 2, to: 4 }, { from: 5, to: INF }])
+      .toEqual([{ from: 0, to: -1 }, { from: 2, to: INF }])
   })
   it('leaves the title alone when the first line is empty or a # heading', () => {
     const alone = { from: 0, to: -1 }

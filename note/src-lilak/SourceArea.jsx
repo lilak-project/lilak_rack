@@ -357,7 +357,7 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
   // Where the slides were cut, and the title that is the first of them.
   useEffect(() => {
     if (deck) view.current?.dispatch({ effects: setDeck.of(deck) })
-  }, [deck?.pages, deck?.title])   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [deck?.pages, deck?.title, JSON.stringify(deck?.cover)])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // The slide, fitted to this pane the way the show fits it to the screen.
   // The pane's scroll bar is kept out of it (`scrollbar-gutter`, note.css), or

@@ -13,6 +13,17 @@ describe('what can start a slide', () => {
     }))
     expect(blocksOf(root).map((b) => b.line)).toEqual([1, 2, 3, 4])
   })
+  it('an item with a list under it is its own words, then each item under it', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<ul data-line="1"><li data-line="1">top<br>more<ul data-line="3"><li data-line="3">a</li>'
+      + '<li data-line="4">b<ol data-line="5"><li data-line="5">c</li></ol></li></ul></li><li data-line="6">d</li></ul>'
+    expect(blocksOf(root).map((b) => b.line)).toEqual([1, 2, 3, 4, 5, 6])
+  })
+  it('a slide starting inside a list starts at the left, not as code', async () => {
+    const { pageTexts } = await import('../note/src-lilak/marks.js')
+    const body = '- top\n  - a\n    - b\n      - c\n  - d'
+    expect(pageTexts(body, [{ from: 1, to: 2 }, { from: 3, to: 5 }])).toEqual(['- top\n  - a', '- b\n  - c\n- d'])
+  })
 })
 
 describe('slides follow their lines', async () => {

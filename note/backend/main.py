@@ -44,6 +44,11 @@ from pydantic import BaseModel
 from lilak_portal_auth import identity, manager, signed_in
 from rackstore.store import Bin, mount_spa
 
+try:                                   # run from backend/ (portal-serve.sh), or as backend.main (tests)
+    import review as RV
+except ImportError:
+    from backend import review as RV
+
 DATA = Path(os.environ.get("NOTE_DATA_DIR", "./data"))
 PROJECT = os.environ.get("PORTAL_PROJECT", "")
 DIST = Path(os.environ.get("NOTE_DIST_DIR", "/app/note/dist"))
@@ -296,7 +301,10 @@ def _summary(n: dict) -> dict:
     return {
         "id": n["id"], "title": n["title"], "date": n["date"], "tags": n["tags"],
         "authors": n["authors"],
-        "fields": n["fields"], "excerpt": first[:160], "version": n["version"],
+        # The review comments stay with the note itself: a long thread on
+        # every note would ride along with the whole list.
+        "fields": {k: v for k, v in n["fields"].items() if k != "reviews"},
+        "excerpt": first[:160], "version": n["version"],
         "words": len(n["body"].split()), "bytes": n["bytes"],
         "todo": sum(1 for m in todos if m.group(2) == " "),
         "done": sum(1 for m in todos if m.group(2) != " "),
@@ -619,7 +627,161 @@ def put_note(note_id: str, body: SaveBody, _: dict = Depends(signed_in)):
         "date": cur["date"] if body.date is None else body.date.strip(),
         **(cur["fields"] if body.fields is None else body.fields),
     }
+    # The comments are written by their own calls (below) and by nothing else:
+    # a page or an agent saving the note hands back the fields as IT read them,
+    # and a comment made since would go.
+    meta.pop("reviews", None)
+    if cur["fields"].get("reviews"):
+        meta["reviews"] = cur["fields"]["reviews"]
     _atomic_write(p, _join(meta, cur["body"] if body.body is None else body.body))
+    return _seen(_read(p))
+
+
+# ── review: the note in pieces, comments on them (review.py) ──────────────
+REVIEW_LOCK = threading.Lock()       # read-change-write of one note's comments
+
+
+class ReviewBody(BaseModel):
+    text: str
+    level: str = "doc"
+    n: Optional[int] = None
+    anchor: Optional[dict] = None
+    via: Optional[str] = None          # an agent's token, by name (MCP)
+
+
+class ReplyBody(BaseModel):
+    text: str
+    via: Optional[str] = None
+
+
+class StateBody(BaseModel):
+    state: str
+
+
+class CiteBody(BaseModel):
+    level: str
+    n: int
+    hash: str
+    key: str
+
+
+def _level(level: str) -> str:
+    if level not in RV.LEVELS:
+        raise HTTPException(400, f"level은 {', '.join(RV.LEVELS)} 중 하나입니다.")
+    return level
+
+
+def _by(me: dict) -> str:
+    return me.get("name") or me.get("username") or me.get("email") or ""
+
+
+def _note(note_id: str) -> tuple:
+    p = _path(note_id)
+    if not p.is_file():
+        raise HTTPException(404, "그 노트가 없습니다.")
+    return p, _read(p)
+
+
+def _write_reviews(p: Path, n: dict, reviews: list) -> None:
+    _atomic_write(p, _join({"title": n["title"], "date": n["date"], **n["fields"], "reviews": reviews}, n["body"]))
+
+
+def _piece(body: str, level: str, n: Optional[int]) -> dict:
+    pieces = RV.units(body, level)
+    if level != "doc" and not (n and 1 <= n <= len(pieces)):
+        raise HTTPException(409, "그 칸이 더 이상 없습니다 — 다시 읽어 주세요.")
+    return pieces[(n or 1) - 1]
+
+
+@app.get("/api/notes/{note_id}/units")
+def note_units(note_id: str, level: str = "sentence", _: dict = Depends(signed_in)) -> dict:
+    _, n = _note(note_id)
+    out = RV.place(n["body"], n["fields"].get("reviews") or [], _level(level))
+    for u in out["units"]:
+        u.pop("start"), u.pop("end")
+    return {"id": n["id"], "version": n["version"], **out}
+
+
+@app.post("/api/notes/{note_id}/reviews", status_code=201)
+def add_review(note_id: str, body: ReviewBody, me: dict = Depends(signed_in)) -> dict:
+    if not body.text.strip():
+        raise HTTPException(400, "코멘트가 비어 있습니다.")
+    with REVIEW_LOCK:
+        p, n = _note(note_id)
+        level = _level(body.anchor.get("level", "doc") if body.anchor else body.level)
+        a = body.anchor or RV.anchor(_piece(n["body"], level, body.n), level)
+        r = {"id": secrets.token_hex(4), "anchor": a, "text": body.text.strip(), "by": _by(me),
+             **({"via": body.via} if body.via else {}), "at": _now(), "state": "open", "replies": []}
+        _write_reviews(p, n, [*(n["fields"].get("reviews") or []), r])
+    return r
+
+
+def _change_review(note_id: str, rid: str, change) -> dict:
+    with REVIEW_LOCK:
+        p, n = _note(note_id)
+        reviews = n["fields"].get("reviews") or []
+        r = next((x for x in reviews if x.get("id") == rid), None)
+        if not r:
+            raise HTTPException(404, "그 코멘트가 없습니다.")
+        change(r)
+        _write_reviews(p, n, reviews)
+    return r
+
+
+@app.post("/api/notes/{note_id}/reviews/{rid}/replies")
+def reply_review(note_id: str, rid: str, body: ReplyBody, me: dict = Depends(signed_in)) -> dict:
+    if not body.text.strip():
+        raise HTTPException(400, "답글이 비어 있습니다.")
+    reply = {"text": body.text.strip(), "by": _by(me), **({"via": body.via} if body.via else {}), "at": _now()}
+    return _change_review(note_id, rid, lambda r: r.setdefault("replies", []).append(reply))
+
+
+@app.post("/api/notes/{note_id}/reviews/{rid}/state")
+def review_state(note_id: str, rid: str, body: StateBody, _: dict = Depends(signed_in)) -> dict:
+    """Resolved, or open again. The screen's alone: the agents' tools do not
+    offer it (a person decides a comment is answered)."""
+    if body.state not in ("open", "resolved"):
+        raise HTTPException(400, "state는 open 또는 resolved입니다.")
+    return _change_review(note_id, rid, lambda r: r.update(state=body.state))
+
+
+@app.post("/api/notes/{note_id}/cite")
+def cite(note_id: str, body: CiteBody, _: dict = Depends(signed_in)) -> dict:
+    """Evidence for one piece: `[@key]` at its end, written into the body —
+    the text is the record of it."""
+    key = body.key.strip()
+    if not re.fullmatch(r"[^\]\s]+", key):
+        raise HTTPException(400, "잘못된 키입니다.")
+    return _rewrite_piece(note_id, body.level, body.n, lambda u: u["hash"] == body.hash,
+                          lambda u: RV.cite(u["text"], key))
+
+
+class PieceBody(BaseModel):
+    level: str
+    n: int
+    was: str                           # the piece as the page showed it
+    text: str
+
+
+@app.post("/api/notes/{note_id}/piece")
+def edit_piece(note_id: str, body: PieceBody, _: dict = Depends(signed_in)) -> dict:
+    """One piece written anew, in Review. Only if it is still what the page
+    showed, mark for mark: an agent's `[@key]` added meanwhile is not lost."""
+    return _rewrite_piece(note_id, body.level, body.n, lambda u: u["text"] == body.was,
+                          lambda u: body.text)
+
+
+def _rewrite_piece(note_id: str, level: str, n_: int, still, make) -> dict:
+    with REVIEW_LOCK:
+        p, n = _note(note_id)
+        if _level(level) == "doc":
+            raise HTTPException(400, "문서 전체는 한 칸으로 고칠 수 없습니다.")
+        u = RV.units(n["body"], level)
+        u = u[n_ - 1] if 1 <= n_ <= len(u) else None
+        if not u or not still(u):
+            raise HTTPException(409, "그 칸이 바뀌었습니다 — 다시 읽어 주세요.")
+        text = n["body"][:u["start"]] + make(u) + n["body"][u["end"]:]
+        _atomic_write(p, _join({"title": n["title"], "date": n["date"], **n["fields"]}, text))
     return _seen(_read(p))
 
 

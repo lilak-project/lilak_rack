@@ -1040,12 +1040,15 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 }
 .nt-deck .katex-display { margin: 0 0 .5em; }
 .nt-deck p > .katex-display:last-child { margin-bottom: 0; }
-/* Slide 1: the note's title and the line under it, in the middle of the page. */
+/* Slide 1: the note's title, and under it what the deck's fields say (Cover). */
 .nt-deck-cover { display: flex; flex-direction: column; align-items: center; text-align: center; }
 .nt-deck-cover h1, .nt-deck-cover-ed h1 { margin: 0; font-size: 2.2em; font-weight: 600; color: var(--nt-deck-head); }
-/* The title a little above the middle, and what is under it further down, where
-   a name goes. The editor's title slide (below) is laid out to the same marks. */
-.nt-deck.nt-deck-cover > h1 { display: flex; align-items: flex-end; min-height: calc(var(--nt-deck-h) * .46 - 40px); margin: 0 0 calc(var(--nt-deck-h) * .2); }
+/* The title a little above the middle, the subtitle under it, and the presenter
+   and the date further down, where a name goes. The editor's title slide
+   (below) is laid out to the same marks. */
+.nt-deck.nt-deck-cover > h1 { display: flex; align-items: flex-end; min-height: calc(var(--nt-deck-h) * .46 - 40px); margin: 0 0 calc(var(--nt-deck-h) * .04); }
+.nt-deck-cover .nt-cover-sub { margin: 0; font-size: 1.25em; line-height: 1.4; color: var(--nt-deck-ink); }
+.nt-deck-cover .nt-cover-by { margin: calc(var(--nt-deck-h) * .14) 0 0; color: var(--nt-deck-dim); }
 
 /* In the editor: the page, drawn at `--nt-k` of its size (SourceArea) with the
    same type and margins, so a line breaks where it breaks in the show. What
@@ -1189,14 +1192,22 @@ body.nt-paper #root { height: auto; min-height: 100%; }
   max-height: calc((var(--nt-deck-h) - 80px) * var(--nt-k, 1) - 1em) !important;
 }
 .nt-deck-cover-ed {
-  box-sizing: border-box; width: calc(1000px * var(--nt-k, 1)); height: calc(var(--nt-deck-h) * .66 * var(--nt-k, 1));
-  padding-bottom: calc(var(--nt-deck-h) * .2 * var(--nt-k, 1));
+  box-sizing: border-box; width: calc(1000px * var(--nt-k, 1)); height: calc(var(--nt-deck-h) * var(--nt-k, 1));
+  padding-top: calc(40px * var(--nt-k, 1));
   margin-left: calc(-50px * var(--nt-k, 1));
-  display: flex; align-items: flex-end; justify-content: center; text-align: center;
+  display: flex; flex-direction: column; align-items: center; text-align: center;
 }
-.nt-deck-cover-alone { height: calc(var(--nt-deck-h) * var(--nt-k, 1)); padding-bottom: calc(var(--nt-deck-h) * .54 * var(--nt-k, 1)); }
-.nt-deck-fill { height: calc((var(--nt-deck-h) * .34 - 60px) * var(--nt-k, 1)); }
-.nt-raw.nt-slide .cm-line.nt-deck-sub { text-align: center; }
+.nt-deck-cover-ed h1 { display: flex; align-items: flex-end; justify-content: center; min-height: calc((var(--nt-deck-h) * .46 - 40px) * var(--nt-k, 1)); margin-bottom: calc(var(--nt-deck-h) * .04 * var(--nt-k, 1)); }
+/* The cover's fields, written where they stand: a box only when looked for. */
+.nt-cover-in {
+  box-sizing: border-box; width: 80%; padding: 0 4px; border: 0; border-bottom: 1px dashed transparent;
+  background: none; color: var(--nt-deck-ink); font: inherit; text-align: center; outline: none;
+}
+.nt-cover-in:hover, .nt-cover-in:focus, .nt-cover-in:placeholder-shown { border-bottom-color: var(--rk-edge); }
+.nt-cover-in::placeholder { color: var(--nt-deck-dim); opacity: .6; }
+.nt-cover-in.nt-cover-sub { font-size: 1.25em; line-height: 1.4; }
+.nt-deck-cover-ed .nt-cover-by { display: flex; justify-content: center; gap: 1em; width: 80%; margin-top: calc(var(--nt-deck-h) * .14 * var(--nt-k, 1)); }
+.nt-cover-by .nt-cover-in { width: auto; flex: 0 1 14em; min-width: 0; color: var(--nt-deck-dim); }
 /* Between two slides: the empty end of the last (`--nt-gap`, page pixels), one
    solid line with a hair of room round it, and the next slide's top margin.
    Height rather than margin: CodeMirror measures the border box. */
@@ -1249,10 +1260,10 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 }
 :root[data-lilak-theme="dark"] .nt-due-in.nt-due-late { background: color-mix(in srgb, var(--rk-danger, #f87171) 18%, var(--rk-panel)); }
 :root[data-lilak-theme="dark"] .nt-urgent { color: #fb923c; }
-/* A marker pen on a dark page: the pen's own yellow under dark ink, as on
-   paper. (--rk-hl, the list's quiet search mark, was all but the page's own
-   colour here.) */
-:root[data-lilak-theme="dark"] .nt-hl { background: #e3c44f; color: #17150a; }
+/* A marker on a dark page: a quiet amber under pale ink — bright enough to
+   find, not a lamp. (--rk-hl, the list's search mark, was all but the page's
+   own colour here.) */
+:root[data-lilak-theme="dark"] .nt-hl { background: #8a6d14; color: #fff7dc; }
 :root[data-lilak-theme="dark"] .nt-hl * { color: inherit; }
 :root[data-lilak-theme="dark"] :is(.nt-ref-no, .nt-dot) { color: var(--rk-danger, #f87171); }
 :root[data-lilak-theme="dark"] .nt-texerr { color: var(--rk-danger, #f87171); }
@@ -1270,3 +1281,49 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 /* A link drawn by the renderer (reading, the show) is the browser's own navy
    unless told; on a dark ground it is the rack's light blue. */
 :root[data-lilak-theme="dark"] :is(.nt-read, .nt-show) a { color: var(--rk-cite-t); }
+
+/* ── Review (review.jsx): the note in numbered pieces, comments under them ── */
+.nt-rv { flex: 1; min-height: 0; overflow: auto; background: var(--rk-panel); color: var(--rk-text); font-family: var(--rk-sans); font-size: var(--rk-fs); }
+.nt-rv-bar { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 6px 10px; background: var(--rk-panel); border-bottom: 1px solid var(--rk-line); }
+.nt-rv-bar .rl-seg { flex: 0 0 auto; }
+.nt-rv-bar .rl-seg .rl-btn { padding-inline: 10px; }
+.nt-rv-tally { font-size: var(--fs-small); color: var(--rk-dim); }
+.nt-rv-tally b { color: var(--rk-danger); font-weight: 600; }
+.nt-rv-row { display: grid; grid-template-columns: 3.2em minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 3px 10px; border-bottom: 1px solid var(--rk-line); cursor: pointer; }
+.nt-rv-row:hover { background: var(--rk-hover, var(--rk-gut)); }
+.nt-rv-row.on { background: var(--rk-gut); }
+.nt-rv-doc { font-weight: 600; }
+.nt-rv-n { text-align: right; color: var(--rk-mute); font-family: var(--rk-mono); font-size: var(--fs-small); padding-top: .2em; }
+.nt-rv-text { min-width: 0; overflow-wrap: anywhere; }
+.nt-rv-text > :first-child { margin-top: 0; }
+.nt-rv-text > :last-child { margin-bottom: 0; }
+.nt-rv-text :is(h1, h2, h3, h4, h5, h6) { font-size: 1.05em; margin: 0; }
+.nt-rv-text img { max-width: min(100%, 360px); height: auto; }
+.nt-rv-block .nt-rv-text { color: var(--rk-dim); }
+/* A number with nothing to rest on: underlined in the danger colour. */
+.nt-rv-miss .nt-rv-text { text-decoration-line: underline; text-decoration-style: wavy; text-decoration-color: var(--rk-danger); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.nt-rv-side { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 14em; }
+.nt-rv-key { padding: 0 5px; font-size: var(--fs-small); color: var(--rk-cite-t); background: var(--rk-cite); white-space: nowrap; }
+.nt-rv-count { min-width: 1.6em; padding: 0 5px; text-align: center; font-size: var(--fs-small); color: var(--rk-mute); border: 1px solid var(--rk-edge); }
+.nt-rv-count.on { color: var(--rk-ink); border-color: var(--rk-ink); font-weight: 600; }
+.nt-rv-thread { padding: 6px 10px 8px calc(3.2em + 18px); background: var(--rk-gut); border-bottom: 1px solid var(--rk-line); display: grid; gap: 6px; }
+.nt-rv-c { padding: 5px 8px; background: var(--rk-panel); border: 1px solid var(--rk-edge); }
+.nt-rv-c.done { opacity: .6; }
+.nt-rv-chead { display: flex; align-items: center; gap: 8px; }
+.nt-rv-chead .rl-btn { margin-left: auto; }
+.nt-rv-by { font-size: var(--fs-small); color: var(--rk-mute); }
+.nt-rv-drift { font-size: var(--fs-small); color: var(--rk-danger); }
+.nt-rv-ctext { white-space: pre-wrap; overflow-wrap: anywhere; margin: 2px 0; }
+.nt-rv-reply { margin: 4px 0 0 12px; padding-left: 8px; border-left: 2px solid var(--rk-edge); }
+.nt-rv-link { border: 0; padding: 0; background: none; color: var(--rk-dim); font: inherit; font-size: var(--fs-small); cursor: pointer; }
+.nt-rv-new { display: flex; gap: 6px; align-items: flex-start; }
+.nt-rv-new textarea { flex: 1; min-width: 0; resize: vertical; font: inherit; }
+.nt-rv-pick ul { list-style: none; margin: 4px 0 0; padding: 0; max-height: 14em; overflow: auto; border: 1px solid var(--rk-edge); background: var(--rk-panel); }
+.nt-rv-pick input { width: 100%; box-sizing: border-box; }
+.nt-rv-ref { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--rk-line); padding: 3px 8px; background: none; color: var(--rk-text); font: inherit; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nt-rv-ref:hover { background: var(--rk-gut); }
+.nt-rv-moved { padding: 10px; }
+.nt-rv-moved h4 { margin: 0 0 2px; color: var(--rk-danger); }
+.nt-rv-moved .nt-rv-thread { padding-left: 0; background: none; border: 0; }
+.nt-rv-edit { min-width: 0; display: grid; gap: 4px; }
+.nt-rv-edit textarea { width: 100%; box-sizing: border-box; resize: vertical; font-family: var(--rk-mono); font-size: var(--rk-fs); }
