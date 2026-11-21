@@ -19,7 +19,9 @@ import { authHeaders, linkProject, PORTAL_BASE, useProjects } from 'racklist'
 const ACTIVITY = ['name', 'kind', 'start', 'startTime', 'end', 'endTime', 'place', 'link', 'comment']
 // an update may also touch the trip/talk side of an existing activity
 const UPDATABLE = [...ACTIVITY, 'tripKind', 'tripStart', 'tripEnd', 'role', 'title', 'host', 'talkDate', 'talkTime']
-const SVC = { activity: 'academic_activities', note: 'note', job: 'jobboard' }
+const SVC = { activity: 'academic_activities', note: 'note', job: 'jobboard', note_delete: 'note' }
+// A tags candidate's items with something to add (backend/approve.py tag_items).
+const tagItems = (r) => (r.items || []).filter((it) => it?.service && it?.id && (it.add || []).length)
 // As the backend keeps it (_order): what is still to be decided, then the newest mail.
 const when = (c) => `${String(c.date || c.createdAt || '').slice(0, 10)}|${c.createdAt || ''}|${c.id}`
 const decided = (c) => (c.status || 'waiting') !== 'waiting'
@@ -86,7 +88,11 @@ export function makes(r, projects) {
   return { title: String(r.title || '').trim(),
     text: `${all}\n\n${String(r.body || '').trim()}\n${from ? `\n출처: ${from}\n` : ''}` }
 }
-const missing = (r, out) => (r.target === 'job'
+const isDelete = (r) => r.target === 'note_delete' || r.target === 'record_delete'
+const missing = (r, out) => (r.target === 'note_delete' ? (r.noteId ? '' : tr('ib_need_note_id'))
+  : r.target === 'record_delete' ? (r.svc && r.key && r.recordId ? '' : tr('ib_need_record'))
+  : r.target === 'tags' ? (tagItems(r).length ? '' : tr('ib_need_tags'))
+  : r.target === 'job'
   ? (!out.job.recipe || !out.job.project || !jobParams(r) ? tr('ib_need_job') : '')
   : r.mode === 'update'
   ? (r.target === 'activity' ? (Object.keys(changes(r)).length ? '' : tr('ib_need_change')) : (String(r.body || '').trim() ? '' : tr('ib_need_change')))
@@ -98,6 +104,17 @@ const missing = (r, out) => (r.target === 'job'
 export function MakesField({ rec: r }) {
   const projects = useProjects()
   if (r.mode === 'update' && r.match?.id) return <UpdateField r={r} />
+  if (isDelete(r) || r.target === 'tags') {
+    const bad = missing(r, {})
+    if (bad) return <span className="rl-warn">{bad}</span>
+    return (
+      <div className="rl-mono" style={{ whiteSpace: 'pre-wrap' }}>{r.target === 'note_delete'
+        ? `${tr('ib_trash')}: ${r.title || r.noteId}\n${String(r.excerpt || '').trim() || '—'}`
+        : r.target === 'record_delete'
+        ? `${tr('ib_trash')}: ${r.svc}/${r.destProj || ''} · ${r.key}\n${JSON.stringify(r.snapshot || {}, null, 1)}`
+        : tagItems(r).map((it) => `${it.title || it.id}  (${it.service}/${it.project || ''})  ${it.add.map((a) => `#${String(a).replace(/^#/, '')}`).join(' ')}`).join('\n')}</div>
+    )
+  }
   const out = makes(r, projects)
   const bad = missing(r, out)
   if (bad) return <span className="rl-warn">{bad}</span>
@@ -240,7 +257,7 @@ export function InboxActions({ r, ctx, after, row, close }) {
   }
   const out = makes(r, [])          // the project's tags change what is made, never whether it can be
   const bad = missing(r, out)
-  const open = (r.made || r.match?.id)
+  const open = (r.made?.id || r.match?.id)
     ? <button type="button" className="rl-btn" onClick={(e) => { stop(e); openMade(r, ctx) }}>{tr('ib_open')}</button> : null
   if (r.status === 'approved' || r.status === 'checked') return open
   if (r.status === 'discarded') {
@@ -253,7 +270,9 @@ export function InboxActions({ r, ctx, after, row, close }) {
       {r.mode === 'checked'
         ? <button type="button" className="rl-btn rl-go" onClick={run(() => decide(r, ctx, 'check', tr('ib_checked')), true)}>{tr('ib_check')}</button>
         : <button type="button" className="rl-btn rl-go" disabled={!!bad} title={bad || undefined}
-            onClick={run(() => decide(r, ctx, r.mode === 'update' ? 'update' : 'approve', tr('ib_approved', (r.target === 'note' ? r.title : r.name) || '')), true)}>{tr(r.mode === 'update' ? 'ib_update' : 'ib_approve')}</button>}
+            onClick={run(() => decide(r, ctx, isDelete(r) ? 'trash' : r.mode === 'update' ? 'update' : 'approve',
+              tr('ib_approved', (r.target === 'note' || isDelete(r) ? r.title : r.name) || '')), true)}>
+            {tr(isDelete(r) ? 'ib_trash' : r.mode === 'update' ? 'ib_update' : 'ib_approve')}</button>}
       {r.mode !== 'checked' && <button type="button" className="rl-btn rl-danger" onClick={run(() => decide(r, ctx, 'discard', tr('ib_discarded')), true)}>{tr('ib_discard')}</button>}
       {r.match?.id && !row && open}
     </span>

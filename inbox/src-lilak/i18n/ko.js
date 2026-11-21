@@ -1,4 +1,12 @@
 export default {
+  ib_record_delete: '기록 지우기',
+  ib_need_record: '지울 기록이 없습니다',
+  ib_note_delete: '노트 지우기',
+  ib_tags: '태그',
+  ib_trash: '휴지통으로',
+  ib_need_note_id: '지울 노트가 없습니다',
+  ib_need_tags: '붙일 태그가 없습니다',
+  ib_tags_n: (a0) => `태그 ${a0}건`,
   ib_not_saved: "고친 내용을 먼저 저장하지 못했습니다",
   ib_title_col: "제목",
   ib_unit: "건",

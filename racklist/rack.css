@@ -120,7 +120,7 @@ body.rl-page {
   flex-direction: column;
   background: var(--rk-panel);
   border: 1px solid var(--rk-edge);
-  overflow: hidden;
+  overflow: clip;      /* not a box that scrolls: see .rl-epane */
 }
 
 /* The nameplate keeps the portal's 36px: a denser table does not make the
@@ -801,7 +801,11 @@ button.rl-auth { cursor: pointer; }
 .rl-epane {
   box-sizing: border-box;
   border: 1px solid var(--rk-brand, var(--rk-dim));
-  overflow: hidden;
+  /* `clip`, not `hidden`: hidden is still a box that scrolls, and the strip
+     bringing its open tab into view (panes.jsx) scrolled the whole pane
+     sideways when the menu opened and the pane narrowed — the record slid in
+     under the menu and stayed there, with no bar to scroll it back. */
+  overflow: clip;
   background: var(--rk-panel);
 }
 .rl-edit { flex: 1; min-height: 0; overflow-y: auto; }
@@ -1366,3 +1370,54 @@ body.rl-moving, body.rl-moving * { cursor: grabbing !important; }
 .rl-zmap-city text { font-size: 9px; text-anchor: middle; fill: var(--rk-ink); paint-order: stroke; stroke: var(--rk-panel); stroke-width: 2.5px; pointer-events: none; }
 .rl-zmap-list { display: flex; flex-wrap: wrap; gap: 4px; }
 .rl-zmap-list .rl-x:disabled { opacity: .3; cursor: default; }
+
+/* Service command mode (cmdkeys.js): the row Enter would open. */
+.rl-row.rl-cmd-at { box-shadow: inset 3px 0 0 var(--rk-accent, var(--dock-border-focus)), inset 0 0 0 1px var(--dock-border-focus); }
+
+/* ── 도구함: a record's tools beside its editor (toolbox.jsx) ── */
+/* The toolbox hangs off the side of the editor and is drawn OVER the pane
+   next door — fixed, because the pane clips (`.rl-epane { overflow: hidden }`)
+   and this reaches outside it. Nothing is resized to make room for it: it
+   covers, it does not push. As wide as its tab strip and no wider. */
+.rl-toolbox {
+  position: fixed; z-index: 20;
+  /* ONE width, set by the button in its bar (toolbox.jsx) and nothing else. */
+  display: flex; flex-direction: column;
+  /* OPAQUE: it is drawn over the list and over the pane next door, and
+     `--rk-bg` is the page's own ground, which is not a colour here. */
+  background: var(--rk-panel);
+  border: 1px solid var(--rk-dim);
+  box-shadow: 0 2px 12px rgba(15, 23, 42, .18);
+}
+/* The kit's tab strip, in one column: it does not wrap onto a second row (the
+   column is narrow and the editor beside it would jump), it scrolls. */
+.rl-toolbox-tabs { flex-wrap: nowrap; max-height: none; overflow-x: auto; }
+/* The toolbox's own title bar: what it is, and the two things it can do. As
+   tall as the pane's tab strip beside it, and the same ground, so the two read
+   as one row across. */
+.rl-toolbox-bar {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 5px;
+  height: var(--rk-row); padding: 0 4px 0 9px;
+  background: var(--rk-head); border-bottom: 1px solid var(--rk-edge);
+  color: var(--rk-dim);
+}
+.rl-toolbox-name { font-size: var(--rk-fs); white-space: nowrap; }
+.rl-toolbox-btn {
+  height: calc(var(--rk-row) - 4px); min-width: 26px; padding: 0 7px;
+  justify-content: center; border-color: transparent; background: none;
+}
+/* The width button is pressed often and aimed at while reading something
+   else: a long box to hit. */
+.rl-toolbox-span { min-width: 46px; }
+.rl-toolbox-btn:hover:not(:disabled) { border-color: var(--rk-ink); background: var(--rk-panel); }
+.rl-toolbox-tabs::-webkit-scrollbar { height: 0; }
+.rl-toolbox-tabs .rl-tab.on { font-weight: 600; background: var(--rk-panel); }
+
+.rl-toolbox-body {
+  flex: 1; min-height: 0; overflow: auto;
+  background: var(--rk-panel); font-size: var(--fs-small);
+  display: flex; flex-direction: column;
+}
+.rl-dot { margin-left: 4px; font-style: normal; font-size: 0.7em; color: #b91c1c; vertical-align: middle; }
+:root[data-lilak-theme="dark"] .rl-dot { color: var(--rk-danger, #f87171); }

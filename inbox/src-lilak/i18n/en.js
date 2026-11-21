@@ -1,4 +1,12 @@
 export default {
+  ib_record_delete: 'Delete record',
+  ib_need_record: 'No record to delete',
+  ib_note_delete: 'Delete note',
+  ib_tags: 'Tags',
+  ib_trash: 'Move to bin',
+  ib_need_note_id: 'No note to delete',
+  ib_need_tags: 'No tags to add',
+  ib_tags_n: (a0) => `${a0} tag items`,
   ib_not_saved: "Could not save the edits first",
   ib_title_col: "Title",
   ib_unit: "items",

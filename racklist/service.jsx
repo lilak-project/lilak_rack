@@ -21,6 +21,7 @@ import { useMergeMode, RackMergeButtons, RackMerge, RackMoveTags } from './merge
 import { RackBulkEditor } from './bulk.jsx'
 import { useRackList } from './list.js'
 import { useRackKeys, useToggleKey } from './hooks.js'
+import { useCmdKeys } from './cmdkeys.js'
 import { typeOf, NoteEdit, syncNoteFlows, FlowChip } from './types.jsx'
 import { useFolders, RackFolder, RackFilePane, RackSettings, hasRoots } from './files.jsx'
 import { asSorts, bumpSort, bySome, byKeys } from './sort.js'
@@ -416,6 +417,8 @@ function RackList({ def: declared, slots = {} }) {
     : { id: `class:${c.k}:${rec.name}`, kind: 'class', of: c.k, stored: false, who: rec.name, label: rec.name }),
   [openEdit])
 
+  // The portal's service command mode (Esc from the cover): vi keys move through the page.
+  useCmdKeys({ findRef, onMenu: () => menuState.setOpen(!menuState.open) })
   useRackKeys({
     onNew: () => (cls?.stored ? openClass(cls, null) : openItem(null)),
     onClose: () => { const cur = panes.showing && panes.current(colInUse(panes)); if (cur) panes.leave(cur.id) },

@@ -222,5 +222,98 @@ class Decide(unittest.TestCase):
         self.assertEqual(self.calls, [])                                             # none of these reach a service
 
 
+
+class Kinds(unittest.TestCase):
+    """note_delete (into the bin, only if still as shown) and tags (each picked item's tags added)."""
+
+    def setUp(self):
+        self.calls, self.body = [], ""
+
+        def fake(auth, method, path, body=None):
+            self.calls.append((method, path, body))
+            if "/api/notes/" in path and method == "GET":
+                return {"id": path.rsplit("/", 1)[1], "title": "T", "version": "v3", "body": self.body}
+            if path.endswith("/api/data"):
+                return {"authors": [{"id": "a1", "name": "Kim", "tags": ["STARK"]}], "settings": {}}
+            return {}
+        self.real, ap.call = ap.call, fake
+        self.addCleanup(lambda: setattr(ap, "call", self.real))
+        main.app.dependency_overrides[main.signed_in] = lambda: {"authenticated": True, "username": "u"}
+        self.addCleanup(main.app.dependency_overrides.clear)
+        with main.DOC.lock:
+            d = main.DOC.read()
+            main.DOC.write({**d, "inbox": [
+                {"id": "del", "target": "note_delete", "status": "waiting", "title": "Untitled", "noteId": "2026-11-19-x",
+                 "destProj": "note", "excerpt": ""},
+                {"id": "tg", "target": "tags", "status": "waiting", "remark": "r", "items": [
+                    {"service": "author_manager", "project": "authors", "id": "a1", "title": "Kim", "add": ["#stark", "ELARK"]},
+                    {"service": "note", "project": "note", "id": "n9", "title": "N", "add": ["ELARK"]}]},
+            ]}, replaces=d)
+        from fastapi.testclient import TestClient
+        self.c = TestClient(main.app)
+
+    def status(self, cid):
+        return next(c for c in main.DOC.read()["inbox"] if c["id"] == cid)
+
+    def test_a_note_delete_says_so_and_goes_to_the_bin_only_if_unchanged(self):
+        card = next(x for x in self.c.get("/api/pending").json()["items"] if x["id"] == "del")
+        self.assertEqual((card["actions"], card["title"]), (["trash", "discard"], "Untitled"))
+        self.assertEqual(self.c.post("/api/inbox/del/decide", json={"action": "approve"}).status_code, 409)
+        self.body = "someone wrote here"
+        self.assertEqual(self.c.post("/api/inbox/del/decide", json={"action": "trash"}).status_code, 502)
+        self.assertNotIn("DELETE", [m for m, _, _ in self.calls])
+        self.body = "  \n"
+        r = self.c.post("/api/inbox/del/decide", json={"action": "trash"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIn(("DELETE", "/pp/note/note/api/notes/2026-11-19-x", None), self.calls)
+        self.assertEqual(self.status("del")["made"]["id"], "2026-11-19-x")
+
+    def test_a_note_up_for_the_bin_can_be_kept_with_a_title(self):
+        card = next(x for x in self.c.get("/api/pending").json()["items"] if x["id"] == "del")
+        self.assertTrue(card.get("retitle"))
+        self.assertEqual(self.c.post("/api/inbox/del/decide", json={"action": "retitle", "title": "  "}).status_code, 502)
+        r = self.c.post("/api/inbox/del/decide", json={"action": "retitle", "title": "Kept"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIn(("PUT", "/pp/note/note/api/notes/2026-11-19-x", {"title": "Kept"}), self.calls)
+        self.assertNotIn("DELETE", [m for m, _, _ in self.calls])
+        self.assertEqual((self.status("del")["status"], self.status("del")["made"]["label"]), ("checked", "Kept"))
+
+    def test_a_record_delete_goes_only_while_the_record_is_as_it_was(self):
+        snap = {"id": "a1", "name": "Kim", "tags": ["STARK"]}
+        with main.DOC.lock:
+            d = main.DOC.read()
+            main.DOC.write({**d, "inbox": d["inbox"] + [
+                {"id": "rd", "target": "record_delete", "status": "waiting", "title": "author_manager authors a1",
+                 "svc": "author_manager", "destProj": "authors", "key": "authors", "recordId": "a1", "snapshot": {**snap, "name": ""}}]},
+                replaces=d)
+        card = next(x for x in self.c.get("/api/pending").json()["items"] if x["id"] == "rd")
+        self.assertEqual((card["actions"], card["goes"]), (["trash", "discard"], "author_manager/authors"))
+        self.assertEqual(self.c.post("/api/inbox/rd/decide", json={"action": "trash"}).status_code, 502)   # named since
+        self.assertFalse([c for c in self.calls if c[1].endswith("/records/delete")])
+        with main.DOC.lock:
+            d = main.DOC.read()
+            n = copy.deepcopy(d)
+            next(x for x in n["inbox"] if x["id"] == "rd")["snapshot"] = snap
+            main.DOC.write(n, replaces=d)
+        r = self.c.post("/api/inbox/rd/decide", json={"action": "trash"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIn(("POST", "/pp/author_manager/authors/api/records/delete", {"key": "authors", "id": "a1"}), self.calls)
+
+    def test_tags_are_added_to_the_picked_items_keeping_what_they_had(self):
+        d = self.c.get("/api/inbox/tg").json()["sections"][0]
+        self.assertEqual((d["k"], d["pick"], [r["add"] for r in d["rows"]]), ("items", True, [["stark", "ELARK"], ["ELARK"]]))
+        r = self.c.post("/api/inbox/tg/decide", json={"action": "approve", "pick": [0]})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIn(("POST", "/pp/author_manager/authors/api/records/update",
+                       {"key": "authors", "id": "a1", "fields": {"tags": ["STARK", "ELARK"]}}), self.calls)   # STARK had it
+        self.assertFalse([c for c in self.calls if "/pp/note/" in c[1]])                                    # left out
+        self.assertEqual((self.status("tg")["picked"], self.status("tg")["made"]["label"]), ([0], "태그 1건"))
+
+    def test_a_notes_tag_line_grows_or_one_is_put_first(self):
+        self.assertEqual(ap.with_tags("#a #b\n\ntext", ["B", "c"]), "#a #b #c\n\ntext")
+        self.assertEqual(ap.with_tags("text\nmore", ["c"]), "#c\n\ntext\nmore")
+        self.assertEqual(ap.with_tags("", ["c"]), "#c\n")
+
+
 if __name__ == "__main__":
     unittest.main()

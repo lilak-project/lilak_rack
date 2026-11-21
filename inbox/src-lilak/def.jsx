@@ -15,7 +15,9 @@ const isAct = (r) => r.target === 'activity'
 const isNote = (r) => r.target === 'note'
 const isJob = (r) => r.target === 'job'
 const fromMail = () => true                       // the mail's own facts: shown, not edited
-const what = (r) => (isNote(r) ? r.title : r.name) || ''
+const isDel = (r) => r.target === 'note_delete' || r.target === 'record_delete'
+const isTags = (r) => r.target === 'tags'
+const what = (r) => (isTags(r) ? r.title || tr('ib_tags_n', (r.items || []).length) : isNote(r) || isDel(r) ? r.title : r.name) || ''
 
 export default {
   name: 'inbox', title: tr('ib_title'), unit: tr('ib_unit'), key: 'ib',
@@ -29,7 +31,8 @@ export default {
     columns: ['target', 'what', 'status', 'mode', 'act', 'from', 'date', 'remark'],
     fields: [
       { k: 'target', label: tr('ib_kind'), type: 'select', col: 56, disabled: fromMail,
-        options: [['activity', tr('ib_activity')], ['note', tr('ib_note')], ['job', tr('ib_job')]] },
+        options: [['activity', tr('ib_activity')], ['note', tr('ib_note')], ['job', tr('ib_job')],
+          ['note_delete', tr('ib_note_delete')], ['record_delete', tr('ib_record_delete')], ['tags', tr('ib_tags')]] },
       { k: 'what', label: tr('ib_title_col'), col: 280, get: what,
         cell: (r) => <>{r.attachments?.length ? '📎 ' : ''}{what(r) || (r.match?.id ? <MatchName r={r} /> : '·')}</> },
       { k: 'status', label: tr('ib_status'), type: 'select', col: 80, disabled: fromMail, sort: (v) => (v === 'waiting' ? 0 : 1),
@@ -60,6 +63,9 @@ export default {
       { k: 'noteTags', label: 'tags', type: 'text', when: isNote, placeholder: '#태그 #태그' },
       { k: 'body', label: 'body', type: 'longtext', when: isNote },
       // a job an agent asks to run (approving submits it to jobrun through Jobboard)
+      // a note to put in the bin (the portal's tidying): which, and its body as it was then
+      { k: 'noteId', label: 'note', type: 'text', when: (r) => r.target === 'note_delete', disabled: fromMail },
+      { k: 'excerpt', label: 'body', type: 'longtext', when: (r) => r.target === 'note_delete', disabled: fromMail },
       { k: 'recipe', label: 'recipe', type: 'text', when: isJob },
       { k: 'jobProject', label: 'project', type: 'text', when: isJob },
       { k: 'server', label: 'server', type: 'text', when: isJob },

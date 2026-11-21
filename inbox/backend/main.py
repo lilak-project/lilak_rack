@@ -198,13 +198,18 @@ _MAKING: set = set()      # candidates being made right now (one backend per pro
 
 @app.post("/api/inbox/{cid}/decide")
 def decide(cid: str, request: Request, body: dict = Body(...), _: dict = Depends(signed_in)) -> dict:
-    """approve / update (make it where it goes), check, discard or restore — what the card's actions offered."""
+    """approve / update / trash (make it where it goes), check, discard or restore — what the card's
+    actions offered. `pick` (a tags candidate): the indices of the items to do, the rest left out."""
     act = str(body.get("action") or "")
     c = _one(cid)
-    if act not in ap.actions(c):
+    # retitle: a note_delete kept with a title (`title`) — offered wherever trash is.
+    ok = act in ap.actions(c) or (act == "retitle" and c.get("target") == "note_delete" and "trash" in ap.actions(c))
+    if not ok:
         raise HTTPException(409, "이 후보에 지금 할 수 없는 일입니다.")
     now = datetime.now().astimezone().isoformat(timespec="seconds")
-    making = act in ("approve", "update")
+    making = act in ("approve", "update", "trash", "retitle")
+    pick = body.get("pick")
+    pick = {int(i) for i in pick if isinstance(i, int) or str(i).isdigit()} if isinstance(pick, list) else None
     if making:
         # Made outside the document's lock (a service call may take seconds), so the candidate
         # is claimed first: a second yes while the first is still making it is refused, and one
@@ -216,7 +221,12 @@ def decide(cid: str, request: Request, body: dict = Body(...), _: dict = Depends
     try:
         if making:
             try:
-                change = {"status": "approved", "decidedAt": now, "made": ap.approve(c, request.headers.get("authorization", ""))}
+                if act == "retitle":       # kept, not deleted: checked, with the note it named
+                    change = {"status": "checked", "decidedAt": now,
+                              "made": ap.retitle(c, request.headers.get("authorization", ""), body.get("title"))}
+                else:
+                    change = {"status": "approved", "decidedAt": now, "made": ap.approve(c, request.headers.get("authorization", ""), pick),
+                              **({"picked": sorted(pick)} if pick is not None else {})}
             except ap.Refused as e:
                 raise HTTPException(502, str(e)) from None
         else:
