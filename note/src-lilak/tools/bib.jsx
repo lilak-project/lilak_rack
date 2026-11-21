@@ -1,7 +1,7 @@
 import '../strings.js'
 import { useEffect, useMemo, useState } from 'react'
 import { openInService } from 'racklist'
-import { press } from './press.js'
+import { press } from 'racklist'
 import { tr } from 'lilak-ui/i18n.jsx'
 
 /** `\cite{a,b}`, `\citep[see][]{c}` — the keys a body calls for. */

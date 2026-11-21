@@ -1,6 +1,6 @@
 import '../strings.js'
 import { useState } from 'react'
-import { press } from './press.js'
+import { press } from 'racklist'
 import { tr } from 'lilak-ui/i18n.jsx'
 
 /** 흐름 — the notes this one follows on from and leads to (flow.js): the list,

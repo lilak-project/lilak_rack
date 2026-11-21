@@ -539,66 +539,22 @@ body.nt-paper #root { height: auto; min-height: 100%; }
    you are working on. */
 .nt-work { flex: 1; min-height: 0; display: flex; }
 .nt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-/* The toolbox hangs off the side of the editor and is drawn OVER the pane
-   next door — fixed, because the pane clips (`.rl-epane { overflow: hidden }`)
-   and this reaches outside it. Nothing is resized to make room for it: it
-   covers, it does not push. As wide as its tab strip and no wider. */
-.nt-toolbox {
-  position: fixed; z-index: 20;
-  /* ONE width, set by the button in its bar (box.jsx) and nothing else. */
-  display: flex; flex-direction: column;
-  /* OPAQUE: it is drawn over the list and over the pane next door, and
-     `--rk-bg` is the page's own ground, which is not a colour here. */
-  background: var(--rk-panel);
-  border: 1px solid var(--rk-dim);
-  box-shadow: 0 2px 12px rgba(15, 23, 42, .18);
-}
-/* The kit's tab strip, in one column: it does not wrap onto a second row (the
-   column is narrow and the editor beside it would jump), it scrolls. */
-.nt-toolbox-tabs { flex-wrap: nowrap; max-height: none; overflow-x: auto; }
-/* The toolbox's own title bar: what it is, and the two things it can do. As
-   tall as the pane's tab strip beside it, and the same ground, so the two read
-   as one row across. */
-.nt-toolbox-bar {
-  flex: 0 0 auto;
-  display: flex; align-items: center; gap: 5px;
-  height: var(--rk-row); padding: 0 4px 0 9px;
-  background: var(--rk-head); border-bottom: 1px solid var(--rk-edge);
-  color: var(--rk-dim);
-}
-.nt-toolbox-name { font-size: var(--rk-fs); white-space: nowrap; }
-.nt-toolbox-btn {
-  height: calc(var(--rk-row) - 4px); min-width: 26px; padding: 0 7px;
-  justify-content: center; border-color: transparent; background: none;
-}
-/* The width button is pressed often and aimed at while reading something
-   else: a long box to hit. */
-.nt-toolbox-span { min-width: 46px; }
-.nt-toolbox-btn:hover:not(:disabled) { border-color: var(--rk-ink); background: var(--rk-panel); }
-.nt-toolbox-tabs::-webkit-scrollbar { height: 0; }
-.nt-toolbox-tabs .rl-tab.on { font-weight: 600; background: var(--rk-panel); }
-
-.nt-toolbox-body {
-  flex: 1; min-height: 0; overflow: auto;
-  background: var(--rk-panel); font-size: var(--fs-small);
-  display: flex; flex-direction: column;
-}
 /* A tool that is a list of rows gets the padding; one that is a field grid
    (공용) or a sheet (미리보기) runs to the edges. */
-.nt-toolbox-body > .nt-mrow:first-child { padding: 6px 10px 0; }
-.nt-toolbox-body > :not(.rl-rec):not(.nt-read) { padding-left: 10px; padding-right: 10px; }
-.nt-toolbox-body > .nt-read { margin-top: 6px; }
+.rl-toolbox-body > .nt-mrow:first-child { padding: 6px 10px 0; }
+.rl-toolbox-body > :not(.rl-rec):not(.nt-read) { padding-left: 10px; padding-right: 10px; }
+.rl-toolbox-body > .nt-read { margin-top: 6px; }
 .nt-mrow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 /* The one thing the tab is for — compile, 맞추기 — reads as the one thing. */
-.nt-toolbox-body .rl-btn.nt-go { font-weight: 600; }
+.rl-toolbox-body .rl-btn.nt-go { font-weight: 600; }
 /* A line the tool says back: what the import brought, what the .bib will be. */
 .nt-mnote {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
   margin-top: 6px; padding: 4px 8px;
   background: var(--rk-gut); border: 1px solid var(--rk-line); border-radius: 3px;
 }
-.nt-toolbox-body .nt-texerr { margin-top: 6px; border-top: 0; border-radius: 3px; max-height: none; }
-.nt-toolbox-body .nt-path { flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.rl-toolbox-body .nt-texerr { margin-top: 6px; border-top: 0; border-radius: 3px; max-height: none; }
+.rl-toolbox-body .nt-path { flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── 목차 ─────────────────────────────────────────────────────────────── */
 .nt-outline { display: flex; flex-direction: column; padding: 4px 0 8px; }

@@ -1,10 +1,14 @@
-import '../strings.js'
+import './strings.js'
 import { useEffect, useRef, useState } from 'react'
-import { load, save } from 'racklist'
+import { load, save } from './portal.js'
 import { press } from './press.js'
 import { tr } from 'lilak-ui/i18n.jsx'
 
-/** 도구함 — a note's tools, hanging off the side of ITS editor tab.
+/** 도구함 — a record's tools, hanging off the side of ITS editor tab. note's
+ *  first (노트 「관리 도구함」), now any rack service's: lilak_flow's parameter file too.
+ *
+ *  A tool is { id, label (an i18n key), badge?(ctx), Body } and gets `ctx` as
+ *  its props; which tools there are and what ctx holds is the service's.
  *
  *  Not a pane and not a column. Both were tried:
  *
@@ -30,7 +34,7 @@ import { tr } from 'lilak-ui/i18n.jsx'
  *  wider over its own list, and the push then costs the text nothing. A host
  *  that does not answer costs us nothing either.
  */
-const WIDE = 'nt-toolbox-w'
+const WIDE = 'nt-toolbox-w'   // the stored width's key, kept so note's choice stays
 const WIDTHS = [320, 620]
 
 /** A toolbox: a box with a handle. Drawn, not an emoji — it sits in a bar with
@@ -58,7 +62,7 @@ const Span = ({ out }) => (
   </svg>
 )
 
-export default function Toolbox({ anchor, kit, at, onPick, onShut, onPush, ctx }) {
+export function RackToolbox({ anchor, kit, at, onPick, onShut, onPush, ctx, title }) {
   const [spot, setSpot] = useState(null)
   // ONE width for the toolbox, whatever tool is open: a panel that resized
   // itself as you looked through its tabs was a panel that would not sit
@@ -135,34 +139,34 @@ export default function Toolbox({ anchor, kit, at, onPick, onShut, onPush, ctx }
   if (!spot) return null
   const { push, ...style } = spot
   return (
-    <div className="nt-toolbox" style={{ ...style, width: wide }}>
+    <div className="rl-toolbox" style={{ ...style, width: wide }}>
       {/* Its own title bar, as tall as the pane's tab strip beside it, so the
           two read as one row. What it is, and the two things it can do. */}
-      <div className="nt-toolbox-bar">
+      <div className="rl-toolbox-bar">
         <Box />
-        <span className="nt-toolbox-name">{tr("nt_box_title")}</span>
+        <span className="rl-toolbox-name">{title || tr("rk_box_title")}</span>
         <span className="rl-sp" />
-        <button type="button" className="rl-btn nt-toolbox-btn nt-toolbox-span"
-          title={tr(wide === WIDTHS[1] ? "nt_box_narrow" : "nt_box_wide")}
+        <button type="button" className="rl-btn rl-toolbox-btn rl-toolbox-span"
+          title={tr(wide === WIDTHS[1] ? "rk_box_narrow" : "rk_box_wide")}
           {...press(() => setWide(wide === WIDTHS[1] ? WIDTHS[0] : WIDTHS[1]))}>
           <Span out={wide !== WIDTHS[1]} />
         </button>
-        <button type="button" className="rl-btn nt-toolbox-btn" title={tr("nt_box_fold")}
+        <button type="button" className="rl-btn rl-toolbox-btn" title={tr("rk_box_fold")}
           {...press(onShut)}>×</button>
       </div>
-      <div className="rl-tabs nt-toolbox-tabs">
+      <div className="rl-tabs rl-toolbox-tabs">
         {kit.map((t) => {
           const mark = t.badge?.(ctx)
           return (
             <span key={t.id} className={`rl-tab${at?.id === t.id ? ' on' : ''}`}>
               <button type="button" className="rl-tabname" {...press(() => onPick(t.id))}>
-                {tr(t.label)}{mark ? <i className="nt-dot">{mark === 'dot' ? '●' : mark}</i> : null}
+                {tr(t.label)}{mark ? <i className="rl-dot">{mark === 'dot' ? '●' : mark}</i> : null}
               </button>
             </span>
           )
         })}
       </div>
-      <div className="nt-toolbox-body">{at ? <at.Body {...ctx} /> : null}</div>
+      <div className="rl-toolbox-body">{at ? <at.Body {...ctx} /> : null}</div>
     </div>
   )
 }

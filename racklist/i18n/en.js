@@ -1,4 +1,8 @@
 export default {
+  rk_box_title: "Toolbox",
+  rk_box_fold: "Fold the toolbox",
+  rk_box_wide: "Wider",
+  rk_box_narrow: "Narrower",
   rk_drag_resize: "Drag to resize · double-click for half and half",
   rk_name: "Name",
   rk_item: "item",

@@ -1,7 +1,7 @@
 import '../strings.js'
 import { useState } from 'react'
 import { RackField } from 'racklist'
-import { press } from './press.js'
+import { press } from 'racklist'
 import { RATIOS } from '../slides.jsx'
 import { tr } from 'lilak-ui/i18n.jsx'
 

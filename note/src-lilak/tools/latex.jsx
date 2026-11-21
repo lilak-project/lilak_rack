@@ -2,7 +2,7 @@ import '../strings.js'
 import { useState } from 'react'
 import { RackField } from 'racklist'
 import { comments } from '../comments.js'
-import { press } from './press.js'
+import { press } from 'racklist'
 import { tr } from 'lilak-ui/i18n.jsx'
 
 /** LaTeX — what a tex note does and what it is written with: typeset it, fold

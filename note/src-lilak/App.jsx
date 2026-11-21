@@ -28,8 +28,7 @@ import { DeckMeasure, SlidePrint, SlideShow, coverOf, enterFull, gapBefore, slid
 import { rebase, retext } from './merge3.js'
 import { toolsFor } from './tools/index.js'
 import { flowItems, noteSteps, noteFlow, joinFlow } from './flow.js'
-import { press } from './tools/press.js'
-import Toolbox from './tools/toolbox.jsx'
+import { press, RackToolbox as Toolbox } from 'racklist'
 import { citedIn, citeMap } from './tools/bib.jsx'
 import { LangPick, RecButton } from './tools/record.jsx'
 import { attach, placeAt, setSay, useRecording } from './recorder.js'
@@ -1749,7 +1748,7 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
         </div>
       </div>
       {/* Hanging off the side of this tab, drawn over whatever is beside it —
-          nothing is resized to make room (tools/toolbox.jsx). */}
+          nothing is resized to make room (racklist/toolbox.jsx). */}
       {tab ? (
         <Toolbox anchor={root} kit={kit} at={Tool} ctx={ctx}
           onPick={setTab} onShut={() => setTab('')} onPush={setPush} />

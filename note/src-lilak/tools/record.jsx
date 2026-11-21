@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import Select from 'lilak-ui/components/Select.jsx'
 import { api, fileSrc } from '../api.js'
 import { LANGS, askReady, keepFile, setKeepFile, setLang, start, stop, useRecording } from '../recorder.js'
-import { press } from './press.js'
+import { press } from 'racklist'
 import { tr } from 'lilak-ui/i18n.jsx'
 
 /** 녹음 — the buttons for the service's one recorder (recorder.js): on the

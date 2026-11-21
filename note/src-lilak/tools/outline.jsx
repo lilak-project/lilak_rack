@@ -1,6 +1,6 @@
 import '../strings.js'
 import { headingNumbers, outsideCode } from '../marks.js'
-import { press } from './press.js'
+import { press } from 'racklist'
 import { tr } from 'lilak-ui/i18n.jsx'
 
 /** 목차 — the note's own headings, as a list that goes there.

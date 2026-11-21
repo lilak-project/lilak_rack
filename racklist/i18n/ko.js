@@ -1,4 +1,8 @@
 export default {
+  rk_box_title: "도구함",
+  rk_box_fold: "도구함 접기",
+  rk_box_wide: "넓게",
+  rk_box_narrow: "좁게",
   rk_drag_resize: "끌어서 넓이 조절 · 두 번 누르면 반반",
   rk_name: "이름",
   rk_item: "항목",

@@ -36,3 +36,5 @@ export {
 } from './portal.js'
 export { uploadUrl, uploadFile, filesOf, RackFiles, filesTab } from './uploads.jsx'
 export { PathLine, recordPath } from './pathline.jsx'
+export { RackToolbox } from './toolbox.jsx'
+export { press } from './press.js'

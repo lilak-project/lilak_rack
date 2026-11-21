@@ -2,7 +2,7 @@ import Select from 'lilak-ui/components/Select.jsx'
 import '../strings.js'
 import { useState } from 'react'
 import { RackField, PathLine } from 'racklist'
-import { press } from './press.js'
+import { press } from 'racklist'
 import { tr } from 'lilak-ui/i18n.jsx'
 
 /** 공용 — what every note has, whatever it is written in.
