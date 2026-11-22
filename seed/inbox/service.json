@@ -24,7 +24,11 @@
       "note",
       "activities",
       "jobboard",
-      "project_manager"
+      "project_manager",
+      "reference_manager",
+      "authors",
+      "inventory",
+      "parameters"
     ]
   },
   "icon": "tray",
