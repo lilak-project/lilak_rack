@@ -675,14 +675,15 @@ def lock_note(note_id: str, body: LockBody, me: dict = Depends(signed_in)) -> di
     with REVIEW_LOCK:
         p, n = _note(note_id)
         f = dict(n["fields"])
+        # a lock already on is the locker's (or a manager's): locking it again would hand it over
+        if f.get("readonly") and not (is_manager(me) or (f.get("locked_by") and f["locked_by"] == _who(me))):
+            raise HTTPException(403, "잠근 사람이나 관리자만 잠금을 바꾸거나 풀 수 있습니다.")
         if body.on:
             f.update(readonly=True, locked_by=_who(me), locked_at=_now())
             f.pop("locked_via", None)
             if body.via:
                 f["locked_via"] = body.via
         else:
-            if f.get("readonly") and not (is_manager(me) or (f.get("locked_by") and f["locked_by"] == _who(me))):
-                raise HTTPException(403, "잠근 사람이나 관리자만 잠금을 풀 수 있습니다.")
             for k in LOCK_KEYS:
                 f.pop(k, None)
         _atomic_write(p, _join({"title": n["title"], "date": n["date"], **f}, n["body"]))

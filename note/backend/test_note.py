@@ -275,12 +275,14 @@ assert _n["fields"]["readonly"] and _n["fields"]["locked_by"] == "a" and _n["fie
 for _try in (lambda: put_note("lk", SaveBody(body="바뀜\n"), _b),
              lambda: set_todo(TodoBody(id="lk", line=0, done=True), _b),
              lambda: delete_note("lk", _b),
-             lambda: lock_note("lk", LockBody(on=False), _b)):          # not the one who locked it
+             lambda: lock_note("lk", LockBody(on=False), _b),           # not the one who locked it
+             lambda: lock_note("lk", LockBody(on=True, via="x"), _b)):  # nor take it over by locking again
     try:
         _try()
         raise AssertionError("a locked note was changed")
     except HTTPException as e:
         assert e.status_code in (403, 423)
+assert lock_note("lk", LockBody(on=True), _a)["fields"]["locked_by"] == "a"          # the locker may again
 # how it is looked at may still change, and a save never unlocks it
 assert put_note("lk", SaveBody(fields={"mode": "slide"}), _b)["fields"]["readonly"]
 assert not lock_note("lk", LockBody(on=False), {"authenticated": True, "username": "m", "role": "manager"})["fields"].get("readonly")
