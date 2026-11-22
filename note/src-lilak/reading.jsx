@@ -27,7 +27,7 @@ function tagify(children, box) {
     let last = 0
     for (const m of child.matchAll(CHIP_RE)) {
       // A tag (lead + #name), a date (mark + day), a project (lead + +name) or
-      // a person (lead + @name) — one project_manager or author_manager has;
+      // a person (lead + @name) — one project_manager or authors has;
       // any other `+word` or `@word` stays text. A name two people answer to
       // is nobody in particular, so it stays text too (isAuthor).
       const tag = m[2] !== undefined, proj = m[6] !== undefined, auth = m[8] !== undefined

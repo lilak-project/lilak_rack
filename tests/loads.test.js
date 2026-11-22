@@ -14,12 +14,12 @@ const SCREENS = [
   '../note/src-lilak/reading.jsx',
   '../note/src-lilak/liveedit.js',
   '../note/src-lilak/livemd.js',
-  '../academic_activities/src-lilak/def.js',
-  '../author_manager/src-lilak/def.jsx',
+  '../activities/src-lilak/def.js',
+  '../authors/src-lilak/def.jsx',
   '../reference_manager/src-lilak/def.jsx',
   '../project_manager/src-lilak/def.jsx',
   '../inbox/src-lilak/def.jsx',
-  '../asset_manager2/src-lilak/def.jsx',
+  '../inventory/src-lilak/def.jsx',
 ]
 
 describe('every screen module loads', () => {

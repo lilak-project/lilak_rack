@@ -140,4 +140,6 @@ export default {
   rm_citing_this: "이 논문을 인용한 것",
   rm_all_n_papers: (a0) => `· 모두 ${a0}편`,
   rm_all_n_papers_more: (a0) => `… 모두 ${a0}편`,
+  // What the service is, at the foot of its page when nothing else is said there.
+  rm_intro: "논문·책·웹 자료 같은 참고문헌",
 }

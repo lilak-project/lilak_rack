@@ -6,7 +6,7 @@ A candidate's `target` says which service it goes to; `destProj` which project
 of it (left out: that service's main project). Yes makes the record there
 through the portal, as the person deciding — with a token the portal delegates for
 that one project and a few minutes (lilak_portal_auth.delegate), never the person's own:
-  activity  POST academic_activities/api/records         (an update: /api/records/update)
+  activity  POST activities/api/records         (an update: /api/records/update)
   note      POST note/api/notes, then PUT its body        (an update: the body grows)
   job       POST jobboard/api/submit
   note_delete  DELETE note/api/notes/{noteId}            (into the note bin, 30 days) — only if the
@@ -26,7 +26,7 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-SVC = {"activity": "academic_activities", "note": "note", "job": "jobboard", "note_delete": "note"}
+SVC = {"activity": "activities", "note": "note", "job": "jobboard", "note_delete": "note"}
 TAG_LINE = re.compile(r"\s*(#[^\s#]+\s*)+")
 ACTIVITY = ("name", "kind", "start", "startTime", "end", "endTime", "place", "link", "comment")
 # an update may also touch the trip/talk side of an existing activity

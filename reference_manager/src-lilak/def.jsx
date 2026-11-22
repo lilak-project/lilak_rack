@@ -59,7 +59,7 @@ const roleCol = (k, label) => ({
 })
 
 export default {
-  name: 'reference_manager', title: tr("rm_title"), unit: tr("rm_unit"), key: 'rm',
+  name: 'reference_manager', title: tr("rm_title"), about: tr('rm_intro'), unit: tr("rm_unit"), key: 'rm',
   item: {
     key: 'references', noun: tr("rm_paper"), allLabel: tr('rm_tab_references'), tabId: 'total',
     label: refLabel,
@@ -167,7 +167,7 @@ export default {
       // Where a paper was presented: the activities (in Activities) that list
       // it. Theirs is the only copy of the link; each opens there.
       { k: 'talks', label: tr("rm_talks"), type: 'backlinks', search: false,
-        from: { svc: 'academic_activities', item: 'activities', field: 'papers', label: 'name' } },
+        from: { svc: 'activities', item: 'activities', field: 'papers', label: 'name' } },
       { k: 'more', label: tr("rm_more"), type: 'check', store: false, search: false, hint: tr("rm_more_hint") },
     ],
   },

@@ -65,6 +65,37 @@ export function RackTagKind({ tag, projects, onChanged, say, onRename }) {
 }
 
 /**
+ * A new project from a name — what project_manager's +new was. The name is the
+ * project's tag; `AToM-X/ihm` makes a sub-project (named ihm, under AToM-X's
+ * tag), as jobboard makes one. `onMade(tag)` then opens that tag's editor.
+ */
+export function RackNewProject({ projects, onMade, say }) {
+  const [v, setV] = useState('')
+  const [busy, setBusy] = useState(false)
+  const tag = v.trim().replace(/^\/+|\/+$/g, '')
+  const name = tag.slice(tag.lastIndexOf('/') + 1)
+  // One word, as `+name` is in text; a project by that tag already is that project.
+  const bad = !tag ? '' : /[\s#+.,;:!?()[\]{}'"]/.test(tag) || tag.startsWith('>') ? tr('rk_proj_one_word')
+    : projectOfTag(projects, tag) ? tr('rk_proj_exists', name) : ''
+  const make = () => {
+    if (!tag || bad || busy) return
+    setBusy(true)
+    saveProject(null, { name, tags: [tag], match: 'or' })
+      .then(() => { say?.(tr('rk_proj_made', name)); setV(''); onMade?.(tag) })
+      .catch((e) => say?.(tr('rk_proj_failed', e.message)))
+      .finally(() => setBusy(false))
+  }
+  return (
+    <div className="rl-rrow" style={{ flexBasis: '100%' }}>
+      <input className="rl-in" style={{ flex: '1 1 120px', minWidth: 0 }} value={v} placeholder={tr('rk_proj_new_ph')}
+        onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); make() } }} />
+      <button type="button" className="rl-btn" disabled={!tag || !!bad || busy} onClick={make}>{tr('rk_proj_new')}</button>
+      {bad && <span className="rl-hint rl-warn">{bad}</span>}
+    </div>
+  )
+}
+
+/**
  * A tag's project, in the tag's editor — any service's tags tab. A project is a
  * tag marked as one (`+name`, its own tag's last part): a description, a period,
  * and the other tags it gathers, all or any. It is kept in project_manager, as it

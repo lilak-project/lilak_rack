@@ -16,7 +16,7 @@ import { tr } from 'lilak-ui/i18n.jsx'
  * tag, a date, a check, a link — are offered unless a field says `bulk: false`;
  * any other field can opt in with `bulk: true`.
  *
- * The rule in every field is the same (author_manager's): what is shown is
+ * The rule in every field is the same (authors's): what is shown is
  * what they all have, and a field left alone changes nothing. Where they
  * differ the field is empty and says so — set it and they all get it. A field
  * holding several values (tags, links) shows those they all have; adding one

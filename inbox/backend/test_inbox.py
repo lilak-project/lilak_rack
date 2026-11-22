@@ -123,7 +123,7 @@ class Decide(unittest.TestCase):
                 return {"record": {"id": "a1"}}
             if path.endswith("/api/submit"):
                 return {"id": "j1"}
-            if "academic_activities" in path and path.endswith("/api/data"):
+            if "activities" in path and path.endswith("/api/data"):
                 return {"activities": [{"id": "act", "name": "TAMU", "place": "College Station"}]}
             if "project_manager" in path:
                 return {"projects": [{"id": "p1", "tags": ["STARK"]}]}
@@ -178,7 +178,7 @@ class Decide(unittest.TestCase):
                          [("POST", "/pp/note/notes-job/api/notes"), ("PUT", "/pp/note/notes-job/api/notes/n1")])
         self.assertEqual((self.status("n")["status"], self.status("n")["made"]), ("approved", {"svc": "note", "proj": "notes-job", "id": "n1"}))
         self.c.post("/api/inbox/u/decide", json={"action": "update"})
-        self.assertIn(("POST", "/pp/academic_activities/activities/api/records/update",
+        self.assertIn(("POST", "/pp/activities/activities/api/records/update",
                        {"key": "activities", "id": "act", "fields": {"place": "Houston"}}), self.calls)
         self.c.post("/api/inbox/j/decide", json={"action": "approve"})
         self.assertEqual(self.status("j")["made"]["id"], "j1")
@@ -246,7 +246,7 @@ class Kinds(unittest.TestCase):
                 {"id": "del", "target": "note_delete", "status": "waiting", "title": "Untitled", "noteId": "2026-11-19-x",
                  "destProj": "note", "excerpt": ""},
                 {"id": "tg", "target": "tags", "status": "waiting", "remark": "r", "items": [
-                    {"service": "author_manager", "project": "authors", "id": "a1", "title": "Kim", "add": ["#stark", "ELARK"]},
+                    {"service": "authors", "project": "authors", "id": "a1", "title": "Kim", "add": ["#stark", "ELARK"]},
                     {"service": "note", "project": "note", "id": "n9", "title": "N", "add": ["ELARK"]}]},
             ]}, replaces=d)
         from fastapi.testclient import TestClient
@@ -283,11 +283,11 @@ class Kinds(unittest.TestCase):
         with main.DOC.lock:
             d = main.DOC.read()
             main.DOC.write({**d, "inbox": d["inbox"] + [
-                {"id": "rd", "target": "record_delete", "status": "waiting", "title": "author_manager authors a1",
-                 "svc": "author_manager", "destProj": "authors", "key": "authors", "recordId": "a1", "snapshot": {**snap, "name": ""}}]},
+                {"id": "rd", "target": "record_delete", "status": "waiting", "title": "authors authors a1",
+                 "svc": "authors", "destProj": "authors", "key": "authors", "recordId": "a1", "snapshot": {**snap, "name": ""}}]},
                 replaces=d)
         card = next(x for x in self.c.get("/api/pending").json()["items"] if x["id"] == "rd")
-        self.assertEqual((card["actions"], card["goes"]), (["trash", "discard"], "author_manager/authors"))
+        self.assertEqual((card["actions"], card["goes"]), (["trash", "discard"], "authors/authors"))
         self.assertEqual(self.c.post("/api/inbox/rd/decide", json={"action": "trash"}).status_code, 502)   # named since
         self.assertFalse([c for c in self.calls if c[1].endswith("/records/delete")])
         with main.DOC.lock:
@@ -297,14 +297,14 @@ class Kinds(unittest.TestCase):
             main.DOC.write(n, replaces=d)
         r = self.c.post("/api/inbox/rd/decide", json={"action": "trash"})
         self.assertEqual(r.status_code, 200, r.text)
-        self.assertIn(("POST", "/pp/author_manager/authors/api/records/delete", {"key": "authors", "id": "a1"}), self.calls)
+        self.assertIn(("POST", "/pp/authors/authors/api/records/delete", {"key": "authors", "id": "a1"}), self.calls)
 
     def test_tags_are_added_to_the_picked_items_keeping_what_they_had(self):
         d = self.c.get("/api/inbox/tg").json()["sections"][0]
         self.assertEqual((d["k"], d["pick"], [r["add"] for r in d["rows"]]), ("items", True, [["stark", "ELARK"], ["ELARK"]]))
         r = self.c.post("/api/inbox/tg/decide", json={"action": "approve", "pick": [0]})
         self.assertEqual(r.status_code, 200, r.text)
-        self.assertIn(("POST", "/pp/author_manager/authors/api/records/update",
+        self.assertIn(("POST", "/pp/authors/authors/api/records/update",
                        {"key": "authors", "id": "a1", "fields": {"tags": ["STARK", "ELARK"]}}), self.calls)   # STARK had it
         self.assertFalse([c for c in self.calls if "/pp/note/" in c[1]])                                    # left out
         self.assertEqual((self.status("tg")["picked"], self.status("tg")["made"]["label"]), ([0], "태그 1건"))

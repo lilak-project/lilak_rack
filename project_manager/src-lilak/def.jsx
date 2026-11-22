@@ -9,7 +9,7 @@ import { tr } from 'lilak-ui/i18n.jsx'
 import { linkProject, projectFolder, projectOwnTag, showFilteredInCalendar, tagKey, tagWithin } from 'racklist'
 
 // A project's events: activity's calendar, filtered by it (`+name`, as its filter keeps one).
-const CAL = 'academic_activities'
+const CAL = 'activities'
 const showInCalendar = (name) => showFilteredInCalendar(CAL, linkProject(CAL), [`+${tagKey(name)}`])
 
 // A sub-project is its own record whose own tag sits under its parent's
@@ -34,7 +34,7 @@ const kidsOf = (r, list) => {
 const folderOf = projectFolder
 
 export default {
-  name: 'project_manager', title: tr('pm_title'), unit: tr('pm_unit'), key: 'pm',
+  name: 'project_manager', title: tr('pm_title'), about: tr('pm_intro'), unit: tr('pm_unit'), key: 'pm',
   item: {
     key: 'projects', noun: tr('pm_project'), allLabel: tr('pm_projects'), label: 'name',
     // A project's row opens its own tab: everything its tags gather, in every

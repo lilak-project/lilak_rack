@@ -33,7 +33,7 @@ import {
 import { PORTAL_PROJECT, PORTAL_SERVICE, PROJECT_LINKED, brandStyle, isManager, portalUser, fetchDoc, putDoc, newId, takeOpenRequest, showInCalendar, calAsk, calFilterAsk, load, save, projectKey, serviceColor } from './portal.js'
 import { tr } from 'lilak-ui/i18n.jsx'
 import { tagKey, tagTree, tagWithin, tagRenames, useTagSources, sharedTagRows, useFavTags, renameTagEverywhere, renameTagHere, forgetTagSources, uniqueTags, useProjects, projectOfTag, saveProject, projectFolder, loadProjectFolders, openProjectFolder } from './tags.js'
-import { RackTagKind } from './tagproject.jsx'
+import { RackTagKind, RackNewProject } from './tagproject.jsx'
 import { RackTagged, RackTaggedTab, TAGGED_COLS, TAGGED_SORTERS, useTaggedRows } from './tagged.jsx'
 
 /**
@@ -112,7 +112,7 @@ const NONE = []                       // one empty list, so a hook sees the same
 
 // ?solo=<id>: the page is one item's editor and nothing else — what another
 // service shows it as, in a pane of its own (project_manager's tags, its inbox).
-// `class:<k>:<id>` is a class record's editor (an author_manager group).
+// `class:<k>:<id>` is a class record's editor (an authors group).
 const SOLO = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('solo') : null
 // ?bare=1: the list without its bar and tab strip — one tab of it (#open=tab:…)
 // shown inside another service's tab (a group's authors under a project).
@@ -1087,6 +1087,9 @@ function RackList({ def: declared, slots = {} }) {
     <>
       <MenuRow title={tr("rk_menu_make")}>
         {newButton}
+        {/* A tags tab makes projects: a name, and it is a project's tag (tagproject.jsx). */}
+        {outline && PROJECT_LINKED && <RackNewProject projects={projects} say={setNote}
+          onMade={(tag) => { projChanged(); openClass(cls, { name: tag }) }} />}
         {slots.commands?.(api)}
       </MenuRow>
       {BARE ? (
@@ -1521,7 +1524,15 @@ function RackList({ def: declared, slots = {} }) {
         </div>
 
         <footer className="rl-foot">
-          <span>{note || tr("rk_status_hint")}</span>
+          {/* Nothing to say: which service this is and what it holds (the card's
+              name in the portal, else its own); how the rows are picked is in
+              the tooltip. */}
+          {note ? <span>{note}</span> : (
+            <span className="rl-foot-who" title={tr("rk_status_hint")}>
+              <span className="rl-foot-name">{PORTAL_SERVICE.label || def.title}</span>
+              {def.about && <> · {def.about}</>}
+            </span>
+          )}
           <span className="rl-sp" />
           {/* What this project does and does not reach of the other services. */}
           {!PROJECT_LINKED && <span className="rl-hint" title={tr("rk_not_linked_hint", PORTAL_SERVICE.links?.[PORTAL_SERVICE.name])}>{tr("rk_not_linked")}</span>}

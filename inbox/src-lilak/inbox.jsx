@@ -7,7 +7,7 @@ import { authHeaders, linkProject, PORTAL_BASE, useProjects } from 'racklist'
  * The inbox's moving parts (def.jsx declares its fields): what approving
  * makes, and the buttons — in the table's last column and in the editor's
  * bar. Yes makes the record in the service it belongs to — an activity
- * through academic_activities' POST /api/records, a note through note's own
+ * through activities' POST /api/records, a note through note's own
  * POST and PUT — then saves the candidate approved, with where it went; [열기]
  * opens that in a pane here.
  *
@@ -19,7 +19,7 @@ import { authHeaders, linkProject, PORTAL_BASE, useProjects } from 'racklist'
 const ACTIVITY = ['name', 'kind', 'start', 'startTime', 'end', 'endTime', 'place', 'link', 'comment']
 // an update may also touch the trip/talk side of an existing activity
 const UPDATABLE = [...ACTIVITY, 'tripKind', 'tripStart', 'tripEnd', 'role', 'title', 'host', 'talkDate', 'talkTime']
-const SVC = { activity: 'academic_activities', note: 'note', job: 'jobboard', note_delete: 'note' }
+const SVC = { activity: 'activities', note: 'note', job: 'jobboard', note_delete: 'note' }
 // A tags candidate's items with something to add (backend/approve.py tag_items).
 const tagItems = (r) => (r.items || []).filter((it) => it?.service && it?.id && (it.add || []).length)
 // As the backend keeps it (_order): what is still to be decided, then the newest mail.

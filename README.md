@@ -5,10 +5,10 @@ kept as dense tables (racks) that share one set of tags.
 
 | folder | what |
 |---|---|
-| `academic_activities/` | activities — talks, meetings, travel — and their calendar |
-| `author_manager/` | people, affiliations and author groups |
+| `activities/` | activities — talks, meetings, travel — and their calendar |
+| `authors/` | people, affiliations and author groups |
 | `reference_manager/` | papers and journals |
-| `asset_manager2/` | equipment and assets |
+| `inventory/` | equipment and assets |
 | `note/` | notes and to-dos (markdown, `#tags`, `+projects`) |
 | `project_manager/` | projects: a set of tags gathered across every service |
 | `inbox/` | candidates (mail, agents' proposals, jobs) waiting for a person's yes before they are made |

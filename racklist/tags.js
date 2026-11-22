@@ -408,12 +408,12 @@ export function useProjects(again = 0) {
 }
 
 // ─── people ────────────────────────────────────────────────────────────────
-// A person (author_manager's record) is written `@이정우` or `@JungWooLee`, as
+// A person (authors's record) is written `@이정우` or `@JungWooLee`, as
 // a tag is `#name` and a project `+name`. There is no handle to keep in step:
 // the NAME is the key. It is run together — a mention cannot hold a space —
 // and read without case or script, so the same person is reached by their
 // Korean name, their English one or their nick. This only ever reads the list.
-const AM = 'author_manager'
+const AM = 'authors'
 /** A name as a mention writes it: spaces, dots, hyphens and apostrophes out.
  *  "Jung Woo Lee" is `@JungWooLee`; 이정우 is already one word. */
 export const nameText = (n) => String(n ?? '').replace(/[\s.·'’\-]+/g, '')
@@ -425,7 +425,7 @@ export const authorKeys = (p) => [...new Set([p.kor, p.eng, p.nick].map(nameKey)
 
 let authAsk = null
 /** Every person: [{ id, kor, eng, nick, email, keys, svc, proj }] ([] without
- *  author_manager). `keys` is what `@` matches; the names are what is shown. */
+ *  authors). `keys` is what `@` matches; the names are what is shown. */
 export function loadAuthors() {
   const proj = linkProject(AM)
   authAsk ||= (!proj ? Promise.resolve([]) : fetch(`/pp/${AM}/${proj}/api/data`, { headers: authHeaders() })

@@ -1,6 +1,6 @@
 # note
 
-노트 서비스. 화면은 author_manager · reference_manager와 같은 **RACK** 표이고,
+노트 서비스. 화면은 authors · reference_manager와 같은 **RACK** 표이고,
 저장은 그 둘과 다르다 — **노트 하나가 파일 하나**다.
 
 ```

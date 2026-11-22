@@ -22,7 +22,7 @@
     "inbox": true,
     "delegates": [
       "note",
-      "academic_activities",
+      "activities",
       "jobboard",
       "project_manager"
     ]

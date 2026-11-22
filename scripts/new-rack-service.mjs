@@ -7,12 +7,12 @@
  * the portal manifest, the first project — is the same every time. This writes
  * that, and leaves you the declaration.
  *
- *   node scripts/new-rack-service.mjs academic_activities \
+ *   node scripts/new-rack-service.mjs activities \
  *        --title "학술 활동" --noun 활동 --unit 건 --color "#b45309" --icon calendar \
  *        [--project activities] [--out ~/web_service/lilak_rack] [--force]
  *
  *   # after editing <name>/src-lilak/def.js:
- *   node scripts/new-rack-service.mjs academic_activities --sync
+ *   node scripts/new-rack-service.mjs activities --sync
  *
  * --sync rewrites only backend/main.py, whose document keys come FROM the
  * declaration (the item list, every class with fields of its own, settings) —
@@ -40,7 +40,7 @@ for (let i = 0; i < argv.length; i++) {
 const expand = (p) => (p && p.startsWith('~') ? join(homedir(), p.slice(1)) : p)
 const NAME = args.name || args._[0]
 if (!NAME || !/^[a-z][a-z0-9_]*$/.test(NAME)) {
-  console.error('error: a lowercase service name is required (e.g. academic_activities)')
+  console.error('error: a lowercase service name is required (e.g. activities)')
   process.exit(1)
 }
 // Beside the other rack services: the lilak_rack checkout this script is in.

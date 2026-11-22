@@ -1,7 +1,7 @@
 """One shared document per portal project — the backend every rack-list
 service was copying.
 
-author_manager, reference_manager and the services after them each kept the
+authors, reference_manager and the services after them each kept the
 same hundred lines: read the JSON document (creating it on first use), refuse
 to hand back a broken file as empty, take a whole-document PUT guarded by the
 version it was edited from, answer the version cheaply, say who you are, and

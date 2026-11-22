@@ -39,7 +39,7 @@ from app import project_runtime as pr                  # noqa: E402
 from app.routers import service_groups, store          # noqa: E402
 
 PM, IB = "project_manager", "inbox"
-GOES = {"note": "note", "activity": "academic_activities", "job": "jobboard"}
+GOES = {"note": "note", "activity": "activities", "job": "jobboard"}
 
 
 def records(src: Path) -> list[Path]:

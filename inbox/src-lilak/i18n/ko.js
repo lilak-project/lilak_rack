@@ -64,4 +64,6 @@ export default {
   ib_update_head: (a0) => `업데이트 ${a0}`,
   ib_need_change: "바꿀 내용이 없습니다",
   ib_gone: "가리키는 기록이 이제 없습니다",
+  // What the service is, at the foot of its page when nothing else is said there.
+  ib_intro: "승인을 기다리는 제안: 메일 후보, 에이전트 제안, 잡",
 }

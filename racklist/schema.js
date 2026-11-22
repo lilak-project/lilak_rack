@@ -11,6 +11,7 @@ import { tr } from 'lilak-ui/i18n.jsx'
  *
  *   defineRack({
  *     name: 'activities', title: '학술 활동', unit: '건',
+ *     about: '학회·발표 같은 활동과 날짜',          // one line at the page's foot, after its name
  *     key: 'ac',                                  // storage prefix
  *     item: {
  *       key: 'activities', noun: '활동',          // the document's list, and what one is called
@@ -328,7 +329,7 @@ export const caseFree = (f) => f?.type === 'tags' || f?.type === 'maintags'
 export const linkKey = (l) => (l?.id ? `id:${l.id}` : `name:${l?.label || ''}`)
 /** What a record wears through a field, as keys: names for a name field, link
  *  identities for a link field — so people in another service can be a class
- *  tab here (책임자 → author_manager) the way tags are. */
+ *  tab here (책임자 → authors) the way tags are. */
 function worn(rec, field) {
   const v = rec?.[field.k]
   // A type of the service's own says what a value wears (an author row points

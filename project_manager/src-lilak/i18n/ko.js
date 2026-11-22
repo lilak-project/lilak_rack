@@ -19,4 +19,6 @@ export default {
   pm_description: "설명",
   pm_folder: "폴더",
   pm_loading: "불러오는 중…",
+  // What the service is, at the foot of its page when nothing else is said there.
+  pm_intro: "프로젝트와 하위 프로젝트",
 }

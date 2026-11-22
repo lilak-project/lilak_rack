@@ -458,4 +458,8 @@ export default {
   rk_kind_tag_hint: () => "Project: called +name in text, gathers what wears this tag · Flow: what wears it follows on by date",
   rk_kind_project_hint: (a0) => `Called +${a0} in text; gathers what wears this tag`,
   rk_kind_flow_hint: () => "What wears this tag follows on by date (the editor's ‹ ›)",
+  rk_proj_new: "Make project",
+  rk_proj_new_ph: "New project name (sub: parent/name)",
+  rk_proj_one_word: "One word — no spaces or # + . , ; : ! ? ( ) [ ] { } ' \"",
+  rk_proj_exists: (a0) => `+${a0} is a project already`,
 }

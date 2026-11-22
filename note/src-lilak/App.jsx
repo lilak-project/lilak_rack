@@ -61,7 +61,7 @@ const whereIs = (note = '') => (whereAsked[note] ||=
 
 const D = '·'
 const tagsOf = (n) => (n.tags || []).filter(Boolean)
-/** The people a note mentions, by the name author_manager shows them under —
+/** The people a note mentions, by the name authors shows them under —
  *  so `@이정우` and `@JungWooLee` are ONE value here however the note spells
  *  them, and a `@word` naming nobody is left as it was written. */
 const peopleOf = (n) => [...new Set((n.authors || []).map((w) => authorShow(w) || w).filter(Boolean))]
@@ -150,7 +150,7 @@ const TODO_SCOPES = [
 
 /** project_manager's projects, handed to what `+` offers and draws — while
  *  rendering, not after: the page drawn in this same pass asks it. And
- *  author_manager's people, for `@`, which works the same way. */
+ *  authors's people, for `@`, which works the same way. */
 function useProjectChoices() {
   const projects = useProjects()
   const people = useAuthors()
@@ -280,7 +280,7 @@ async function saveNotes(next, doc) {
 }
 
 const NOTE_DEF = {
-  name: 'note', key: 'note', title: tr("nt_notes"), unit: tr("nt_unit"),
+  name: 'note', key: 'note', title: tr("nt_notes"), about: tr('nt_intro'), unit: tr("nt_unit"),
   source: { load: loadNotes, save: saveNotes },
   item: {
     key: 'notes', noun: tr("nt_noun"), label: 'title', tabId: 'notes', allLabel: tr('nt_tab_notes'),

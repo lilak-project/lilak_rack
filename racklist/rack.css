@@ -1,7 +1,7 @@
 @import 'lilak-ui/fonts/fonts.css';
 /* ══ rack list — RACK at sheet density ════════════════════════════════════
  *
- * The stylesheet for a service that IS one table: author_manager was the first,
+ * The stylesheet for a service that IS one table: authors was the first,
  * reference_manager the second, and a rule changed here reaches both. Written
  * for a service whose whole screen is a list, not for a page with a list on it.
  *
@@ -33,7 +33,7 @@
   --rk-cite: #dbeafe;      /* the citation columns wear it on the HEAD only */
   --rk-cite-t: #1d4ed8;
   --rk-proj: #0f766e;      /* a project's nameplate (project_manager's colour) */
-  --rk-auth: #3d5a80;      /* a person's pill (author_manager's colour) */
+  --rk-auth: #3d5a80;      /* a person's pill (authors's colour) */
   /* The fonts are the kit's (fonts/fonts.css): one definition for the portal
      and every rack service. These names stay so the rules below read as before. */
   --rk-mono: var(--font-mono);
@@ -76,9 +76,9 @@
 /* The services' own tints (a chip of another service): their hue on the panel. */
 :root[data-lilak-theme="dark"] [class*="rl-paint-"] { background: color-mix(in srgb, currentColor 18%, var(--rk-panel)); }
 :root[data-lilak-theme="dark"] .rl-paint-note { color: #7fd38a; }
-:root[data-lilak-theme="dark"] .rl-paint-author_manager { color: #8fbcf0; }
+:root[data-lilak-theme="dark"] .rl-paint-authors { color: #8fbcf0; }
 :root[data-lilak-theme="dark"] .rl-paint-reference_manager { color: #e8c35a; }
-:root[data-lilak-theme="dark"] .rl-paint-asset_manager2 { color: #b9a2f0; }
+:root[data-lilak-theme="dark"] .rl-paint-inventory { color: #b9a2f0; }
 :root[data-lilak-theme="dark"] .rl-paint-project_manager { color: #6fd2c2; }
 
 /* The page-level rules belong to an app that IS a rack list — it says so with
@@ -170,9 +170,9 @@ body.rl-page {
    apart than the services' own dark colours. Activity has most of the rows and
    stays unpainted. */
 .rl-paint-note { background: #e8f7ea; color: #22632c; }
-.rl-paint-author_manager { background: #e8f2fd; color: #1c4f85; }
+.rl-paint-authors { background: #e8f2fd; color: #1c4f85; }
 .rl-paint-reference_manager { background: #fef7e0; color: #7a5a06; }
-.rl-paint-asset_manager2 { background: #f2edfc; color: #50329a; }
+.rl-paint-inventory { background: #f2edfc; color: #50329a; }
 .rl-paint-project_manager { background: #e6f5f2; color: #0f5f58; }
 .rl-ink { color: var(--rk-ink); }
 .rl-mono { font-family: var(--rk-mono); }
@@ -221,6 +221,8 @@ body.rl-page {
    second line stuck out of the bar and made it read twice as tall. */
 .rl-foot > * { flex-shrink: 0; white-space: nowrap; }
 .rl-foot > span:first-child { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.rl-foot-who { color: var(--rk-dim); }
+.rl-foot-name { color: var(--rk-ink); }
 .rl-sp { flex: 1; }
 .rl-msg { padding: 14px 11px; color: var(--rk-mute); }
 
@@ -809,7 +811,7 @@ button.rl-auth { cursor: pointer; }
   background: var(--rk-panel);
 }
 .rl-edit { flex: 1; min-height: 0; overflow-y: auto; }
-/* author_manager's editors put the record straight in a .rl-tab-body, which
+/* authors's editors put the record straight in a .rl-tab-body, which
    already scrolls — named here too so the rule cannot depend on which wrapper
    a service happened to use. */
 .rl-epane > .rl-tab-body { flex: 1; min-height: 0; overflow-y: auto; }

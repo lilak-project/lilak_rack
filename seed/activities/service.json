@@ -1,0 +1,33 @@
+{
+  "kind": "rack",
+  "mode": "managed",
+  "start": {
+    "cmd": "sh /app/lilak_rack/activities/portal-serve.sh {port}",
+    "cwd": "/app/lilak_rack/activities",
+    "env": {}
+  },
+  "health": "/",
+  "entry": "/",
+  "url": null,
+  "token": null,
+  "identity": {
+    "accepts_portal_token": true,
+    "link_by": "email"
+  },
+  "capabilities": {
+    "multi_project": true,
+    "import_export": true,
+    "tags": true
+  },
+  "icon": "calendar",
+  "color": "#3f4651",
+  "label": "activities",
+  "labels": {
+    "ko": "행사"
+  },
+  "open": "panel",
+  "entry_project": "activities",
+  "autostart": [
+    "activities"
+  ]
+}

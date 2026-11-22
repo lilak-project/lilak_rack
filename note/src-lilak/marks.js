@@ -21,7 +21,7 @@ export const TAG_COMMENT = /^%[ \t]*(?:#[^\s#]+[ \t]*)+$/
 /** `+프로젝트` — a project (project_manager's), by the tag's rule. */
 export const PROJ_RE = /(^|[\s(])\+(?![0-9]+(?![^\s#+.,;:!?()[\]{}'"]))([^\s#+.,;:!?()[\]{}'"]+)/g
 
-/** `@이정우`, `@JungWooLee` — a person (author_manager's), by the same rule
+/** `@이정우`, `@JungWooLee` — a person (authors's), by the same rule
  *  with `@` for the sign. The character in FRONT is what makes it a mention,
  *  which is also what keeps an address out of it: the `@` of kim@jinr.ru has
  *  a letter before it, so it is an address and not a mention of kim. */
@@ -485,7 +485,7 @@ export const authorOf = (word) => {
   const hit = authorsNamedHere(word)
   return hit.length === 1 ? hit[0] : null
 }
-/** Only author_manager makes a person: a `@word` naming none is just text. */
+/** Only authors makes a person: a `@word` naming none is just text. */
 export const isAuthor = (word) => !!authorOf(word)
 /** The name a `@word` is shown by: the spelling it was written from, spaces
  *  and all — `@JungWooLee` reads "Jung Woo Lee". '' for a word naming nobody. */

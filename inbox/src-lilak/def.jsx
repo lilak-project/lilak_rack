@@ -9,7 +9,7 @@ import './strings.js'
 import { tr } from 'lilak-ui/i18n.jsx'
 import { InboxActions, MailField, MakesField, MatchName } from './inbox.jsx'
 
-// The kinds an activity is stored with (Korean in the data) — as academic_activities/src-lilak/def.js GROUPS has them.
+// The kinds an activity is stored with (Korean in the data) — as activities/src-lilak/def.js GROUPS has them.
 const KINDS = ['학회', '워크샵', '학술미팅', '연구출장', '미팅', '세미나', '강연', '교육', '실험', '보고서', '제안서', '기타', '행사']
 const isAct = (r) => r.target === 'activity'
 const isNote = (r) => r.target === 'note'
@@ -20,7 +20,7 @@ const isTags = (r) => r.target === 'tags'
 const what = (r) => (isTags(r) ? r.title || tr('ib_tags_n', (r.items || []).length) : isNote(r) || isDel(r) ? r.title : r.name) || ''
 
 export default {
-  name: 'inbox', title: tr('ib_title'), unit: tr('ib_unit'), key: 'ib',
+  name: 'inbox', title: tr('ib_title'), about: tr('ib_intro'), unit: tr('ib_unit'), key: 'ib',
   item: {
     key: 'inbox', noun: tr('ib_noun'), allLabel: tr('ib_title'), label: (r) => what(r) || r.subject || r.id,
     // Made by the mail task and the MCP, decided here: no copy of one. No tags of its own.

@@ -1,0 +1,33 @@
+{
+  "kind": "author",
+  "mode": "managed",
+  "start": {
+    "cmd": "sh /app/lilak_rack/authors/portal-serve.sh {port}",
+    "cwd": "/app/lilak_rack/authors",
+    "env": {}
+  },
+  "health": "/",
+  "entry": "/",
+  "url": null,
+  "token": null,
+  "identity": {
+    "accepts_portal_token": true,
+    "link_by": "email"
+  },
+  "capabilities": {
+    "multi_project": true,
+    "import_export": true,
+    "tags": true
+  },
+  "icon": "users",
+  "color": "#3d5a80",
+  "open": "panel",
+  "label": "authors",
+  "labels": {
+    "ko": "저자"
+  },
+  "entry_project": "authors",
+  "autostart": [
+    "authors"
+  ]
+}

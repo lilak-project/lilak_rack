@@ -84,7 +84,7 @@ TAG_RE = re.compile(r"(?:^|[\s(])#(?![0-9]+(?![^\s#.,;:!?()\[\]{}'\"]))([^\s#.,;
 # them, and anything else a name cannot hold, run into one `_`: `+STARK_CRIB`.
 _proj_key = lambda s: re.sub(r"[\s#+.,;:!?()\[\]{}'\"_]+", "_", str(s).strip().lower()).strip("_")  # noqa: E731
 PROJ_RE = re.compile(r"(?:^|[\s(])\+(?![0-9]+(?![^\s#+.,;:!?()\[\]{}'\"]))([^\s#+.,;:!?()\[\]{}'\"]+)")
-# `@이정우`, `@JungWooLee` — a person (author_manager's). The name run together
+# `@이정우`, `@JungWooLee` — a person (authors's). The name run together
 # and without case IS the key: there is no handle to keep in step, and one
 # person is reached by their Korean name, their English one or their nick
 # (racklist tags.js nameKey — one rule, two spellings of it).
@@ -270,7 +270,7 @@ def _read(p: Path) -> dict:
         if m.group(1) not in tags:
             tags.append(m.group(1))
     # The people the body mentions, as they are written: who they ARE is
-    # author_manager's to say, so the screen resolves them and this only
+    # authors's to say, so the screen resolves them and this only
     # reports the words.
     people = []
     for m in AUTH_RE.finditer(_no_code(body)):
@@ -861,7 +861,7 @@ def tagged(tag: str = "", project: str = "", author: str = "", _: dict = Depends
     ones that name it (`+STARK`); with `author`, the ones that mention them.
 
     A person is written by any of their names (`@JungWooLee`, `@이정우`), and
-    only author_manager knows those are one person — so the caller sends all
+    only authors knows those are one person — so the caller sends all
     of their spellings at once, separated by commas. A name cannot hold a
     comma (AUTH_RE), so there is nothing to escape."""
     if author.strip():

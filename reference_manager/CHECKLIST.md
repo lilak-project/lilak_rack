@@ -1,6 +1,6 @@
 # reference_manager — 만들 것 / 만든 것
 
-author_manager와 같은 구조, 데이터만 다른 서비스. 표·탭·선택·편집패널은
+authors와 같은 구조, 데이터만 다른 서비스. 표·탭·선택·편집패널은
 `racklist`를 공유하므로, 여기 있는 것은 "논문에 대한 것"뿐이다.
 
 ## 데이터
@@ -19,7 +19,7 @@ settings    PDF 허용 루트 목록 (매니저만)
 `cites: [{n, ref, raw}]` — 리스트에 있으면 `ref`, 없으면 `raw`. **cited by는 역산**.
 
 ## 단계
-- [x] 1. kit `rack-list` 추출 (author_manager 재배선, 기능 변화 0)
+- [x] 1. kit `rack-list` 추출 (authors 재배선, 기능 변화 0)
 - [x] 2. 뼈대 — 서비스 + 매니페스트 + 백엔드 + 포털 등록
 - [x] 3. 목록 — 열·정렬·필터·검색·선택·나열 규칙, journals / tags 탭
         (My List 없음: 체크한 것이 그 자리를 대신한다)

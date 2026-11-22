@@ -777,7 +777,7 @@ registerType('image', {
  *  this one. Declared on the side being pointed at, as a computed field:
  *
  *    { k: 'usedBy', label: '활동', type: 'backlinks',
- *      from: { svc: 'academic_activities', item: 'activities',
+ *      from: { svc: 'activities', item: 'activities',
  *              field: 'papers', label: 'name' } }
  *
  *  Nothing is stored here: the other service's links are the only copy, so the
