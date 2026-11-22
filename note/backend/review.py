@@ -162,10 +162,11 @@ def place(body: str, reviews: list, level: str) -> dict:
             or next((u for u in view if u["start"] >= hit["start"]), None)
         (home["comments"] if home else moved).append({**r, "drift": True} if drift else r)
     open_ = sum(1 for r in reviews or [] if r.get("state") != "resolved")
+    # No count of pieces "without evidence": jobboard's rule (#22) warns only of
+    # a key it does not know. `needs` stays on each piece, for whoever asks.
     return {"level": level, "doc": {"comments": doc}, "units": view, "moved": moved,
-            "counts": {"units": len(view), "need": sum(u["needs"] for u in view),
-                       "none": sum(1 for u in view if u["needs"] and not u["keys"]),
-                       "open": open_, "resolved": len(reviews or []) - open_, "moved": len(moved)}}
+            "counts": {"units": len(view), "open": open_, "resolved": len(reviews or []) - open_,
+                       "moved": len(moved)}}
 
 
 def cite(text: str, key: str) -> str:
@@ -188,8 +189,7 @@ if __name__ == "__main__":
     # a comment on a sentence: shown on its paragraph, kept through an edit, moved when gone
     r = {"id": "r1", "anchor": anchor(s[1], "sentence"), "state": "open"}
     p = place(b, [r], "paragraph")
-    assert p["units"][1]["comments"][0]["id"] == "r1" and p["counts"]["none"] == 0   # the paragraph has [@a]
-    assert place(b, [], "sentence")["counts"]["none"] == 1
+    assert p["units"][1]["comments"][0]["id"] == "r1" and p["counts"]["open"] == 1
     p = place(b.replace("3 MeV.", "3 MeV 정도."), [r], "sentence")
     assert p["units"][1]["comments"][0].get("drift")
     assert place("전혀 다른 글.", [r], "sentence")["moved"][0]["id"] == "r1"

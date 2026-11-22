@@ -58,6 +58,7 @@ export default function ReviewPane({ id, version, references, flush, onNote, onT
   }
   if (!data) return <div className="nt-rv" />
   const c = data.counts
+  const known = new Set(references.map((r) => r.citeKey))
   const thread = (u, list) => (
     <Thread list={list} canCite={!!u && u.kind === 'text' && references.length > 0} references={references}
       onComment={(t) => comment(t, u?.n)}
@@ -79,7 +80,7 @@ export default function ReviewPane({ id, version, references, flush, onNote, onT
           ))}
         </div>
         <span className="nt-rv-tally">
-          {tr('nt_rv_tally', c.need, c.none, c.open, c.resolved)}
+          {tr('nt_rv_tally', c.open, c.resolved)}
           {c.moved ? <> · <b>{tr('nt_rv_moved_n', c.moved)}</b></> : null}
         </span>
       </div>
@@ -91,8 +92,8 @@ export default function ReviewPane({ id, version, references, flush, onNote, onT
       {open === 0 ? thread(null, data.doc.comments) : null}
       {data.units.map((u) => (
         <div key={`${level}${u.n}`}>
-          <div className={`nt-rv-row${open === u.n ? ' on' : ''}${u.needs && !u.keys.length ? ' nt-rv-miss' : ''}${u.kind === 'block' ? ' nt-rv-block' : ''}`}
-            title={u.needs && !u.keys.length ? `${tr('nt_rv_miss_hint')}\n${tr('nt_rv_edit_hint')}` : tr('nt_rv_edit_hint')}
+          <div className={`nt-rv-row${open === u.n ? ' on' : ''}${u.kind === 'block' ? ' nt-rv-block' : ''}`}
+            title={tr('nt_rv_edit_hint')}
             onClick={(e) => { if (!e.target.closest('a') && editing?.n !== u.n) setOpen(open === u.n ? null : u.n) }}
             onDoubleClick={(e) => { if (!e.target.closest('a') && editing?.n !== u.n) { window.getSelection()?.removeAllRanges(); setEditing({ n: u.n, was: u.text, text: u.text }) } }}>
             <span className="nt-rv-n">{u.n}</span>
@@ -112,7 +113,12 @@ export default function ReviewPane({ id, version, references, flush, onNote, onT
               </div>
             ) : <div className="nt-rv-text"><Rendered>{u.text}</Rendered></div>}
             <span className="nt-rv-side">
-              {u.keys.map((k) => <span key={k} className="nt-rv-key">@{k}</span>)}
+              {/* A key the library does not know is the one thing warned of
+                  (a piece with no evidence is not: jobboard's rule, #22). */}
+              {u.keys.map((k) => {
+                const off = references.length > 0 && !known.has(k)
+                return <span key={k} className={`nt-rv-key${off ? ' off' : ''}`} title={off ? tr('nt_rv_key_unknown') : undefined}>@{k}</span>
+              })}
               {count(u.comments)}
             </span>
           </div>

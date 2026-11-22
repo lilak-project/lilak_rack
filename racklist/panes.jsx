@@ -231,7 +231,15 @@ export function useTabSpread(box, count, active, again) {
     return () => seen.disconnect()
   }, [box, count, all, again])
   useEffect(() => {
-    if (!all) box.current?.querySelector('.rl-tab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    // The strip scrolled by hand, and only the strip: `scrollIntoView` moves
+    // every box round it that can scroll, and moved the editor pane sideways
+    // under the menu (rack.css .rl-epane).
+    const tab = !all && box.current?.querySelector('.rl-tab.on')
+    const strip = tab?.closest('.rl-tabs')
+    if (!tab || !strip) return
+    const t = tab.getBoundingClientRect(), r = strip.getBoundingClientRect()
+    if (t.left < r.left) strip.scrollLeft -= r.left - t.left
+    else if (t.right > r.right) strip.scrollLeft += t.right - r.right
   }, [box, active, all, again])
   useEffect(() => {
     if (!all) return undefined

@@ -243,7 +243,7 @@ _me = {"authenticated": True, "username": "jw"}
 _r = add_review("rv", ReviewBody(text="근거?", level="sentence", n=1), _me)
 reply_review("rv", _r["id"], ReplyBody(text="고침", via="agent"), _me)
 _v = note_units("rv", "paragraph", _me)
-assert _v["units"][0]["comments"][0]["replies"][0]["via"] == "agent" and _v["counts"]["none"] == 1
+assert _v["units"][0]["comments"][0]["replies"][0]["via"] == "agent" and _v["units"][0]["needs"]
 # a save that never saw the comment does not take it away
 put_note("rv", SaveBody(fields={}, body="첫 문장은 3 MeV. 둘째.\n"), _me)
 _u = note_units("rv", "sentence", _me)["units"][0]
@@ -251,7 +251,7 @@ assert _u["comments"][0]["id"] == _r["id"]
 _n = cite("rv", CiteBody(level="sentence", n=1, hash=_u["hash"], key="kim2026"), _me)
 assert _n["body"] == "첫 문장은 3 MeV [@kim2026]. 둘째.\n"
 _u = note_units("rv", "sentence", _me)
-assert _u["counts"]["none"] == 0 and _u["units"][0]["comments"]        # the hash ignores the mark
+assert _u["units"][0]["keys"] == ["kim2026"] and _u["units"][0]["comments"]        # the hash ignores the mark
 # one piece rewritten in Review: only if it is still what the page showed
 from backend.main import PieceBody, edit_piece   # noqa: E402
 _was = _u["units"][1]["text"]

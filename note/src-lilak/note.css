@@ -1257,9 +1257,9 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 .nt-rv-text img { max-width: min(100%, 360px); height: auto; }
 .nt-rv-block .nt-rv-text { color: var(--rk-dim); }
 /* A number with nothing to rest on: underlined in the danger colour. */
-.nt-rv-miss .nt-rv-text { text-decoration-line: underline; text-decoration-style: wavy; text-decoration-color: var(--rk-danger); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .nt-rv-side { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 14em; }
 .nt-rv-key { padding: 0 5px; font-size: var(--fs-small); color: var(--rk-cite-t); background: var(--rk-cite); white-space: nowrap; }
+.nt-rv-key.off { color: var(--rk-danger); background: none; border: 1px dashed var(--rk-danger); }
 .nt-rv-count { min-width: 1.6em; padding: 0 5px; text-align: center; font-size: var(--fs-small); color: var(--rk-mute); border: 1px solid var(--rk-edge); }
 .nt-rv-count.on { color: var(--rk-ink); border-color: var(--rk-ink); font-weight: 600; }
 .nt-rv-thread { padding: 6px 10px 8px calc(3.2em + 18px); background: var(--rk-gut); border-bottom: 1px solid var(--rk-line); display: grid; gap: 6px; }
