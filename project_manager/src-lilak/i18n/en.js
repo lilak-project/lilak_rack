@@ -19,6 +19,4 @@ export default {
   pm_description: "Description",
   pm_folder: "Folder",
   pm_loading: "Loading…",
-  // What the service is, at the foot of its page when nothing else is said there.
-  pm_intro: "Projects and their sub-projects",
 }

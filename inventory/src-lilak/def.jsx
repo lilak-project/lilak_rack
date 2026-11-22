@@ -72,7 +72,7 @@ function ListActions({ f, setF, ctx }) {
 }
 
 export default {
-  name: 'inventory', title: tr("as_title"), about: tr('as_intro'), unit: tr("as_unit"), key: 'am2',
+  name: 'inventory', title: tr("as_title"), unit: tr("as_unit"), key: 'am2',
   item: {
     key: 'assets', id: 'assetId', noun: tr("as_asset"), allLabel: tr('as_tab_assets'), tabId: 'assets',
     label: (a) => a.assetId || a.name || tr("as_asset"),

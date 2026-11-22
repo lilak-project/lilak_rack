@@ -105,6 +105,4 @@ export default {
   am_author_noun: "author",
   am_given_name: "Given name",
   am_kor_name_col: "Korean name",
-  // What the service is, at the foot of its page when nothing else is said there.
-  am_intro: "The people we work with and where they are",
 }

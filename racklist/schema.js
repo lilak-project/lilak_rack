@@ -11,7 +11,6 @@ import { tr } from 'lilak-ui/i18n.jsx'
  *
  *   defineRack({
  *     name: 'activities', title: '학술 활동', unit: '건',
- *     about: '학회·발표 같은 활동과 날짜',          // one line at the page's foot, after its name
  *     key: 'ac',                                  // storage prefix
  *     item: {
  *       key: 'activities', noun: '활동',          // the document's list, and what one is called

@@ -34,7 +34,7 @@ const kidsOf = (r, list) => {
 const folderOf = projectFolder
 
 export default {
-  name: 'project_manager', title: tr('pm_title'), about: tr('pm_intro'), unit: tr('pm_unit'), key: 'pm',
+  name: 'project_manager', title: tr('pm_title'), unit: tr('pm_unit'), key: 'pm',
   item: {
     key: 'projects', noun: tr('pm_project'), allLabel: tr('pm_projects'), label: 'name',
     // A project's row opens its own tab: everything its tags gather, in every

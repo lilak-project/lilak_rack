@@ -44,7 +44,7 @@ const classHooks = (list, key, what) => ({
 })
 
 export default {
-  name: 'authors', title: tr("am_author"), about: tr('am_intro'), unit: tr("am_unit"), key: 'am',
+  name: 'authors', title: tr("am_author"), unit: tr("am_unit"), key: 'am',
   item: {
     key: 'authors', noun: tr("am_author_noun"), allLabel: tr('am_tab_authors'), tabId: 'total',
     label: anyName,

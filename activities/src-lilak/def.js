@@ -116,7 +116,7 @@ const PEOPLE = { svc: 'authors', item: 'authors',
     || `${a.korFamily || ''}${a.korGiven || ''}` || a.nick || '' }
 
 export default {
-  name: 'activities', title: 'activities', about: tr('aa_intro'), unit: tr("aa_unit"), key: 'aa',
+  name: 'activities', title: 'activities', unit: tr("aa_unit"), key: 'aa',
   item: {
     key: 'activities', noun: tr("aa_activity"), allLabel: tr('aa_tab_all'), label: 'name',
     // 기타 제외: the 기타 group (기타, 행사 — everything brought in from Google) out of the list.

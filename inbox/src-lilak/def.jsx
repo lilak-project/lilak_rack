@@ -20,7 +20,7 @@ const isTags = (r) => r.target === 'tags'
 const what = (r) => (isTags(r) ? r.title || tr('ib_tags_n', (r.items || []).length) : isNote(r) || isDel(r) ? r.title : r.name) || ''
 
 export default {
-  name: 'inbox', title: tr('ib_title'), about: tr('ib_intro'), unit: tr('ib_unit'), key: 'ib',
+  name: 'inbox', title: tr('ib_title'), unit: tr('ib_unit'), key: 'ib',
   item: {
     key: 'inbox', noun: tr('ib_noun'), allLabel: tr('ib_title'), label: (r) => what(r) || r.subject || r.id,
     // Made by the mail task and the MCP, decided here: no copy of one. No tags of its own.

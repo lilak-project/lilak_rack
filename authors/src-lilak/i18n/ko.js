@@ -105,6 +105,4 @@ export default {
   am_author_noun: "저자",
   am_given_name: "이름",
   am_kor_name_col: "이름",
-  // What the service is, at the foot of its page when nothing else is said there.
-  am_intro: "함께 일하는 사람들과 소속",
 }

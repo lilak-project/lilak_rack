@@ -378,6 +378,4 @@ export default {
   nt_cover_subtitle: "Subtitle",
   nt_cover_presenter: "Presenter",
   nt_cover_when: "Date",
-  // What the service is, at the foot of its page when nothing else is said there.
-  nt_intro: "Notes: daily logs, summaries and minutes",
 }

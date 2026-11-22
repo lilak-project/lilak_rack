@@ -140,6 +140,4 @@ export default {
   rm_citing_this: "What cites this paper",
   rm_all_n_papers: (a0) => `· ${a0} papers in all`,
   rm_all_n_papers_more: (a0) => `… ${a0} papers in all`,
-  // What the service is, at the foot of its page when nothing else is said there.
-  rm_intro: "References: papers, books and web pages",
 }

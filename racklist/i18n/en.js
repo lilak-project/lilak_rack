@@ -317,6 +317,7 @@ export default {
   rk_occurrence_split: (a0, a1) => `Editing only the ${a1} occurrence of ${a0}.`,
   rk_series_split: (a0, a1) => `Split ${a0} into a new series from ${a1}.`,
   rk_copied_x: (a0) => `Copied ${a0}.`,
+  rk_foot_set: (a0) => `set ${a0}`,
   rk_status_hint: "Click to select, shift for a range, right-click to edit.",
   rk_n_rows: (a0) => `${a0} rows`,
   rk_rule_values_empty: "The rule has nothing to fill in yet",

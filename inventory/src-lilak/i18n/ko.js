@@ -53,6 +53,4 @@ export default {
   as_made_by: "만든이",
   as_time: "시각",
   as_title: "자산",
-  // What the service is, at the foot of its page when nothing else is said there.
-  as_intro: "연구실 장비와 물품, 놓인 곳과 담당자",
 }

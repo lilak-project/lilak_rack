@@ -148,6 +148,4 @@ export default {
   aa_tab_all: "activities",
   aa_quick_no_etc: "Hide other",
   aa_quick_no_etc_hint: "Leave the Other group (Other, Event) out of the list",
-  // What the service is, at the foot of its page when nothing else is said there.
-  aa_intro: "Activities and their dates: talks, meetings, experiments",
 }

@@ -378,6 +378,4 @@ export default {
   nt_cover_subtitle: "부제",
   nt_cover_presenter: "발표자",
   nt_cover_when: "날짜",
-  // What the service is, at the foot of its page when nothing else is said there.
-  nt_intro: "일지·요약·회의록을 쓰고 모아 보는 노트",
 }

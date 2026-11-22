@@ -59,7 +59,7 @@ const roleCol = (k, label) => ({
 })
 
 export default {
-  name: 'reference_manager', title: tr("rm_title"), about: tr('rm_intro'), unit: tr("rm_unit"), key: 'rm',
+  name: 'reference_manager', title: tr("rm_title"), unit: tr("rm_unit"), key: 'rm',
   item: {
     key: 'references', noun: tr("rm_paper"), allLabel: tr('rm_tab_references'), tabId: 'total',
     label: refLabel,

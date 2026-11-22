@@ -53,6 +53,4 @@ export default {
   as_made_by: "Made by",
   as_time: "Time",
   as_title: "Assets",
-  // What the service is, at the foot of its page when nothing else is said there.
-  as_intro: "Lab equipment: where each piece is and who holds it",
 }

@@ -1524,13 +1524,14 @@ function RackList({ def: declared, slots = {} }) {
         </div>
 
         <footer className="rl-foot">
-          {/* Nothing to say: which service this is and what it holds (the card's
-              name in the portal, else its own); how the rows are picked is in
-              the tooltip. */}
+          {/* Nothing to say: which service and project this is (the card's name
+              in the portal, else its own), and the share set it is in; how the
+              rows are picked is in the tooltip. */}
           {note ? <span>{note}</span> : (
             <span className="rl-foot-who" title={tr("rk_status_hint")}>
               <span className="rl-foot-name">{PORTAL_SERVICE.label || def.title}</span>
-              {def.about && <> · {def.about}</>}
+              {PORTAL_PROJECT && <> · {PORTAL_PROJECT}</>}
+              {PORTAL_SERVICE.shareName && <> · {tr("rk_foot_set", PORTAL_SERVICE.shareName)}</>}
             </span>
           )}
           <span className="rl-sp" />

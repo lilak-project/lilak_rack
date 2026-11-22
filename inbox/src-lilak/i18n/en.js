@@ -64,6 +64,4 @@ export default {
   ib_update_head: (a0) => `Update ${a0}`,
   ib_need_change: "Nothing to change",
   ib_gone: "The record it points at is gone",
-  // What the service is, at the foot of its page when nothing else is said there.
-  ib_intro: "Proposals waiting for approval: mail, agents' suggestions, jobs",
 }

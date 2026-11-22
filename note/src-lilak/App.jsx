@@ -280,7 +280,7 @@ async function saveNotes(next, doc) {
 }
 
 const NOTE_DEF = {
-  name: 'note', key: 'note', title: tr("nt_notes"), about: tr('nt_intro'), unit: tr("nt_unit"),
+  name: 'note', key: 'note', title: tr("nt_notes"), unit: tr("nt_unit"),
   source: { load: loadNotes, save: saveNotes },
   item: {
     key: 'notes', noun: tr("nt_noun"), label: 'title', tabId: 'notes', allLabel: tr('nt_tab_notes'),

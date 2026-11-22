@@ -317,6 +317,7 @@ export default {
   rk_occurrence_split: (a0, a1) => `${a0} ${a1} 회차만 따로 고칩니다.`,
   rk_series_split: (a0, a1) => `${a0} ${a1}부터 새 반복으로 나눴습니다.`,
   rk_copied_x: (a0) => `${a0} 복사했습니다.`,
+  rk_foot_set: (a0) => `세트 ${a0}`,
   rk_status_hint: "왼쪽 클릭으로 선택, shift로 범위, 오른쪽 클릭으로 편집.",
   rk_n_rows: (a0) => `${a0}줄`,
   rk_rule_values_empty: "규칙에 쓸 값이 비어 있습니다",

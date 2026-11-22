@@ -148,6 +148,4 @@ export default {
   aa_tab_all: "활동",
   aa_quick_no_etc: "기타 제외",
   aa_quick_no_etc_hint: "기타 그룹(기타, 행사)을 목록에서 빼기",
-  // What the service is, at the foot of its page when nothing else is said there.
-  aa_intro: "학회·발표·회의·실험 같은 활동과 그 날짜",
 }
