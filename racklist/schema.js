@@ -59,6 +59,7 @@ import { tr } from 'lilak-ui/i18n.jsx'
  *   tone: 'ink' | 'dim'        the column's colour: the record's own words, or about it
  *   search: false              not read by the search box
  *
+ * `item.canAdd(doc) => bool` — false: no +new or clone for items (a service setting).
  * `item.now: { start: 'start', end: 'end' }` — records with dates: while the
  * table is sorted by `start`, what is on today is lit, and a red line marks
  * where today falls between what has begun and what has not.
@@ -66,7 +67,9 @@ import { tr } from 'lilak-ui/i18n.jsx'
  *                              more than the field itself moves (a main tag)
  *   group: '한글 이름'          sit on one line with the fields beside it that
  *                              say the same group (성 · 이름; first · middle · last)
- *   col: { when: (tab) => bool }  a column only some tabs have (a group's core)
+ *   col: { when: (tab, { doc }) => bool }  a column only some tabs have (a group's core),
+ *                              or only some settings show
+ *   disabled: (rec, { doc }) => bool   shown but not editable (a setting says so)
  *
  * Computed fields, cells and sorters see the tab they are drawn for (ctx.tab).
  * `item.tie(tab, ctx) => (a, b) => n` is the order under every sort — the one
@@ -350,7 +353,15 @@ export function classRows(def, doc, cls, extra = {}) {
   let recs
   // A list counts what it holds, not who wears it.
   if (cls.list) return (doc?.[cls.k] || []).map((r) => ({ ...r, key: r.id, count: (r[cls.list.ids] || []).length }))
-  if (cls.stored) recs = (doc?.[cls.k] || []).map((r) => ({ ...r, key: r[cls.keyBy] }))
+  if (cls.stored) {
+    recs = (doc?.[cls.k] || []).map((r) => ({ ...r, key: r[cls.keyBy] }))
+    // Worn by name (keyBy: 'name'): a name in use with no record yet is a row
+    // too — opened, it becomes one. (An asset's place, typed before it had one.)
+    if (cls.keyBy === 'name' && field) {
+      const have = new Set(recs.map((r) => r.key))
+      for (const it of items) for (const k of worn(it, field)) if (k && !have.has(k)) { have.add(k); recs.push({ key: k, name: k }) }
+    }
+  }
   else if (isRef(field)) {
     const seen = new Map()
     for (const it of items) {

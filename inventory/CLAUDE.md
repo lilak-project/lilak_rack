@@ -22,8 +22,12 @@ Two tabs, both tables:
 There is no My List: a working set you had to fill before you could act on it
 was a second selection beside the checkboxes. The checkboxes make the list.
 
-Not here (yet): classes as records, QR scanning, HWPX/XLSX export, the request
-form's applicant fields.
+Also on the command line: 내보내기 / 들여오기 (`transfer.jsx`: XLSX, HWPX
+request forms), 스캔 (`scan.jsx`: the camera reads sticker after sticker into a
+list, then 고르기 or 리스트로; html5-qrcode, loaded only when opened), and a
+manager's 설정 tab (`settings.jsx`). Photo fields take 찍기 (an in-page
+viewfinder) and 편집 (rotate, crop) — those are the kit's (`racklist/photo.jsx`).
+The camera needs HTTPS and the portal frame's `allow="camera"`.
 
 ## The app
 

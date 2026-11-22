@@ -208,7 +208,7 @@ const WHOLE = Decoration.mark({})
  *  all (`atomic`, which runs to the next line so the newline goes too). */
 function hideRules(state) {
   const { doc } = state
-  const here = doc.lineAt(state.selection.main.head).number
+  const here = state.readOnly ? -1 : doc.lineAt(state.selection.main.head).number   // locked: nothing is being typed
   const marks = [], atomic = []
   for (const n of ruleLines(blankComments(doc.toString()))) {
     if (n === here) continue
@@ -236,7 +236,7 @@ function spaceLines(state, pages) {
   const lines = blankComments(doc.toString()).split('\n')
   const starts = new Set(pages.slice(1).map((p) => p.from))
   const marks = []
-  for (const [n, kind] of blankHeights(lines, doc.lineAt(state.selection.main.head).number, starts, pages.length > 0)) {
+  for (const [n, kind] of blankHeights(lines, state.readOnly ? -1 : doc.lineAt(state.selection.main.head).number, starts, pages.length > 0)) {
     marks.push(SPACE[kind].range(doc.line(n).from))
   }
   for (const n of starts) if (n <= doc.lines) marks.push(SPACE.top.range(doc.line(n).from))

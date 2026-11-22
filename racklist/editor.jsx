@@ -296,7 +296,7 @@ export function RackItemEditor({
         hint={why} pending={dirty && !why}
         onClose={onCancel && (async () => { if (await settle.current()) onCancel() })} closeDisabled={dirty && !!why}
         onCancel={onCancel}
-        onClone={onClone && isItem && def.item.clone !== false ? clone : undefined}
+        onClone={onClone && isItem && def.item.clone !== false && (!def.item.canAdd || def.item.canAdd(doc)) ? clone : undefined}
         onDelete={canDelete && !(isItem && def.item.lock?.(f)) ? remove : undefined}
         deleteWarn={own.deleteWarn ? own.deleteWarn(f, doc) : undefined}
         extra={<>{actions?.(f, setF)}{nav}</>} />
@@ -315,12 +315,12 @@ export function RackItemEditor({
             const w = fl.get ? <T.Show key={fl.k} {...props} />
               : typeof fl.edit === 'function' ? <span key={fl.k} style={{ display: 'contents' }}>{fl.edit(props)}</span>
                 : <T.Edit key={fl.k} {...props} />
-            return fl.disabled?.(f) ? <fieldset key={fl.k} className="rl-off" disabled>{w}</fieldset> : w
+            return fl.disabled?.(f, { doc }) ? <fieldset key={fl.k} className="rl-off" disabled>{w}</fieldset> : w
           }
           const hints = seg.fields.filter((fl) => fl.hint && fl.type !== 'check').map((fl) => fl.hint)
           return (
             <RackField key={seg.fields[0].k} label={dateLabel(seg) || seg.group || seg.fields[0].label}
-              {...(seg.fields.every((fl) => fl.disabled?.(f)) ? { off: true } : { tone: lit(seg) })}>
+              {...(seg.fields.every((fl) => fl.disabled?.(f, { doc })) ? { off: true } : { tone: lit(seg) })}>
               {seg.fields.map(widget)}
               {hints.map((h) => <span key={h} className="rl-hint">{h}</span>)}
             </RackField>

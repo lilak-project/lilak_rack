@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import './strings.js'
 import { tr, currentLang } from 'lilak-ui/i18n.jsx'
 import { RackTextRows } from './fields.jsx'
+import { RackCamera, RackPhotoEdit, canCamera } from './photo.jsx'
 import { authHeaders, linkProject, openInService, serviceColor, remoteDocOf } from './portal.js'
 import { useSharedTags, spellTag, tagKey, uniqueTags } from './tags.js'
 import { parseRule, describe, withUntil, withCount, withoutEnd, DAYS, dow, nth } from './rrule.js'
@@ -258,6 +259,8 @@ const shownAs = (field, ctx, v) =>
   (field.show && classRec(field, ctx, v)?.[field.show]) || nameOf(field, ctx, v)
 /** What to store for a name typed or picked: the record's id when it has one. */
 const storedFor = (field, ctx, t) => {
+  // …unless the class is worn by name (keyBy: 'name'): then the name is what is kept.
+  if (ctx.def?.classes?.find((c) => c.k === field?.of)?.keyBy === 'name') return t
   const rec = field?.of && (ctx.doc?.[field.of] || []).find((r) => r.name === t)
   return rec?.id || t
 }
@@ -714,12 +717,13 @@ registerType('members', {
  *  them side by side. */
 const SHOT_MAX = 1280
 const SHOT_CAP = 600 * 1024
-function shrink(file) {
+function shrink(src) {               // a File, or a picture's URL (camera, editor)
   return new Promise((res, rej) => {
     const img = new Image()
-    const url = URL.createObjectURL(file)
+    const url = typeof src === 'string' ? src : URL.createObjectURL(src)
+    const done = () => { if (url !== src) URL.revokeObjectURL(url) }
     img.onload = () => {
-      URL.revokeObjectURL(url)
+      done()
       const s = Math.min(1, SHOT_MAX / Math.max(img.width, img.height))
       const c = document.createElement('canvas')
       c.width = Math.round(img.width * s)
@@ -727,21 +731,30 @@ function shrink(file) {
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
       res(c.toDataURL('image/jpeg', 0.82))
     }
-    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error(tr("rk_read_failed"))) }
+    img.onerror = () => { done(); rej(new Error(tr("rk_read_failed"))) }
     img.src = url
   })
 }
+// 찍기 opens the page's own viewfinder where the browser lets it (a desktop's
+// webcam too), else the phone's camera app; 파일 picks a picture; 편집 turns and cuts.
 function Shot({ value, onChange, field, ctx }) {
   const [big, setBig] = useState(false)
+  const [over, setOver] = useState('')     // '' | 'cam' | 'edit'
   const pick = useRef(null)
-  async function take(file) {
-    if (!file) return
+  const snapApp = useRef(null)
+  async function take(src) {
+    setOver('')
+    if (!src) return
     try {
-      const data = await shrink(file)
+      const data = await shrink(src)
       if (data.length > SHOT_CAP * 1.4) { ctx.say?.(tr("rk_photo_too_big")); return }
       onChange(data)
     } catch (e) { ctx.say?.(String(e.message || e)) }
   }
+  const fileIn = (ref, cap) => (
+    <input ref={ref} type="file" accept="image/*" capture={cap} hidden
+      onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; take(f) }} />
+  )
   return (
     <span className="rl-shot">
       {value ? (
@@ -749,13 +762,17 @@ function Shot({ value, onChange, field, ctx }) {
           <img src={value} alt={field.label} />
         </button>
       ) : <span className="rl-shot-img is-empty">{tr("rk_none")}</span>}
+      <span className="rl-hint">{field.placeholder || field.label}</span>
       <span className="rl-shot-line">
-        <span className="rl-hint">{field.placeholder || field.label}</span>
-        <button type="button" className="rl-btn" onClick={() => pick.current?.click()}>{value ? tr("rk_replace") : tr("rk_add")}</button>
+        <button type="button" className="rl-btn" onClick={() => (canCamera() ? setOver('cam') : snapApp.current?.click())}>{tr("rk_cam_take")}</button>
+        <button type="button" className="rl-btn" onClick={() => pick.current?.click()}>{tr("rk_photo_file")}</button>
+        {value && <button type="button" className="rl-btn" onClick={() => setOver('edit')}>{tr("rk_photo_edit")}</button>}
         {value && <button type="button" className="rl-x" title={tr("rk_delete")} onClick={() => onChange('')}>×</button>}
       </span>
-      <input ref={pick} type="file" accept="image/*" capture="environment" hidden
-        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; take(f) }} />
+      {fileIn(pick)}
+      {fileIn(snapApp, 'environment')}
+      {over === 'cam' && <RackCamera onShot={take} onClose={() => setOver('')} />}
+      {over === 'edit' && <RackPhotoEdit src={value} onSave={take} onClose={() => setOver('')} />}
       {big && (
         <button type="button" className="rl-lightbox" onClick={() => setBig(false)} title={tr("rk_close")}>
           <img src={value} alt="" />

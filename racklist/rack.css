@@ -1052,6 +1052,18 @@ button.rl-auth { cursor: pointer; }
   border: 0; background: rgba(15, 23, 42, .72); cursor: zoom-out;
 }
 .rl-lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
+/* Over everything for a moment: a photo field's camera and editor, inventory's scanner. */
+.rl-over {
+  position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px;
+  background: rgba(15, 23, 42, .72);
+}
+.rl-over-box {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 100%; max-height: 100%;
+  padding: 10px; border: 1px solid var(--rk-edge); background: var(--rk-panel);
+}
+.rl-over-view { display: block; max-width: min(86vw, 900px); max-height: 66vh; background: #000; }
+.rl-over-cut { touch-action: none; cursor: crosshair; }
+.rl-over-bar { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
 
 /* The search box's words, where a row shows them. */
 .rl-hl { background: var(--rk-hl, #fde68a); color: inherit; padding: 0; border-radius: 2px; }

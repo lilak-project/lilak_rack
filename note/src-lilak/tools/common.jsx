@@ -11,14 +11,31 @@ import { tr } from 'lilak-ui/i18n.jsx'
  *  things and no more. It is a field grid now, the same one activity's editor
  *  is: label on the left, the thing on the right.
  */
-function Body({ note, setNote, go, keep, where, read, slide, print, say, ask, tags, words, make }) {
+// Fields the app writes and shows in its own way (the mode, the lock, the
+// title slide, Review's comments), not as a line of their own here.
+const OWN = new Set(['format', 'reference', 'ratio', 'numbered', 'mode', 'readonly', 'locked_by', 'locked_at', 'locked_via',
+  'reviews', 'subtitle', 'presenter', 'when'])
+
+function Body({ note, setNote, go, keep, where, read, slide, print, say, ask, tags, words, make, lock }) {
   const { pins, last, marks } = keep
   return (
     <div className="rl-rec nt-common">
       {/* Where this note is, whole, to hand an agent (get_note takes it). */}
       <PathLine kind="notes" id={note.id} />
+      {/* 읽기 전용: nothing it says can be changed, by anyone, until unlocked —
+          and only the one who locked it, or a manager, may unlock it. */}
+      <RackField label={tr("nt_lock")}>
+        {lock.on ? (<>
+          <span className="nt-locked">{tr("nt_locked")}</span>
+          <span className="rl-hint">{tr("nt_locked_by", lock.via ? `${lock.by || '?'} · ${lock.via}` : (lock.by || '?'), String(lock.at).slice(0, 10))}</span>
+          <button type="button" className="rl-btn" disabled={!lock.can}
+            title={lock.can ? tr("nt_unlock_hint") : tr("nt_unlock_no")} {...press(() => { if (lock.can) lock.set(false) })}>{tr("nt_unlock")}</button>
+        </>) : (
+          <button type="button" className="rl-btn" title={tr("nt_lock_hint")} {...press(() => lock.set(true))}>{tr("nt_lock_btn")}</button>
+        )}
+      </RackField>
       <RackField label={tr("nt_date")}>
-        <input type="date" className="rl-in nt-date" value={note.date || ''}
+        <input type="date" className="rl-in nt-date" value={note.date || ''} disabled={lock.on}
           onChange={(e) => setNote((s) => ({ ...s, date: e.target.value }))} />
       </RackField>
 
@@ -62,7 +79,7 @@ function Body({ note, setNote, go, keep, where, read, slide, print, say, ask, ta
       {/* Whatever else the front matter holds. The backend keeps keys it does
           not know, so a note brought from somewhere else loses nothing. */}
       {Object.entries(note.fields || {})
-        .filter(([k]) => k !== 'format' && k !== 'reference' && k !== 'ratio' && k !== 'numbered' && k !== 'mode')
+        .filter(([k]) => !OWN.has(k))
         .map(([k, v]) => (
           <RackField key={k} label={<span className="rl-mono">{k}</span>}>
             <span className="rl-hint">{String(v ?? '')}</span>

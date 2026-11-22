@@ -154,7 +154,7 @@ const look = EditorView.theme({
 // The line between two slides stands on top of the slide's own height.
 const CUT_LINE = 12   // the band between two slides: note.css --nt-band
 
-export default function RawArea({ value, onChange, live = false, tex = false, at, fileSrc, onFiles, onOpenNote,
+export default function RawArea({ value, onChange, live = false, tex = false, readOnly = false, at, fileSrc, onFiles, onOpenNote,
   pins, onPin, onEdit, onGutter, goto: go, openAt = 0, hold, fold = false, deck = null, numbered = false }) {
   const host = useRef(null)
   const view = useRef(null)
@@ -201,6 +201,11 @@ export default function RawArea({ value, onChange, live = false, tex = false, at
           }),
           // A deck ends on its own band; any other note can ask for room below.
           ...(deck ? [deckField, deckFit] : tail),
+          // A locked note (the 잠금 in 공용): read, selected and copied, never
+          // changed — by a key, a paste, a drop or a tool alike.
+          // No caret either (`editable`): there is nowhere to type, and the
+          // lines stay drawn as they read (livemd.js asks `readOnly`).
+          ...(readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false), EditorState.changeFilter.of(() => false)] : []),
           pinField,
           ...(tex || deck ? [] : [blankField]),
           highlightActiveLineGutter(),

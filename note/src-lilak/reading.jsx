@@ -42,7 +42,7 @@ function tagify(children, box) {
       out.push(job ? <JobTicket key={at} short={m[12]} name={job.name} /> : tag ? <span className="nt-tag" key={at}>{m[2]}</span>
         : proj ? <span className="nt-proj" key={at}>{m[6]}</span>
           : auth ? <span className="nt-auth" key={at}>{authorShow(m[8])}</span>
-            : wiki ? <span className="nt-cm-wiki" key={at}>{m[9].split('|').pop().trim()}</span>
+            : wiki ? <span className="nt-cm-wiki" key={at} data-note={m[9].split('|')[0].trim()}>{m[9].split('|').pop().trim()}</span>
               : urgent ? <span className="nt-urgent" key={at}>!!</span>
                 : <span className={'»📅'.includes(m[3]) ? `nt-due-in${!done && overdue(m[4]) ? ' nt-due-late' : ''}` : 'nt-done-in'} key={at}>{m[4]}</span>)
       last = at + (job ? 8 : tag ? 1 + m[2].length : proj ? 1 + m[6].length : auth ? 1 + m[8].length : urgent ? 2 : m[0].length)

@@ -41,7 +41,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
-from lilak_portal_auth import identity, manager, signed_in
+from lilak_portal_auth import identity, is_manager, manager, signed_in
 from rackstore.store import Bin, mount_spa
 
 try:                                   # run from backend/ (portal-serve.sh), or as backend.main (tests)
@@ -627,13 +627,65 @@ def put_note(note_id: str, body: SaveBody, _: dict = Depends(signed_in)):
         "date": cur["date"] if body.date is None else body.date.strip(),
         **(cur["fields"] if body.fields is None else body.fields),
     }
-    # The comments are written by their own calls (below) and by nothing else:
-    # a page or an agent saving the note hands back the fields as IT read them,
-    # and a comment made since would go.
-    meta.pop("reviews", None)
-    if cur["fields"].get("reviews"):
-        meta["reviews"] = cur["fields"]["reviews"]
-    _atomic_write(p, _join(meta, cur["body"] if body.body is None else body.body))
+    text = cur["body"] if body.body is None else body.body
+    # The comments, and the lock, are written by their own calls (below) and by
+    # nothing else: a page or an agent saving the note hands back the fields as
+    # IT read them, and a comment made since would go, or a lock come undone.
+    for k in ("reviews", *LOCK_KEYS):
+        meta.pop(k, None)
+        if cur["fields"].get(k):
+            meta[k] = cur["fields"][k]
+    # Locked: how it is looked at may change (the mode, the ratio), nothing it says.
+    if _locked(cur):
+        said = lambda m, t: (m["title"], m["date"], t, {k: v for k, v in m.items() if k not in VIEW_KEYS + ("title", "date")})  # noqa: E731
+        if said(meta, text) != said({**cur["fields"], "title": cur["title"], "date": cur["date"]}, cur["body"]):
+            _refuse_locked()
+    _atomic_write(p, _join(meta, text))
+    return _seen(_read(p))
+
+
+# ── read-only: a note locked against editing ──────────────────────────────
+# Anyone may lock a note; the one who locked it, or a manager, may unlock it.
+# While locked, every call that writes what it SAYS refuses (put_note, the
+# to-do tick, Review's rewrites, an import, delete) and a tag rename passes it
+# by. Comments still come: they are said about the note, not in it.
+LOCK_KEYS = ("readonly", "locked_by", "locked_at", "locked_via")
+VIEW_KEYS = ("mode", "ratio", "numbered")
+
+
+def _locked(n: dict) -> bool:
+    return bool(n["fields"].get("readonly"))
+
+
+def _refuse_locked():
+    raise HTTPException(423, "읽기 전용 노트입니다 — 잠금을 푼 뒤 고쳐 주세요.")
+
+
+def _who(me: dict) -> str:
+    return me.get("email") or me.get("username") or ""
+
+
+class LockBody(BaseModel):
+    on: bool
+    via: Optional[str] = None          # an agent's token, by name (MCP lock_note)
+
+
+@app.post("/api/notes/{note_id}/lock")
+def lock_note(note_id: str, body: LockBody, me: dict = Depends(signed_in)) -> dict:
+    with REVIEW_LOCK:
+        p, n = _note(note_id)
+        f = dict(n["fields"])
+        if body.on:
+            f.update(readonly=True, locked_by=_who(me), locked_at=_now())
+            f.pop("locked_via", None)
+            if body.via:
+                f["locked_via"] = body.via
+        else:
+            if f.get("readonly") and not (is_manager(me) or (f.get("locked_by") and f["locked_by"] == _who(me))):
+                raise HTTPException(403, "잠근 사람이나 관리자만 잠금을 풀 수 있습니다.")
+            for k in LOCK_KEYS:
+                f.pop(k, None)
+        _atomic_write(p, _join({"title": n["title"], "date": n["date"], **f}, n["body"]))
     return _seen(_read(p))
 
 
@@ -774,6 +826,8 @@ def edit_piece(note_id: str, body: PieceBody, _: dict = Depends(signed_in)) -> d
 def _rewrite_piece(note_id: str, level: str, n_: int, still, make) -> dict:
     with REVIEW_LOCK:
         p, n = _note(note_id)
+        if _locked(n):
+            _refuse_locked()
         if _level(level) == "doc":
             raise HTTPException(400, "문서 전체는 한 칸으로 고칠 수 없습니다.")
         u = RV.units(n["body"], level)
@@ -795,6 +849,8 @@ def delete_note(note_id: str, me: dict = Depends(signed_in)) -> dict:
     p = _path(note_id)
     if p.is_file():
         n = _read(p)
+        if _locked(n):
+            _refuse_locked()
         BIN.put("notes", note_id, {"record": {"id": note_id, "title": n["title"], "date": n["date"]},
                                    "text": p.read_text(encoding="utf-8")},
                 me.get("email") or me.get("username") or "")
@@ -848,7 +904,7 @@ def rename_tags(body: dict, _: dict = Depends(signed_in)) -> dict:
             lead,
             lambda x: f"{x.group(1)}{'#' + to if to else x.group(2)}" if x.group(2).lower() in gone else x.group(0),
             rest)
-        if new != rest:
+        if new != rest and not _split(text)[0].get("readonly"):     # a locked note keeps its words
             _atomic_write(p, head + new)
             n += 1
     return {"changed": n}
@@ -922,6 +978,8 @@ def set_todo(body: TodoBody, _: dict = Depends(signed_in)):
     lines = n["body"].splitlines()
     if not 0 <= body.line < len(lines):
         raise HTTPException(409, "그 줄이 더 이상 없습니다 — 노트를 다시 읽어주세요.")
+    if _locked(n):
+        _refuse_locked()
     m = TODO_RE.match(lines[body.line])
     # The line must still BE the todo it was: a note edited elsewhere must not
     # have a checkbox stamped onto whatever moved into that position.
@@ -1398,6 +1456,8 @@ async def import_zip(note_id: str, f: UploadFile = File(...),
     p = _path(note_id)
     if not p.is_file():
         raise HTTPException(404, "그 노트가 없습니다.")
+    if _locked(_read(p)):
+        _refuse_locked()
     raw = await f.read(MAX_FILE + 1)
     if len(raw) > MAX_FILE:
         raise HTTPException(413, f"파일이 너무 큽니다 ({MAX_FILE // (1 << 20)}MB까지).")

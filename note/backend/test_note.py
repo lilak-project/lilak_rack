@@ -265,3 +265,25 @@ review_state("rv", _r["id"], StateBody(state="resolved"), _me)
 assert note_units("rv", "doc", _me)["counts"]["resolved"] == 1
 (_RN / "rv.md").unlink()
 print("review ok")
+
+# ── read-only: locked against everything that writes what the note says ───
+from backend.main import LockBody, TodoBody, lock_note, set_todo   # noqa: E402
+(_RN / "lk.md").write_text("---\ntitle: lk\n---\n\n- [ ] 일\n", encoding="utf-8")
+_a, _b = {"authenticated": True, "username": "a"}, {"authenticated": True, "username": "b"}
+_n = lock_note("lk", LockBody(on=True, via="agent"), _a)
+assert _n["fields"]["readonly"] and _n["fields"]["locked_by"] == "a" and _n["fields"]["locked_via"] == "agent"
+for _try in (lambda: put_note("lk", SaveBody(body="바뀜\n"), _b),
+             lambda: set_todo(TodoBody(id="lk", line=0, done=True), _b),
+             lambda: delete_note("lk", _b),
+             lambda: lock_note("lk", LockBody(on=False), _b)):          # not the one who locked it
+    try:
+        _try()
+        raise AssertionError("a locked note was changed")
+    except HTTPException as e:
+        assert e.status_code in (403, 423)
+# how it is looked at may still change, and a save never unlocks it
+assert put_note("lk", SaveBody(fields={"mode": "slide"}), _b)["fields"]["readonly"]
+assert not lock_note("lk", LockBody(on=False), {"authenticated": True, "username": "m", "role": "manager"})["fields"].get("readonly")
+assert put_note("lk", SaveBody(body="바뀜\n"), _b)["body"] == "바뀜\n"
+(_RN / "lk.md").unlink()
+print("lock ok")

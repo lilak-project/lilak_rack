@@ -17,7 +17,7 @@ const LEVELS = ['sentence', 'paragraph', 'line']
 
 /** `onTouched`: a comment was written — the note's file (and so its version)
  *  moved on, and the editor must hear it or its next save is a conflict. */
-export default function ReviewPane({ id, version, references, flush, onNote, onTouched, say }) {
+export default function ReviewPane({ id, version, references, flush, onNote, onTouched, say, locked = false }) {
   const [level, setLevel] = useState(() => placeBack(`${id}:rvlevel`) || 'sentence')
   useEffect(() => { placeSave(`${id}:rvlevel`, level) }, [id, level])
   const [data, setData] = useState(null)
@@ -60,7 +60,7 @@ export default function ReviewPane({ id, version, references, flush, onNote, onT
   const c = data.counts
   const known = new Set(references.map((r) => r.citeKey))
   const thread = (u, list) => (
-    <Thread list={list} canCite={!!u && u.kind === 'text' && references.length > 0} references={references}
+    <Thread list={list} canCite={!locked && !!u && u.kind === 'text' && references.length > 0} references={references}
       onComment={(t) => comment(t, u?.n)}
       onReply={async (rid, t) => { if (await post(`/reviews/${rid}/replies`, { text: t })) onTouched() }}
       onState={async (rid, s) => { if (await post(`/reviews/${rid}/state`, { state: s })) onTouched() }}
@@ -95,7 +95,7 @@ export default function ReviewPane({ id, version, references, flush, onNote, onT
           <div className={`nt-rv-row${open === u.n ? ' on' : ''}${u.kind === 'block' ? ' nt-rv-block' : ''}`}
             title={tr('nt_rv_edit_hint')}
             onClick={(e) => { if (!e.target.closest('a') && editing?.n !== u.n) setOpen(open === u.n ? null : u.n) }}
-            onDoubleClick={(e) => { if (!e.target.closest('a') && editing?.n !== u.n) { window.getSelection()?.removeAllRanges(); setEditing({ n: u.n, was: u.text, text: u.text }) } }}>
+            onDoubleClick={(e) => { if (!locked && !e.target.closest('a') && editing?.n !== u.n) { window.getSelection()?.removeAllRanges(); setEditing({ n: u.n, was: u.text, text: u.text }) } }}>
             <span className="nt-rv-n">{u.n}</span>
             {editing?.n === u.n ? (
               <div className="nt-rv-edit" onClick={(e) => e.stopPropagation()}>

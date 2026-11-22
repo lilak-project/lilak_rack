@@ -69,9 +69,13 @@ export function RackTagKind({ tag, projects, onChanged, say, onRename }) {
  * project's tag; `AToM-X/ihm` makes a sub-project (named ihm, under AToM-X's
  * tag), as jobboard makes one. `onMade(tag)` then opens that tag's editor.
  */
-export function RackNewProject({ projects, onMade, say }) {
+export function RackNewProject({ projects, onMade, say, picked }) {
   const [v, setV] = useState('')
+  const [more, setMore] = useState([])            // the other tags it gathers, as a project's "also gathers"
+  const [match, setMatch] = useState('or')
   const [busy, setBusy] = useState(false)
+  // Tags picked in the tab (its pick mode) are what it gathers, as project_manager's bundle was.
+  useEffect(() => { if (picked?.length) setMore(picked) }, [picked?.join('\n')])   // eslint-disable-line react-hooks/exhaustive-deps
   const tag = v.trim().replace(/^\/+|\/+$/g, '')
   const name = tag.slice(tag.lastIndexOf('/') + 1)
   // One word, as `+name` is in text; a project by that tag already is that project.
@@ -80,17 +84,31 @@ export function RackNewProject({ projects, onMade, say }) {
   const make = () => {
     if (!tag || bad || busy) return
     setBusy(true)
-    saveProject(null, { name, tags: [tag], match: 'or' })
-      .then(() => { say?.(tr('rk_proj_made', name)); setV(''); onMade?.(tag) })
+    const tags = [tag, ...more.map((t) => String(t).trim()).filter((t) => t && tagKey(t) !== tagKey(tag))]
+    saveProject(null, { name, tags, match })
+      .then(() => { say?.(tr('rk_proj_made', name)); setV(''); setMore([]); setMatch('or'); onMade?.(tag) })
       .catch((e) => say?.(tr('rk_proj_failed', e.message)))
       .finally(() => setBusy(false))
   }
   return (
-    <div className="rl-rrow" style={{ flexBasis: '100%' }}>
-      <input className="rl-in" style={{ flex: '1 1 120px', minWidth: 0 }} value={v} placeholder={tr('rk_proj_new_ph')}
-        onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); make() } }} />
-      <button type="button" className="rl-btn" disabled={!tag || !!bad || busy} onClick={make}>{tr('rk_proj_new')}</button>
+    <div className="rl-rows" style={{ flexBasis: '100%' }}>
+      <div className="rl-rrow">
+        <input className="rl-in" style={{ flex: '1 1 120px', minWidth: 0 }} value={v} placeholder={tr('rk_proj_new_ph')}
+          onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); make() } }} />
+        <button type="button" className="rl-btn" disabled={!tag || !!bad || busy} onClick={make}>{tr('rk_proj_new')}</button>
+      </div>
       {bad && <span className="rl-hint rl-warn">{bad}</span>}
+      {/* Named, it may gather other tags too — all of them, or any — before it is made. */}
+      {(tag || more.length > 0) && <>
+        <span className="rl-hint">{tr('rk_proj_more')}</span>
+        <TagsEdit value={more} onChange={setMore} field={{ ...MORE, placeholder: tr('rk_tag') }} ctx={NOCTX} />
+        {more.length > 0 && (
+          <div className="rl-seg">
+            <button type="button" className={`rl-btn${match === 'or' ? ' on' : ''}`} onClick={() => setMatch('or')}>{tr('rk_proj_or')}</button>
+            <button type="button" className={`rl-btn${match === 'and' ? ' on' : ''}`} onClick={() => setMatch('and')}>{tr('rk_proj_and')}</button>
+          </div>
+        )}
+      </>}
     </div>
   )
 }

@@ -531,7 +531,7 @@ function RackList({ def: declared, slots = {} }) {
     colsOf: L.colsOf, drag: L.drag, vw: L.vw }
 
   // A column may belong to some tabs only (a group's core on that group's tab).
-  const cols = useMemo(() => L.colsOf('').filter((c) => !c.when || c.when(tab)), [L.colsOf, tab])   // eslint-disable-line react-hooks/exhaustive-deps
+  const cols = useMemo(() => L.colsOf('').filter((c) => !c.when || c.when(tab, { doc })), [L.colsOf, tab, doc])   // eslint-disable-line react-hooks/exhaustive-deps
   const [tagAgain, setTagAgain] = useState(0)
   // The other services' tags are for the tags tab (its columns, its rows, a
   // merge's names); an editor's suggestions ask on their own (useSharedTags).
@@ -570,7 +570,7 @@ function RackList({ def: declared, slots = {} }) {
       ...(projects.length ? [{ k: 'pj:tags', w: 220, min: 60, label: tr('rk_proj_tags') }, { k: 'pj:folder', w: 50, min: 40, label: tr('rk_proj_folder') }] : []),
     ]
   }, [cls, clsField, def, doc, tagSources, projects.length])
-  const clsCols = useMemo(() => (cls ? L.colsOf('c:', [...classColumns(def, cls), ...perCols]).filter((c) => !c.when || c.when(tab)) : []), [L.colsOf, cls, def, tab, perCols])   // eslint-disable-line react-hooks/exhaustive-deps
+  const clsCols = useMemo(() => (cls ? L.colsOf('c:', [...classColumns(def, cls), ...perCols]).filter((c) => !c.when || c.when(tab, { doc })) : []), [L.colsOf, cls, def, tab, perCols, doc])   // eslint-disable-line react-hooks/exhaustive-deps
   const mergeCols = useMemo(() => [{ k: 'chk', w: 26, min: 26, fix: true }, ...clsCols], [clsCols])
   // A tags tab lists the tags worn here — by its items, or by its other
   // records (an author group) — each with where else it is worn (tags.js),
@@ -919,6 +919,8 @@ function RackList({ def: declared, slots = {} }) {
         const rec = etab.who ? findStored(c, etab.who) : null
         return (
           <RackItemEditor key={`${etab.id}:${zone}`} def={def} doc={doc} rec={rec} fields={c.fields} listKey={c.k} noun={c.noun} cls={c}
+            // A name worn with no record behind it opens as a new one, already named.
+            seed={!rec && etab.who && c.keyBy === 'name' ? { name: etab.who } : undefined}
             ctx={ctx} onSave={commit} onCancel={() => panes.close(etab.id)} guard={(fn) => panes.guard(etab.id, fn)}
             actions={c.actions ? (f, setF) => c.actions(f, setF, { ...ctx, doc, rec, close: (then) => {
               // `then`: the editor to show instead, if it is open too.
@@ -1079,7 +1081,8 @@ function RackList({ def: declared, slots = {} }) {
   // thing — making, the selection, merging, what is shown. +new stands on the
   // title bar, right of the menu, until the column opens and takes it; a bare
   // page has no bar, so always in its menu.
-  const newButton = (
+  // `item.canAdd(doc)` false: no +new for items here (a service setting says so).
+  const newButton = !cls?.stored && def.item.canAdd && !def.item.canAdd(doc) ? null : (
     <button type="button" className="rl-btn rl-new" title={tr("rk_add_new_x", cls?.stored ? cls.noun : def.item.noun)}
       onClick={() => (cls?.stored ? openClass(cls, null) : openItem(null))}>+new</button>
   )
@@ -1088,7 +1091,7 @@ function RackList({ def: declared, slots = {} }) {
       <MenuRow title={tr("rk_menu_make")}>
         {newButton}
         {/* A tags tab makes projects: a name, and it is a project's tag (tagproject.jsx). */}
-        {outline && PROJECT_LINKED && <RackNewProject projects={projects} say={setNote}
+        {outline && PROJECT_LINKED && <RackNewProject projects={projects} say={setNote} picked={merge.mode ? merge.names : undefined}
           onMade={(tag) => { projChanged(); openClass(cls, { name: tag }) }} />}
         {slots.commands?.(api)}
       </MenuRow>

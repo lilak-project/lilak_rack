@@ -216,6 +216,19 @@ class FileLink extends WidgetType {
 }
 
 /** A heading's number (`numbered` notes): drawn, never in the file. */
+/** A code block's language, where its opening ``` was: a small label at the
+ *  block's top right, the way the fence reads when nobody is in it. */
+class FenceLabel extends WidgetType {
+  constructor(lang) { super(); this.lang = lang }
+  eq(other) { return other.lang === this.lang }
+  toDOM() {
+    const el = document.createElement('span')
+    el.className = 'nt-cm-fence-lang'
+    el.textContent = this.lang
+    return el
+  }
+}
+
 class HeadNo extends WidgetType {
   constructor(no) { super(); this.no = no }
   eq(other) { return other.no === this.no }
@@ -256,7 +269,7 @@ class Bar extends WidgetType {
     // where the file's name is; until then the name is only a hover away.
     button('nt-fig-n', tr('nt_fig_n', this.n), `${name} — ${tr('nt_fig_edit_hint')}`, () => {
       const at = markupAt(view, bar, this.markup)
-      if (!at) return
+      if (!at || view.state.readOnly) return       // a locked note's picture stays a picture
       view.dispatch({ effects: setRaw.of(at.from), selection: { anchor: at.to }, scrollIntoView: true })
       view.focus()
     })
@@ -426,7 +439,8 @@ class Table extends WidgetType {
     // Pressing a row puts the caret in that line of the file.
     table.addEventListener('mousedown', (e) => {
       const tr = e.target.closest?.('tr')
-      if (!tr) return
+      // Locked, a table is only read: its links are the painter's to open (below).
+      if (!tr || view.state.readOnly) return
       e.preventDefault()
       const line = view.state.doc.line(Number(tr.dataset.line))
       view.dispatch({ selection: { anchor: line.from }, scrollIntoView: true })
@@ -490,7 +504,8 @@ function build(view, fileSrc, numbered) {
   // A slide nobody is typing in is drawn clean: the caret left behind in it
   // must not spell its line out (slide steps take the focus away on purpose).
   const slide = !!view.dom.parentElement?.classList.contains('nt-slide')
-  const away = !view.hasFocus && slide
+  // …nor is a locked one (readOnly): nothing is typed there, so no line opens.
+  const away = (!view.hasFocus && slide) || view.state.readOnly
   const open = away ? new Set() : openLines(view.state)
   const shown = (pos) => open.has(view.state.doc.lineAt(pos).number)
   // Within one line only: a plugin's decoration may not replace a line break
@@ -535,7 +550,7 @@ function build(view, fileSrc, numbered) {
           const head = view.state.doc.lineAt(node.from)
           const foot = view.state.doc.lineAt(node.to)
           // Inside it, the text is the text; outside, it is a table.
-          const inside = view.state.selection.ranges.some(
+          const inside = !view.state.readOnly && view.state.selection.ranges.some(
             (r) => r.to >= head.from && r.from <= foot.to)
           if (!inside) {
             tables.push({ from: head.from, to: foot.to, first: head.number })
@@ -572,8 +587,21 @@ function build(view, fileSrc, numbered) {
           code.push({ from: node.from, to: node.to })
           const first = view.state.doc.lineAt(node.from).number
           const last = view.state.doc.lineAt(node.to).number
+          // With the caret elsewhere the ``` go: the opening line is a thin top
+          // edge carrying the language as a label, the closing one a thin
+          // foot. The caret in any line of it brings both back as typed.
+          // Not on a slide, whose line heights are the renderer's (marks.js).
+          let bare = !slide
+          for (let n = first; n <= last && bare; n += 1) if (open.has(n)) bare = false
+          const fence = (n) => /^[ \t]*(`{3,}|~{3,})/.test(view.state.doc.line(n).text)
           for (let n = first; n <= last; n += 1) {
-            marks.push(Decoration.line({ class: 'nt-cm-code' }).range(view.state.doc.line(n).from))
+            const line = view.state.doc.line(n)
+            const edge = bare && (n === first || (n === last && n > first && fence(n)))
+            marks.push(Decoration.line({ class: !edge ? 'nt-cm-code' : n === first ? 'nt-cm-code nt-cm-fence' : 'nt-cm-code nt-cm-fence nt-cm-fence-foot' }).range(line.from))
+            if (edge && line.to > line.from) {
+              const lang = n === first ? line.text.replace(/^[ \t]*(`{3,}|~{3,})/, '').trim().split(/\s+/)[0] : ''
+              marks.push((lang ? Decoration.replace({ widget: new FenceLabel(lang) }) : Decoration.replace({})).range(line.from, line.to))
+            }
           }
           return false
         }
@@ -770,7 +798,7 @@ function build(view, fileSrc, numbered) {
  *  editor has to know before it measures), so these live in a field of their own. */
 function blockDecorations(state) {
   const marks = []
-  const open = openLines(state)
+  const open = state.readOnly ? new Set() : openLines(state)       // a locked note: every block drawn
   for (const [a, b] of mathFences(state.doc.toString())) {
     let inside = false
     for (let n = a; n <= b; n += 1) inside ||= open.has(n)
@@ -786,7 +814,8 @@ function blockDecorations(state) {
       if (node.name !== 'Table') return
       const head = state.doc.lineAt(node.from)
       const foot = state.doc.lineAt(node.to)
-      const inside = state.selection.ranges.some((r) => r.to >= head.from && r.from <= foot.to)
+      // A locked note's tables stay tables wherever the caret is.
+      const inside = !state.readOnly && state.selection.ranges.some((r) => r.to >= head.from && r.from <= foot.to)
       if (inside) return
       marks.push(Decoration.replace({
         widget: new Table(state.doc.sliceString(head.from, foot.to), head.number),
@@ -835,6 +864,14 @@ const paint = (fileSrc, onOpenNote, numbered) => ViewPlugin.fromClass(class {
   decorations: (v) => v.decorations,
   eventHandlers: {
     mousedown(e, view) {
+      // A drawn table (Table) holds rendered links; in a locked note nobody is
+      // going to open the table to reach them, so a press there opens them.
+      if (view.state.readOnly && e.target.closest?.('.nt-cm-table')) {
+        const a = e.target.closest('a[href]'), w = e.target.closest('.nt-cm-wiki[data-note]')
+        if (a) { e.preventDefault(); open(a.href); return true }
+        if (w && onOpenNote) { e.preventDefault(); onOpenNote(w.dataset.note); return true }
+        return false
+      }
       // A link that is drawn as a link opens when pressed — but on the line
       // the caret is in, the text is showing itself and a press is a press.
       const where = view.posAtCoords({ x: e.clientX, y: e.clientY })
@@ -842,7 +879,7 @@ const paint = (fileSrc, onOpenNote, numbered) => ViewPlugin.fromClass(class {
         const line = view.state.doc.lineAt(where)
         // On the line being edited the text shows itself, so a press is a
         // press — unless it is held with ⌘ or ctrl, which always opens.
-        const editing = view.state.selection.ranges.some(
+        const editing = !view.state.readOnly && view.state.selection.ranges.some(
           (r) => r.to >= line.from && r.from <= line.to)
         const url = (!editing || e.metaKey || e.ctrlKey) ? linkAt(view.state, where) : null
         if (url) {
@@ -860,7 +897,7 @@ const paint = (fileSrc, onOpenNote, numbered) => ViewPlugin.fromClass(class {
       // `[[노트]]` — the other note, opened in a tab of its own.
       if (where != null && onOpenNote && e.target.closest?.('.nt-cm-wiki')) {
         const line = view.state.doc.lineAt(where)
-        const editing = view.state.selection.ranges.some(
+        const editing = !view.state.readOnly && view.state.selection.ranges.some(
           (r) => r.to >= line.from && r.from <= line.to)
         if (editing && !e.metaKey && !e.ctrlKey) return false
         for (const m of line.text.matchAll(WIKI)) {

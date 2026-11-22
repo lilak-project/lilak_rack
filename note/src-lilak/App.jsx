@@ -18,7 +18,7 @@ import {
   projectKey, load, authHeaders, tagKey, tagWithin, mergeTags as tagCounts, useTagSources, uniqueTags, useProjects,
   useReferences, useAuthors, save, addReference, referenceDoc, bibText, isFlowTag, withFlowTag,
 } from 'racklist'
-import { linkProject, remoteDocOf } from 'racklist/portal.js'
+import { isManager, linkProject, portalUser, remoteDocOf } from 'racklist/portal.js'
 import { numberHeadings, TAG_RE, TAG_COMMENT, URGENT_RE, outsideCode, replaceOutsideCode, untagged, setTagChoices, setProjChoices, setCiteChoices, setAuthorChoices, setJobChoices, authorShow } from './marks.js'
 import SourceArea from './SourceArea.jsx'
 import ReviewPane from './review.jsx'
@@ -1226,6 +1226,8 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   // the hooks it saw. A useState added below it is a blank screen.
   if (!f || !n) return <p className="rl-msg">{tr("nt_loading")}</p>
   const dirty = !saved(f, n)
+  // Locked against editing (the 잠금 in 공용, backend lock_note).
+  const locked = !!f?.fields?.readonly
   // How many lines there are, for `맨 뒤` and for the box: a line nobody has
   // is not a place, so every jump is clamped to the document.
   const lines = f.body.split('\n').length
@@ -1522,6 +1524,23 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   const Tool = kit.find((t) => t.id === tab) || kit[0]
   const ctx = {
     note: { id, title: f.title, body: f.body, date: f.date, fields: f.fields, tex, dirty },
+    // Read-only (backend lock_note): anyone locks; the one who did, or a
+    // manager, unlocks. What is typed first is saved, then the lock.
+    lock: {
+      on: locked,
+      by: f.fields?.locked_by || '',
+      via: f.fields?.locked_via || '',
+      at: f.fields?.locked_at || '',
+      can: !locked || isManager() || (!!f.fields?.locked_by && f.fields.locked_by === portalUser()?.email),
+      async set(on) {
+        try {
+          if (dirty) await saveNote()
+          const { body } = await ask(`/notes/${encodeURIComponent(id)}/lock`, { method: 'POST', body: JSON.stringify({ on }) })
+          sent.current = null; setN(body); setF(body); live.current = { f: body, n: body }
+          say(tr(on ? "nt_locked_now" : "nt_unlocked_now"))
+        } catch (e) { say(String(e.message || e)) }
+      },
+    },
     setNote: setF,
     edit,
     recording,
@@ -1693,15 +1712,18 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
                 </form>
               </span>
             ) : (
-              <input className="nt-title" ref={titleRef} value={f.title} placeholder={tr("nt_title")}
-                onChange={(e) => setF((s) => ({ ...s, title: e.target.value }))} />
+              <>
+                <input className="nt-title" ref={titleRef} value={f.title} placeholder={tr("nt_title")} readOnly={locked}
+                  onChange={(e) => setF((s) => ({ ...s, title: e.target.value }))} />
+                {locked ? <span className="nt-locked" title={tr("nt_locked_hint", f.fields.locked_by || '?')}>{tr("nt_locked")}</span> : null}
+              </>
             )}
           </div>
           {/* Reading, in place of the text — the same sheet the print page
               draws. Everything else about the tab stays where it was, tools
               and all, so it is one press back. */}
           {mode === 'review' ? (
-            <ReviewPane id={id} version={n?.version} references={references} say={say}
+            <ReviewPane id={id} version={n?.version} references={references} say={say} locked={locked}
               flush={async () => { if (dirty) await saveNote() }}
               onNote={(note) => { sent.current = null; setN(note); setF(note); live.current = { f: note, n: note } }}
               // The file's new version, and its comments in what is held here,
@@ -1724,7 +1746,7 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
               the text with its line numbers; `MD` paints the markdown over it
               and keeps the marks on the line the caret is in. Either way what
               is saved is what is typed, character for character. */}
-          <SourceArea key={`${view}${tex}${!!f.fields?.numbered}`} live={view !== 'raw'} tex={tex} at={id}
+          <SourceArea key={`${view}${tex}${!!f.fields?.numbered}${locked}`} live={view !== 'raw'} tex={tex} readOnly={locked} at={id}
             numbered={!!f.fields?.numbered}
             deck={isDeck ? { pages, title: f.title, h: deckH, cover: coverOf(f.fields) } : null}
             pins={gutter} goto={go} openAt={openAt}
