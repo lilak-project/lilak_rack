@@ -38,6 +38,12 @@ class Refused(Exception):
     """What the service said, or why nothing was sent."""
 
 
+def tz(k: str) -> str:
+    """An activity's clock times are Korean time: activities stores them so, and its Google sync
+    sends them as Asia/Seoul whatever the calendar's own zone is. Said beside each one."""
+    return " (KST)" if k in ("startTime", "endTime", "talkTime") else ""
+
+
 def main_project(svc: str) -> str:
     """A service's main project, as the portal keeps it (registry.link_project)."""
     root = Path(os.environ.get("PORTAL_DATA_ROOT", ""))
@@ -369,7 +375,7 @@ def detail(c: dict, auth: str, mail: str) -> list:
             if c.get("target") == "activity":
                 ch = changes(c)
                 out.append({"k": "change", "title": str(cur.get("name") or ""),
-                            "rows": [[k, str(cur.get(k) or ""), ch.get(k, str(cur.get(k) or ""))]
+                            "rows": [[k + tz(k), str(cur.get(k) or ""), ch.get(k, str(cur.get(k) or ""))]
                                      for k in UPDATABLE if k in ch or (k != "name" and cur.get(k))]})
             else:
                 out.append({"k": "adds", "title": str(cur.get("title") or ""), "text": changes(c)["add"].strip()})
@@ -377,7 +383,7 @@ def detail(c: dict, auth: str, mail: str) -> list:
             m = makes(c, project_tags(c, auth))
             text = (f"{m['job']['recipe']}{' @ ' + m['job']['server'] if m['job'].get('server') else ''}\n"
                     f"project: {m['job']['project']}\n{json.dumps(m['job']['params'], ensure_ascii=False, indent=2)}"
-                    if "job" in m else "\n".join(f"{k}: {', '.join(v) if isinstance(v, list) else v}"
+                    if "job" in m else "\n".join(f"{k}: {', '.join(v) if isinstance(v, list) else v}{tz(k)}"
                                                  for k, v in m["record"].items() if v)
                     if "record" in m else f"{m['title']}\n\n{m['text']}")
             out.append({"k": "makes", "text": text})

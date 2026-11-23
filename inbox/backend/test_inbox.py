@@ -28,6 +28,11 @@ import approve as ap                           # noqa: E402
 
 
 class Inbox(unittest.TestCase):
+    def test_an_activitys_clock_times_say_they_are_korean(self):
+        import approve
+        self.assertEqual([approve.tz(k) for k in ("startTime", "endTime", "talkTime", "start", "place")],
+                         [" (KST)", " (KST)", " (KST)", "", ""])
+
     def test_take_in_flatten_order_prune(self):
         main.DROP.mkdir(parents=True, exist_ok=True)
         (main.DROP / "a.json").write_text(json.dumps({

@@ -122,7 +122,7 @@ export function MakesField({ rec: r }) {
     <div className="rl-mono" style={{ whiteSpace: 'pre-wrap' }}>{r.target === 'job'
       ? `${out.job.recipe}${out.job.server ? ` @ ${out.job.server}` : ''}\nproject: ${out.job.project}\n${JSON.stringify(out.job.params, null, 2)}`
       : r.target === 'activity'
-      ? Object.entries(out.record).filter(([, v]) => v && v.length !== 0).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join('\n')
+      ? Object.entries(out.record).filter(([, v]) => v && v.length !== 0).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}${/^(start|end|talk)Time$/.test(k) ? ' (KST)' : ''}`).join('\n')
       : `${out.title}\n\n${out.text}`}</div>
   )
 }
