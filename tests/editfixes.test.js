@@ -81,3 +81,42 @@ describe('Enter in a table', () => {
     v.destroy()
   })
 })
+
+describe('the caret and a list item\'s marker', async () => {
+  const { EditorState } = await import('@codemirror/state')
+  const { markdown } = await import('@codemirror/lang-markdown')
+  const { listCaret } = await import('../note/src-lilak/liveedit.js')
+  const make = (doc, head) => EditorState.create({ doc, selection: { anchor: head }, extensions: [markdown(), listCaret] })
+  it('lands in front of the words, not inside `- [ ] `', () => {
+    const s = make('a\n- [ ] 일\n', 0)
+    expect(s.update({ selection: { anchor: 3 } }).state.selection.main.head).toBe(8)   // in `- [`
+    expect(s.update({ selection: { anchor: 2 } }).state.selection.main.head).toBe(8)   // Home on the item
+  })
+  it('a step left from the words goes to the line above', () => {
+    const s = make('a\n- b\n', 4)
+    expect(s.update({ selection: { anchor: 3 } }).state.selection.main.head).toBe(1)
+  })
+  it('a `- x` in code is text', () => {
+    const s = make('```\n- x\n```\n', 0)
+    expect(s.update({ selection: { anchor: 4 } }).state.selection.main.head).toBe(4)
+  })
+})
+
+describe('Backspace in front of a list item\'s words', async () => {
+  const { keymap } = await import('@codemirror/view')
+  const { markdownKeymap } = await import('@codemirror/lang-markdown')
+  const { listKeys } = await import('../note/src-lilak/liveedit.js')
+  const press = (doc, head) => {
+    const v = new EditorView({ state: EditorState.create({ doc, selection: { anchor: head },
+      extensions: [markdown(), keymap.of(markdownKeymap), listKeys] }) })
+    runScopeHandlers(v, new KeyboardEvent('keydown', { key: 'Backspace' }), 'editor')
+    const out = v.state.doc.toString()
+    v.destroy()
+    return out
+  }
+  it('takes the marker, its space and the indent — no second press', () => {
+    expect(press('- a\n  - b\n', 8)).toBe('- a\nb\n')
+    expect(press('- a\n\t- [ ] b\n', 11)).toBe('- a\nb\n')
+    expect(press('- b\n', 2)).toBe('b\n')
+  })
+})

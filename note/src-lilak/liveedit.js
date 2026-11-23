@@ -1,5 +1,5 @@
 import { EditorView, Decoration, WidgetType } from '@codemirror/view'
-import { EditorState, StateEffect, StateField } from '@codemirror/state'
+import { EditorSelection, EditorState, Prec, StateEffect, StateField } from '@codemirror/state'
 import { autocompletion, completionStatus, CompletionContext, pickedCompletion, startCompletion } from '@codemirror/autocomplete'
 import { keymap } from '@codemirror/view'
 import { syntaxTree } from '@codemirror/language'
@@ -450,7 +450,10 @@ export const leadIn = (text) => (LEAD_IN.exec(text) || ['', ''])[1]
  *  presses to get out of a list nobody meant to start is five presses of
  *  watching it come apart into `- [ ]`, `- [ `, `- [`. One press, one thing.
  *  Anywhere else on the line Backspace is Backspace. */
-export const listKeys = keymap.of([{
+// Above markdown's own Backspace (`markdown()` adds it at Prec.high), which takes `- ` off a nested item but
+// leaves spaces in its place (to keep the text where it stood) — a second
+// press, or more, for every item. Here the indent goes too, tabs and all.
+export const listKeys = Prec.highest(keymap.of([{
   key: 'Backspace',
   run: (view) => {
     const r = view.state.selection.main
@@ -461,7 +464,33 @@ export const listKeys = keymap.of([{
     view.dispatch({ changes: { from: line.from, to: r.head }, userEvent: 'delete.backward' })
     return true
   },
-}])
+}]))
+
+/** The caret never stands inside a list item's marker: `- `, `1. `, `- [ ] `
+ *  are drawn as a bullet or a box, and a caret between `-` and its space was
+ *  a place nobody can see. A press there, Home, or a step right from the line
+ *  above all land in front of the words; a step LEFT from the words goes on to
+ *  the end of the line above. Backspace in front of the words still takes the
+ *  marker whole (listKeys). Code is code: a `- x` in a fence is just text. */
+export const listCaret = EditorState.transactionFilter.of((tr) => {
+  if (!tr.selection) return tr
+  const { state } = tr
+  let moved = false
+  const ranges = tr.newSelection.ranges.map((r) => {
+    if (!r.empty) return r
+    const line = state.doc.lineAt(r.head)
+    const lead = leadIn(line.text).length
+    if (!lead || r.head >= line.from + lead) return r
+    for (let n = syntaxTree(state).resolveInner(line.from, 1); n; n = n.parent) {
+      if (n.name === 'FencedCode' || n.name === 'CodeBlock') return r
+    }
+    const before = tr.docChanged ? -1 : tr.startState.selection.main.head
+    const left = before === line.from + lead && r.head < before && line.from > 0
+    moved = true
+    return EditorSelection.cursor(left ? line.from - 1 : line.from + lead)
+  })
+  return moved ? [tr, { selection: EditorSelection.create(ranges, tr.newSelection.mainIndex), sequential: true }] : tr
+})
 
 // ── 한글: the syllable being typed comes apart one jamo at a time ──────────
 /** Backspace on 한 gives 하, then ㅎ, then nothing — but only on the syllable

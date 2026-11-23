@@ -29,7 +29,7 @@ const belowTags = (text) => {
   while (i < lines.length - 1 && (tagLine(lines[i]) || !lines[i].trim())) { at += lines[i].length + 1; i += 1 }
   return at
 }
-import { tagComplete, citeComplete, dueKeys, jamoKeys, listKeys, markKeys, quotePaste, takeFiles, tableKeys, tableInput, wonCode } from './liveedit.js'
+import { tagComplete, citeComplete, dueKeys, jamoKeys, listKeys, markKeys, quotePaste, takeFiles, tableKeys, tableInput, wonCode, listCaret } from './liveedit.js'
 
 /** The note as the file has it, in a real text editor — plain (`원문`) or with
  *  the markdown drawn over it (`라이브`).
@@ -248,6 +248,9 @@ export default function RawArea({ value, onChange, live = false, tex = false, re
             ...dueKeys,
             tableInput,
             listKeys,
+            // Drawn as a bullet (MD, slides), the marker is no place for the
+            // caret; in 원문 it is text like any other.
+            ...(live ? [listCaret] : []),
             wonCode,
             quotePaste,
           ]),
