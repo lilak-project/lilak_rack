@@ -9,6 +9,11 @@ and every minute (and at start) they are taken in as records of the `inbox`
 list — flat, so the kit's table and editor read them as any record: the
 fields beside `target`, `status` (waiting | approved | checked | discarded),
 `from`, `date`, `subject`, `remark` (the file goes to `inbox-drop/imported/`).
+Besides yes and no a reviewer may hold one with a comment (status `held`, like a
+pull request's "request changes"): it stays here, its sender (`sender`: the account
+and the token it came through, stamped by POST /api/propose) reads the comments
+(GET /api/mine) and resubmits it changed (POST /api/inbox/{id}/resubmit), which puts
+it back to waiting. `comments` is [{by, via, at, text}] on the record.
 The portal's MCP posts its proposals (a note, an activity, a job) straight in
 as records. The page approves one by making it in the service it belongs to
 and saving the record with `status`, `decidedAt` and `made` ({svc, proj, id}).
@@ -38,6 +43,7 @@ import re
 import shutil
 import threading
 import time
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -82,7 +88,8 @@ def _order(inbox: list) -> list:
     mail first (no mail date: the day it came in)."""
     def when(c: dict) -> tuple:
         return (str(c.get("date") or c.get("createdAt") or "")[:10], str(c.get("createdAt") or ""), str(c.get("id")))
-    return sorted(sorted(inbox, key=when, reverse=True), key=lambda c: c.get("status", "waiting") != "waiting")
+    rank = {"waiting": 0, "held": 1}
+    return sorted(sorted(inbox, key=when, reverse=True), key=lambda c: rank.get(c.get("status", "waiting"), 2))
 
 
 def _log_feedback(inbox: list) -> None:
@@ -173,14 +180,16 @@ def inbox_mail(cid: str, _: dict = Depends(signed_in)) -> dict:
 @app.get("/api/pending")
 def pending(_: dict = Depends(signed_in)) -> dict:
     """The candidates still to be decided, oldest decision first as the list keeps them, as cards."""
-    waiting = [c for c in DOC.read().get("inbox") or [] if c.get("status", "waiting") == "waiting"]
-    return {"count": len(waiting), "items": [ap.card(c) for c in waiting]}
+    inbox = DOC.read().get("inbox") or []
+    open_ = [c for c in inbox if c.get("status", "waiting") in ("waiting", "held")]   # held ones too: still undecided
+    return {"count": sum(1 for c in open_ if c.get("status", "waiting") == "waiting"),
+            "held": sum(1 for c in open_ if c.get("status") == "held"), "items": [ap.card(c) for c in open_]}
 
 
 @app.get("/api/decided")
 def decided(limit: int = 50, _: dict = Depends(signed_in)) -> dict:
     """What was decided, the latest decision first, as cards (a discard keeps DISCARD_KEEP_DAYS)."""
-    done = [c for c in DOC.read().get("inbox") or [] if c.get("status", "waiting") != "waiting"]
+    done = [c for c in DOC.read().get("inbox") or [] if c.get("status", "waiting") not in ("waiting", "held")]
     done.sort(key=lambda c: str(c.get("decidedAt") or ""), reverse=True)
     return {"count": len(done), "items": [ap.card(c) for c in done[:max(1, min(limit, 500))]]}
 
@@ -193,15 +202,115 @@ def inbox_detail(cid: str, request: Request, _: dict = Depends(signed_in)) -> di
 
 
 DECISION = {"check": "checked", "discard": "discarded", "restore": "waiting"}
+# What a sender may not set on its own candidate, at proposing or resubmitting.
+KEPT = {"id", "status", "sender", "comments", "round", "createdAt", "updatedAt", "decidedAt", "made", "picked", "feedback"}
+
+
+def _now() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _text(body: dict, need: bool = True) -> str:
+    text = str(body.get("text") or "").strip()[:4000]
+    if need and not text:
+        raise HTTPException(400, "의견을 적어 주세요.")
+    return text
+
+
+def _comment(me: dict, text: str) -> dict:
+    return {"by": me.get("username") or me.get("email") or "", "via": me.get("via") or "", "at": _now(), "text": text}
+
+
+def _sent_by(c: dict, me: dict) -> bool:
+    """Its sender's account; a token reads only what came through it, the person everything theirs."""
+    s = c.get("sender") or {}
+    return bool(s.get("user")) and s["user"] == me.get("username") and (not me.get("via") or s.get("via") == me["via"])
+
+
+def _edit(cid: str, fn) -> dict:
+    """`fn(record)` on one candidate, in the lock; it returns False when the change no longer applies."""
+    with DOC.lock:
+        cur = DOC.read()
+        inbox = copy.deepcopy(cur.get("inbox") or [])
+        x = next((r for r in inbox if str(r.get("id")) == cid), None)
+        if x is None:
+            raise HTTPException(404, "그 후보가 없습니다.")
+        if fn(x) is False:
+            raise HTTPException(409, "이 후보는 그새 바뀌었습니다. 다시 불러 오세요.")
+        DOC.write({**cur, "inbox": _order(inbox)}, "inbox", replaces=cur)
+    return ap.card(x)
+
+
+@app.post("/api/propose")
+def propose(body: dict = Body(...), me: dict = Depends(signed_in)) -> dict:
+    """A candidate left by someone (the portal's MCP for a token): stamped with who sent it, waiting."""
+    rec = body.get("record")
+    if not isinstance(rec, dict) or not str(rec.get("target") or "").strip():
+        raise HTTPException(400, "후보(record)와 그 target 이 필요합니다.")
+    cid = str(rec.get("id") or f"p-{uuid.uuid4().hex}")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", cid):
+        raise HTTPException(400, "id 가 올바르지 않습니다.")
+    now = _now()
+    r = {**{k: v for k, v in rec.items() if k not in KEPT}, "id": cid, "status": "waiting", "createdAt": now,
+         "updatedAt": now, "sender": {"user": me.get("username") or "", "via": me.get("via") or ""}, "round": 0}
+    with DOC.lock:
+        cur = DOC.read()
+        if any(str(x.get("id")) == cid for x in cur.get("inbox") or []):
+            raise HTTPException(409, "같은 id의 후보가 이미 있습니다.")
+        DOC.write({**cur, "inbox": _order([r, *copy.deepcopy(cur.get("inbox") or [])])}, "inbox", replaces=cur)
+    return ap.card(r)
+
+
+@app.get("/api/mine")
+def mine(status: str = "", me: dict = Depends(signed_in)) -> dict:
+    """What this account (this token) sent, with what was said about it; `status` narrows (held: back to you)."""
+    items = [c for c in DOC.read().get("inbox") or [] if _sent_by(c, me) and (not status or c.get("status", "waiting") == status)]
+    return {"count": len(items), "items": [ap.card(c) for c in items]}
+
+
+@app.post("/api/inbox/{cid}/comment")
+def comment(cid: str, body: dict = Body(...), me: dict = Depends(signed_in)) -> dict:
+    """A comment alone, where it stands — a reviewer's, or its sender's answer."""
+    _one(cid)
+    text = _text(body)
+    return _edit(cid, lambda x: x.update(comments=[*(x.get("comments") or []), _comment(me, text)]))
+
+
+@app.post("/api/inbox/{cid}/resubmit")
+def resubmit(cid: str, body: dict = Body(...), me: dict = Depends(signed_in)) -> dict:
+    """Its sender, having changed it: `fields` laid over it (not its status, sender, comments…), back to waiting."""
+    c = _one(cid)
+    if not _sent_by(c, me):
+        raise HTTPException(403, "보낸 쪽만 다시 낼 수 있습니다.")
+    fields = body.get("fields") or {}
+    if not isinstance(fields, dict):
+        raise HTTPException(400, "fields 는 객체여야 합니다.")
+    fields = {k: v for k, v in fields.items() if k not in KEPT and k != "sendsAs"}   # set at proposing only
+    text = _text(body, need=False)
+
+    def go(x):
+        if x.get("status") != "held":
+            return False
+        x.update(fields, status="waiting", decidedAt="", round=(x.get("round") or 0) + 1, updatedAt=_now(),
+                 comments=[*(x.get("comments") or []), *([_comment(me, text)] if text else [])])
+    if c.get("status") != "held":
+        raise HTTPException(409, "보류된 후보만 다시 낼 수 있습니다.")
+    return _edit(cid, go)
 _MAKING: set = set()      # candidates being made right now (one backend per project, so in memory is enough)
 
 
 @app.post("/api/inbox/{cid}/decide")
-def decide(cid: str, request: Request, body: dict = Body(...), _: dict = Depends(signed_in)) -> dict:
+def decide(cid: str, request: Request, body: dict = Body(...), me: dict = Depends(signed_in)) -> dict:
     """approve / update / trash (make it where it goes), check, discard or restore — what the card's
     actions offered. `pick` (a tags candidate): the indices of the items to do, the rest left out."""
     act = str(body.get("action") or "")
     c = _one(cid)
+    if act == "hold":
+        if "hold" not in ap.actions(c):
+            raise HTTPException(409, "이 후보에 지금 할 수 없는 일입니다.")
+        text = _text(body)
+        return _edit(cid, lambda x: x.get("status", "waiting") in ("waiting", "held") and x.update(
+            status="held", decidedAt=_now(), comments=[*(x.get("comments") or []), _comment(me, text)]) is None)
     # retitle: a note_delete kept with a title (`title`) — offered wherever trash is.
     ok = act in ap.actions(c) or (act == "retitle" and c.get("target") == "note_delete" and "trash" in ap.actions(c))
     if not ok:
@@ -215,7 +324,7 @@ def decide(cid: str, request: Request, body: dict = Body(...), _: dict = Depends
         # is claimed first: a second yes while the first is still making it is refused, and one
         # that arrives after it was decided finds it no longer waiting.
         with DOC.lock:
-            if cid in _MAKING or _one(cid).get("status", "waiting") != "waiting":
+            if cid in _MAKING or _one(cid).get("status", "waiting") not in ("waiting", "held"):
                 raise HTTPException(409, "이 후보는 이미 처리되었거나 지금 처리되고 있습니다.")
             _MAKING.add(cid)
     try:

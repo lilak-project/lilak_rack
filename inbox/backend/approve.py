@@ -331,13 +331,15 @@ def actions(c: dict) -> list:
     s = c.get("status", "waiting")
     if s == "discarded":
         return ["restore"]
-    if s != "waiting":
+    if s not in ("waiting", "held"):           # held: sent back with comments, still up for a yes or no
         return []
     if c.get("mode") == "checked":
         return ["check"]
+    # A sender registered as not reading what is said back (sendsAs.holdable false) cannot be held.
+    hold = ["hold"] if (c.get("sendsAs") or {}).get("holdable", True) is not False else []
     if c.get("target") in ("note_delete", "record_delete"):
-        return ["trash", "discard"]           # a word that says it deletes, not "approve"
-    return ["update" if c.get("mode") == "update" else "approve", "discard"]
+        return ["trash", *hold, "discard"]    # a word that says it deletes, not "approve"
+    return ["update" if c.get("mode") == "update" else "approve", *hold, "discard"]
 
 
 def card(c: dict) -> dict:
@@ -345,8 +347,11 @@ def card(c: dict) -> dict:
     out = {"id": c.get("id"), "kind": c.get("target"), "title": title(c), "mode": c.get("mode") or "",
            "status": c.get("status", "waiting"), "from": c.get("from") or "", "date": c.get("date") or "",
            "subject": c.get("subject") or "", "remark": c.get("remark") or "", "actions": actions(c),
-           "blocked": blocked(c) if c.get("status", "waiting") == "waiting" and c.get("mode") != "checked" else "",
-           "goes": "/".join(where(c)), "attachments": c.get("attachments") or [], "decidedAt": c.get("decidedAt") or ""}
+           "blocked": blocked(c) if c.get("status", "waiting") in ("waiting", "held") and c.get("mode") != "checked" else "",
+           "goes": "/".join(where(c)), "attachments": c.get("attachments") or [], "decidedAt": c.get("decidedAt") or "",
+           # Hold · comment: what the reviewers said, who sent it (to read them and resubmit), how many times.
+           "comments": c.get("comments") or [], "sender": c.get("sender") or None, "round": c.get("round") or 0,
+           "sendsAs": c.get("sendsAs") or None}
     # An untitled note up for the bin can be kept with a title instead (decide `retitle`).
     if c.get("target") == "note_delete" and "trash" in out["actions"]:
         out["retitle"] = True

@@ -164,8 +164,8 @@ class Decide(unittest.TestCase):
         self.assertEqual(got["count"], 5)
         cards = {x["id"]: x for x in got["items"]}
         self.assertNotIn("old", cards)
-        self.assertEqual((cards["n"]["actions"], cards["n"]["goes"]), (["approve", "discard"], "note/notes-job"))
-        self.assertEqual(cards["u"]["actions"], ["update", "discard"])
+        self.assertEqual((cards["n"]["actions"], cards["n"]["goes"]), (["approve", "hold", "discard"], "note/notes-job"))
+        self.assertEqual(cards["u"]["actions"], ["update", "hold", "discard"])
         self.assertEqual(cards["c"]["actions"], ["check"])
         self.assertTrue(cards["bad"]["blocked"])
 
@@ -227,6 +227,55 @@ class Decide(unittest.TestCase):
         self.assertEqual(self.calls, [])                                             # none of these reach a service
 
 
+    def as_(self, user, via=""):
+        main.app.dependency_overrides[main.signed_in] = lambda: {"authenticated": True, "username": user, "via": via}
+
+    def test_hold_with_a_comment_its_sender_reads_and_resubmits(self):
+        self.as_("kim", "mcp-kim")
+        r = self.c.post("/api/propose", json={"record": {"target": "note", "title": "T", "body": "b", "status": "approved",
+                                                         "sender": {"user": "boss"}, "from": "MCP kim"}})
+        self.assertEqual(r.status_code, 200, r.text)
+        cid = r.json()["id"]
+        x = self.status(cid)
+        self.assertEqual((x["status"], x["sender"], x["round"]), ("waiting", {"user": "kim", "via": "mcp-kim"}, 0))  # not the caller's say
+        self.as_("me")
+        self.assertEqual(self.c.post(f"/api/inbox/{cid}/decide", json={"action": "hold"}).status_code, 400)   # a hold says why
+        got = self.c.post(f"/api/inbox/{cid}/decide", json={"action": "hold", "text": "제목을 고쳐 주세요"}).json()
+        self.assertEqual((got["status"], got["actions"], got["comments"][0]["text"], got["comments"][0]["by"]),
+                         ("held", ["approve", "hold", "discard"], "제목을 고쳐 주세요", "me"))       # still up for a yes or no
+        pend = self.c.get("/api/pending").json()
+        self.assertEqual((pend["held"], cid in [i["id"] for i in pend["items"]]), (1, True))   # with the waiting ones
+        self.assertNotIn(cid, [i["id"] for i in self.c.get("/api/decided").json()["items"]])
+        # Only its sender reads it as theirs and resubmits; another token of the same person does not.
+        self.assertEqual(self.c.get("/api/mine").json()["count"], 0)
+        self.assertEqual(self.c.post(f"/api/inbox/{cid}/resubmit", json={"fields": {"title": "X"}}).status_code, 403)
+        self.as_("kim", "other-token")
+        self.assertEqual(self.c.get("/api/mine").json()["count"], 0)
+        self.as_("kim")                                                              # the person: everything theirs
+        self.assertEqual([i["id"] for i in self.c.get("/api/mine?status=held").json()["items"]], [cid])
+        self.as_("kim", "mcp-kim")
+        mine = self.c.get("/api/mine").json()["items"][0]
+        self.assertEqual(mine["comments"][0]["text"], "제목을 고쳐 주세요")
+        r = self.c.post(f"/api/inbox/{cid}/resubmit", json={"fields": {"title": "T2", "status": "approved", "comments": []},
+                                                            "text": "고쳤습니다"})
+        self.assertEqual(r.status_code, 200, r.text)
+        x = self.status(cid)
+        self.assertEqual((x["title"], x["status"], x["round"], [c["text"] for c in x["comments"]]),
+                         ("T2", "waiting", 1, ["제목을 고쳐 주세요", "고쳤습니다"]))
+        self.assertEqual(self.c.post(f"/api/inbox/{cid}/resubmit", json={"fields": {}}).status_code, 409)  # waiting already
+        self.as_("me")
+        self.assertEqual(len(self.c.post(f"/api/inbox/{cid}/comment", json={"text": "좋아요"}).json()["comments"]), 3)
+        self.assertIn("approve", self.c.get(f"/api/inbox/{cid}").json()["actions"])   # up for a yes again
+
+    def test_a_sender_that_reads_nothing_back_cannot_be_held(self):
+        self.as_("kim", "MCP bot")
+        never = {"name": "bot", "mode": "never", "holdable": False}
+        cid = self.c.post("/api/propose", json={"record": {"target": "note", "title": "T", "sendsAs": never}}).json()["id"]
+        card = self.c.get(f"/api/inbox/{cid}").json()
+        self.assertEqual((card["sendsAs"], card["actions"]), (never, ["approve", "discard"]))
+        self.assertEqual(self.c.post(f"/api/inbox/{cid}/decide", json={"action": "hold", "text": "x"}).status_code, 409)
+        self.assertEqual(self.status(cid)["status"], "waiting")
+
 
 class Kinds(unittest.TestCase):
     """note_delete (into the bin, only if still as shown) and tags (each picked item's tags added)."""
@@ -262,7 +311,7 @@ class Kinds(unittest.TestCase):
 
     def test_a_note_delete_says_so_and_goes_to_the_bin_only_if_unchanged(self):
         card = next(x for x in self.c.get("/api/pending").json()["items"] if x["id"] == "del")
-        self.assertEqual((card["actions"], card["title"]), (["trash", "discard"], "Untitled"))
+        self.assertEqual((card["actions"], card["title"]), (["trash", "hold", "discard"], "Untitled"))
         self.assertEqual(self.c.post("/api/inbox/del/decide", json={"action": "approve"}).status_code, 409)
         self.body = "someone wrote here"
         self.assertEqual(self.c.post("/api/inbox/del/decide", json={"action": "trash"}).status_code, 502)
@@ -292,7 +341,7 @@ class Kinds(unittest.TestCase):
                  "svc": "authors", "destProj": "authors", "key": "authors", "recordId": "a1", "snapshot": {**snap, "name": ""}}]},
                 replaces=d)
         card = next(x for x in self.c.get("/api/pending").json()["items"] if x["id"] == "rd")
-        self.assertEqual((card["actions"], card["goes"]), (["trash", "discard"], "authors/authors"))
+        self.assertEqual((card["actions"], card["goes"]), (["trash", "hold", "discard"], "authors/authors"))
         self.assertEqual(self.c.post("/api/inbox/rd/decide", json={"action": "trash"}).status_code, 502)   # named since
         self.assertFalse([c for c in self.calls if c[1].endswith("/records/delete")])
         with main.DOC.lock:
