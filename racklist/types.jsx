@@ -609,7 +609,10 @@ function RefEdit({ value, onChange, field, ctx }) {
               // A record in another service: press it and you are there.
               : !t.local && l.id
                 ? <button type="button" className="rl-lnk" title={tr("rk_open_in", t.svc)}
-                  onClick={() => openInService(l.svc || t.svc, l.proj || t.proj, l.id)}>{name(l)}</button>
+                  // Framed in another service's pane (?solo=): the record opens in that page's editors, beside.
+                  onClick={() => (ctx.framed && ctx.openRecord
+                    ? ctx.openRecord({ svc: l.svc || t.svc, proj: l.proj || t.proj, id: l.id, label: name(l) })
+                    : openInService(l.svc || t.svc, l.proj || t.proj, l.id))}>{name(l)}</button>
                 : name(l)}
             <button type="button" className="rl-x" title={tr("rk_unlink")}
               onClick={() => onChange(field.many ? links.filter((x) => x !== l) : null)}>×</button>

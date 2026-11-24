@@ -62,11 +62,12 @@ export function useEditorPanes(key) {
     if (key) save(key, { v: V, tabs, active, col, full, hidden })
   }, [key, tabs, active, col, full, hidden])
 
+  // `t.col` (LEFT, RIGHT): a new tab asks for that side (the browsing tab, beside the one that opened it).
   const open = useCallback((t) => {
     setHidden(false)
     setTabs((ts) => {
       const had = ts.find((x) => x.id === t.id)
-      const to = had ? had.col : col
+      const to = had ? had.col : (t.col === LEFT || t.col === RIGHT ? t.col : col)
       setActive((a) => ({ ...a, [to]: t.id, [FULL]: t.id }))
       return had ? ts : [...ts, { ...t, col: to }]
     })

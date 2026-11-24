@@ -9,6 +9,7 @@ export { RackBulkEditor, bulkFields } from './bulk.jsx'
 export { RackListing } from './listing.jsx'
 export { bibText, bibEntry, bibAuthors, bibOrder, nameParts, jAbbrev, journalRec } from './bib.js'
 export { RackFrame } from './frame.jsx'
+export { openBrowse, RackBrowse } from './browse.jsx'
 export { RackFolder, RackFilePane, RackSettings, useFolders, fileSrc, fileUrl, scanFiles, onDesktop, copyText } from './files.jsx'
 export { registerType, typeOf, remoteDoc, forgetRemote, useRefOptions } from './types.jsx'
 export {

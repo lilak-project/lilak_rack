@@ -24,6 +24,7 @@ import { useRackKeys, useToggleKey } from './hooks.js'
 import { useCmdKeys } from './cmdkeys.js'
 import { typeOf, NoteEdit, syncNoteFlows, FlowChip } from './types.jsx'
 import { useFolders, RackFolder, RackFilePane, RackSettings, hasRoots } from './files.jsx'
+import { RackBrowse, browseAsked } from './browse.jsx'
 import { asSorts, bumpSort, bySome, byKeys } from './sort.js'
 import {
   defineRack, isFav, withFav, caseFree, itemColumns, classColumns, itemSorters, itemCells, itemSearch, itemTokens,
@@ -69,7 +70,7 @@ import { RackTagged, RackTaggedTab, TAGGED_COLS, TAGGED_SORTERS, useTaggedRows }
  *
  * A service whose records are not rackstore's says where they are:
  *   def.source = { load() => doc, save(body, doc) => { doc } | { conflict, doc } }
- *   def.item.create() => { id, label }   a new record made at once, then opened
+ *   def.item.create() => { id, label, tab? }   a new record made at once, then opened (tab: a view tab opened too)
  *   def.item.find(q) => Map(id → text)   what the server finds inside the records;
  *                                        fields and item.search see it as ctx.hits
  *   def.trash: false                     no trash (it is not rackstore's either)
@@ -114,6 +115,9 @@ const NONE = []                       // one empty list, so a hook sees the same
 // service shows it as, in a pane of its own (project_manager's tags, its inbox).
 // `class:<k>:<id>` is a class record's editor (an authors group).
 const SOLO = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('solo') : null
+// &locked=1 with it: the editor shown but not changed (its inputs and buttons off, still scrolls) —
+// a framing service's view of a record it may also unlock (lilak_flow's logbook log).
+const SOLO_LOCKED = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('locked') === '1'
 // ?bare=1: the list without its bar and tab strip — one tab of it (#open=tab:…)
 // shown inside another service's tab (a group's authors under a project).
 // The menu's column, as wide as the calendar's head (rack.css .rl-mod-rail sets the
@@ -129,6 +133,26 @@ const savedHere = (key) => (typeof BroadcastChannel === 'undefined' ? null : new
 
 export function RackService(props) {
   return SOLO ? <RackSolo {...props} id={SOLO} /> : <RackList {...props} />
+}
+
+/** &locked=1: everything in the editor read only or off — except the links to records (`.rl-lnk`),
+ *  which still open what they name. Kept so as the editor redraws (a MutationObserver). */
+function SoloLock({ on, children }) {
+  const box = useRef(null)
+  useEffect(() => {
+    const el = box.current
+    if (!on || !el) return undefined
+    const lock = () => el.querySelectorAll('input, textarea, select, button').forEach((x) => {
+      if (x.matches('.rl-lnk')) return
+      if ((x.tagName === 'INPUT' && !/^(checkbox|radio|file|button|submit)$/.test(x.type)) || x.tagName === 'TEXTAREA') x.readOnly = true
+      else x.disabled = true
+    })
+    lock()
+    const watch = new MutationObserver(lock)
+    watch.observe(el, { childList: true, subtree: true })
+    return () => watch.disconnect()
+  }, [on])
+  return on ? <div ref={box} className="rl-solo-lock">{children}</div> : children
 }
 
 /** One item's editor, alone, the same editor the list opens. Its cancel has no
@@ -173,15 +197,16 @@ function RackSolo({ def: declared, id }) {
   const inPane = window.parent !== window
   const toPage = (m) => window.parent.postMessage(m, window.location.origin)
   const ctx = { remote, folders, reloadFolders, say: setNote, commit, isAdmin: isManager(), showDate,
-    ...(inPane ? { openFrame: (rackFrame) => toPage({ rackFrame }), openRecord: (rackOpen) => toPage({ rackOpen }) } : {}) }
+    ...(inPane ? { framed: true, openFrame: (rackFrame) => toPage({ rackFrame }), openRecord: (rackOpen) => toPage({ rackOpen }) } : {}) }
   return (
     <div className="rl rl-solo" style={brandStyle()}>
       {!doc ? <p className="rl-msg">{note || tr("rk_loading")}</p>
         : gone || !rec ? <p className="rl-msg">{tr("rk_open_target_missing")}</p>
-          : <RackItemEditor key={`${id}:${zone}`} def={def} doc={doc} rec={rec} ctx={ctx} onSave={commit} canDelete={isManager()}
+          : <SoloLock on={SOLO_LOCKED}>
+            <RackItemEditor key={`${id}:${zone}`} def={def} doc={doc} rec={rec} ctx={ctx} onSave={commit} canDelete={isManager()}
             {...(c ? { fields: c.fields, listKey: c.k, noun: c.noun, cls: c } : {})}
             onCancel={() => { if (inPane) toPage({ rackClose: { was: id } }) }} onDeleted={() => setGone(true)}
-            actions={c ? undefined : itemButtons(def, ctx, doc)} />}
+            actions={c ? undefined : itemButtons(def, ctx, doc)} /></SoloLock>}
       {doc && note && <div className="rl-hint rl-solo-note">{note}</div>}
     </div>
   )
@@ -210,7 +235,8 @@ function RackList({ def: declared, slots = {} }) {
     const slot = (t) => ({ id: t.id, kind: 'slot', label: t.label })
     return [
       ...(slots.tabs || []).filter((t) => t.lead).map(slot),
-      all,
+      // `item.listTab: false`: no every-item tab (a service whose own tab lists them, lilak_flow's folders).
+      ...(def.item.listTab === false ? [] : [all]),
       // A month of the items, when they have dates (def.calendar) — the items
       // again, so beside them.
       ...(def.calendar ? [{ id: 'calendar', kind: 'calendar', label: tr("rk_tab_calendar") }] : []),
@@ -329,6 +355,7 @@ function RackList({ def: declared, slots = {} }) {
     })
     panes.keep((t) => {
       if (!t.who) return true
+      if (t.kind === 'browse') return browseAsked(t.who)   // back from before a reload: no one waits for its pick
       if (t.kind === 'item' || t.kind === 'file') return items.some((r) => idOf(r) === t.who)
       if (t.kind === 'class') {
         const c = def.classes.find((x) => x.k === t.of)
@@ -399,6 +426,7 @@ function RackList({ def: declared, slots = {} }) {
         if (!made) return
         setDoc(await loadDoc())
         openEdit({ id: `item:${made.id}`, kind: 'item', who: made.id, label: made.label || made.id, fresh: true })
+        if (made.tab) openTab(made.tab)   // and a tab of its own the service names (lilak_flow: the new file's flow board)
       }).catch((e) => setNote(String(e.message || e)))
       return
     }
@@ -831,6 +859,8 @@ function RackList({ def: declared, slots = {} }) {
     }
     if (etab.kind === 'file') {
       const rec = items.find((r) => idOf(r) === etab.who)
+    // The browsing tab (browse.jsx openBrowse): a folder on the host to pick from.
+    if (etab.kind === 'browse') return <RackBrowse key={etab.who} etab={etab} api={api} />
       return <RackFilePane value={rec?.[etab.field]} say={setNote} />
     }
     if (etab.kind === 'item') {
