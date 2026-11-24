@@ -326,6 +326,15 @@ class Bar extends WidgetType {
 class Picture extends WidgetType {
   constructor(markup, n, src) { super(); this.markup = markup; this.n = n; this.src = src }
   eq(other) { return other.markup === this.markup && other.n === this.n }
+  // How tall before it is drawn, once its size is known (picSizes): without
+  // it a picture off the screen counts as one line, and scrolling onto it the
+  // editor finds hundreds of pixels it did not expect and moves the page —
+  // in Safari, against the flick that was carrying it down.
+  get estimatedHeight() {
+    const { w, url } = figureOf(this.markup)
+    const k = picSizes.get(url(this.src))
+    return k ? Math.round(Math.min(w || k[0], 900) * k[1] / k[0]) + 8 : -1
+  }
   toDOM(view) {
     const { name, w, url } = figureOf(this.markup)
     const box = document.createElement('div')
@@ -397,11 +406,24 @@ class PictureRow extends WidgetType {
   ignoreEvent() { return true }
 }
 
+/** Every picture of the note asked for at once, the size of each kept
+ *  (picSizes): a picture drawn later — scrolled to — then stands at its own
+ *  height before it loads, instead of growing under the reader mid-scroll. */
+const asked = new Set()
+const preload = (url) => {
+  if (picSizes.has(url) || asked.has(url)) return
+  asked.add(url)
+  const im = new Image()
+  im.onload = () => notePicSize(im)
+  im.src = url
+}
+
 const pictureBlocks = (fileSrc) => {
   const of = (state) => {
     const doc = state.doc
     const byLine = new Map()
     for (const f of figureList(doc.toString())) {
+      preload(figureOf(f.markup).url(fileSrc))
       const end = doc.lineAt(f.at).to
       if (!byLine.has(end)) byLine.set(end, [])
       byLine.get(end).push(new Picture(f.markup, f.n, fileSrc))

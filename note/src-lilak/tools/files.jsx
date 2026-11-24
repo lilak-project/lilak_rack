@@ -211,7 +211,7 @@ function Body({ note, edit, files, seeFiles, say, go, tex }) {
 export default {
   id: 'files',
   label: 'nt_tab_files',
-  modes: ['md', 'tex'],
+  modes: ['md', 'tex', 'code'],
   badge: ({ note, files }) => missingFiles(note.body, files, note.tex).length || null,
   Body,
 }

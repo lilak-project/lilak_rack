@@ -266,14 +266,17 @@ def _read(p: Path) -> dict:
     # key someone leaves in the front matter is kept as an ordinary field, not
     # read as tags — two places to write one thing is how they disagree.
     tags = []
-    for m in TAG_RE.finditer(_no_code(body)):
+    # A code note (`format: code`) is all code: `#include` is not a tag, nor
+    # `@property` a person.
+    prose = "" if str(meta.get("format") or "").lower() == "code" else _no_code(body)
+    for m in TAG_RE.finditer(prose):
         if m.group(1) not in tags:
             tags.append(m.group(1))
     # The people the body mentions, as they are written: who they ARE is
     # authors's to say, so the screen resolves them and this only
     # reports the words.
     people = []
-    for m in AUTH_RE.finditer(_no_code(body)):
+    for m in AUTH_RE.finditer(prose):
         if m.group(1) not in people:
             people.append(m.group(1))
     return {

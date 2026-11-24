@@ -3,15 +3,10 @@ import { EditorState, RangeSet, StateEffect, StateField } from '@codemirror/stat
 import { EditorView, keymap, lineNumbers, gutterLineClass, GutterMarker, dropCursor,
   highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { syntaxHighlighting, defaultHighlightStyle, HighlightStyle, StreamLanguage } from '@codemirror/language'
-import { tags } from '@lezer/highlight'
+import { syntaxHighlighting, StreamLanguage } from '@codemirror/language'
 import { markdown, markdownLanguage, markdownKeymap } from '@codemirror/lang-markdown'
 import { stex } from '@codemirror/legacy-modes/mode/stex'
-import { python } from '@codemirror/legacy-modes/mode/python'
-import { c, cpp } from '@codemirror/legacy-modes/mode/clike'
-import { shell } from '@codemirror/legacy-modes/mode/shell'
-import { json } from '@codemirror/legacy-modes/mode/javascript'
-import { yaml } from '@codemirror/legacy-modes/mode/yaml'
+import { langFor, noteHighlight } from './CodeArea.jsx'
 import { livePreview, liveLook } from './livemd.js'
 import { deckField, deckFit, deckGutter, setDeck, setDeckScale } from './slides.jsx'
 import { commentFold, setFoldComments } from './comments.js'
@@ -51,33 +46,9 @@ import { tagComplete, citeComplete, dueKeys, jamoKeys, listKeys, markKeys, quote
 // gutter is rebuilt from the numbers whenever they change AND whenever the
 // document does — a line deleted out from under number 40 leaves number 40
 // where it is, on whatever is there now.
-// ── what a ```fence can name ──────────────────────────────────────────────
-// The modes the LaTeX view already brings in (`legacy-modes`), so colouring
-// a code block costs no new package. Adding one is a line in this table.
-const FENCE = {
-  python, py: python, cpp, 'c++': cpp, cc: cpp, c, bash: shell, sh: shell, shell, zsh: shell,
-  json, yaml, yml: yaml,
-}
-const fenceLanguage = (info) => {
-  const mode = FENCE[String(info).trim().toLowerCase()]
-  return mode ? StreamLanguage.define(mode) : null
-}
-
-/** CodeMirror's own style, with ONE rule changed: it underlines a heading as
- *  well as bolding it, and the line under it read as a link — a note's
- *  headings are bold and a size larger, which says it already.
- *
- *  Built from `defaultHighlightStyle.specs` rather than added beside it: a
- *  second (non-fallback) highlighter REPLACES the fallback one outright
- *  (`getHighlighters`), so laying one over the default took every colour in
- *  the editor — LaTeX's and markdown's — away with it. */
-/*  Each colour is also a variable named after it (`--nt-syn-708`), so the
- *  dark theme can say its own (note.css) and bright stays CodeMirror's. */
-export const noteHighlight = HighlightStyle.define(
-  defaultHighlightStyle.specs.map((spec) => {
-    const s = spec.tag === tags.heading ? { ...spec, textDecoration: 'none' } : spec
-    return s.color ? { ...s, color: `var(--nt-syn-${s.color.slice(1)}, ${s.color})` } : s
-  }))
+// ── what a ```fence can name: the languages the Code mode has (CodeArea.jsx).
+const fenceLanguage = langFor
+export { noteHighlight }
 
 const mark = (cls) => new (class extends GutterMarker { elementClass = cls })()
 const PIN = mark('nt-pin')
@@ -286,13 +257,14 @@ export default function RawArea({ value, onChange, live = false, tex = false, re
     // (scrolled.js). The line at the top of the box, not its pixels: the pane
     // it comes back in is another width, so the text wraps elsewhere.
     const top = () => {
-      // CodeMirror can be between renders when a scroll arrives (the tools
-      // column opening, a pane docking), and asking it what is at a point
-      // then throws from inside its own tile map. A place not written down
-      // is no loss; a scroll handler that throws on every tick is.
+      // Read from the heights CodeMirror already holds, not by asking what is
+      // at a point: `posAtCoords` makes it measure there and then, and in
+      // Safari a measure while a flick was still slowing down (the scroll
+      // events of its tail come further apart than the rest below) moved the
+      // page under it and threw the note back up. A place not written down
+      // is no loss; a scroll handler that throws is.
       try {
-        const box = v.scrollDOM.getBoundingClientRect()
-        return v.posAtCoords({ x: box.left + 1, y: box.top + 1 }, false)
+        return v.lineBlockAtHeight(Math.max(0, v.scrollDOM.scrollTop - v.documentPadding.top)).from
       } catch { return null }
     }
     const was = placeBack(at)
@@ -317,7 +289,7 @@ export default function RawArea({ value, onChange, live = false, tex = false, re
       rest = setTimeout(() => {
         const p = top()
         if (p != null) placeSave(at, p)
-      }, 250)
+      }, 600)
     }, { passive: true })
     // Measured now rather than on the next update: a note nobody has touched
     // produces no update, and the column at the top would be the wrong width

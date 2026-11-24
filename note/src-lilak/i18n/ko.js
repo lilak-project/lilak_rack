@@ -389,4 +389,7 @@ export default {
   nt_unlock_no: "잠근 사람이나 관리자만 풀 수 있습니다",
   nt_locked_now: "읽기 전용으로 잠갔습니다.",
   nt_unlocked_now: "잠금을 풀었습니다.",
+  nt_code_hint: "코드 파일 — 줄 번호와 색, 마크다운 없이 (앞머리 format: code)",
+  nt_code_lang: "언어",
+  nt_code_plain: "일반 텍스트",
 }

@@ -154,6 +154,6 @@ function Keep({ make, say }) {
 export default {
   id: 'common',
   label: 'nt_tool_common',
-  modes: ['md', 'tex'],
+  modes: ['md', 'tex', 'code'],
   Body,
 }

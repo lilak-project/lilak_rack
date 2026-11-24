@@ -389,4 +389,7 @@ export default {
   nt_unlock_no: "Only the one who locked it or a manager can unlock it",
   nt_locked_now: "Locked read-only.",
   nt_unlocked_now: "Unlocked.",
+  nt_code_hint: "A file of code — line numbers and colours, no markdown (format: code)",
+  nt_code_lang: "Language",
+  nt_code_plain: "Plain text",
 }

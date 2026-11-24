@@ -289,3 +289,10 @@ assert not lock_note("lk", LockBody(on=False), {"authenticated": True, "username
 assert put_note("lk", SaveBody(body="바뀜\n"), _b)["body"] == "바뀜\n"
 (_RN / "lk.md").unlink()
 print("lock ok")
+
+# ── a code note: all code, so no tags and no people in it ─────────────────
+from backend.main import _read   # noqa: E402
+(_RN / "cd.md").write_text("---\ntitle: cd\nformat: code\nlang: cpp\n---\n\n#include <x>\n@decor\n", encoding="utf-8")
+assert _read(_RN / "cd.md")["tags"] == [] and _read(_RN / "cd.md")["authors"] == []
+(_RN / "cd.md").unlink()
+print("code ok")

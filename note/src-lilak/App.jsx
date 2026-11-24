@@ -22,6 +22,7 @@ import { isManager, linkProject, portalUser, remoteDocOf } from 'racklist/portal
 import { numberHeadings, TAG_RE, TAG_COMMENT, URGENT_RE, outsideCode, replaceOutsideCode, untagged, setTagChoices, setProjChoices, setCiteChoices, setAuthorChoices, setJobChoices, authorShow } from './marks.js'
 import SourceArea from './SourceArea.jsx'
 import ReviewPane from './review.jsx'
+import CodeArea, { LANGS } from './CodeArea.jsx'
 import { wrapSel } from './liveedit.js'
 import { Rendered } from './reading.jsx'
 import { DeckMeasure, SlidePrint, SlideShow, coverOf, enterFull, gapBefore, slideH } from './slides.jsx'
@@ -786,11 +787,15 @@ const MODES = {
   // editor, so none of the markdown tools.
   review: { kind: 'review', label: () => 'Review', hint: () => tr("nt_rv_hint") },
   tex: { kind: 'tex', label: () => 'LaTeX', hint: () => tr("nt_tex"), format: 'tex' },
+  // A file of code (`format: code`, its language `lang:`): CodeArea.jsx,
+  // which other services take too. No markdown, so none of md's tools.
+  code: { kind: 'code', label: () => 'Code', hint: () => tr("nt_code_hint"), format: 'code' },
 }
 
-/** The note's mode, chosen from a menu drawn in the page. Not a `<select>`: after
- *  its native menu closes, the next press on the page did nothing. */
-function ModePick({ mode, onPick }) {
+/** One of a few, chosen from a menu drawn in the page — the note's mode, a
+ *  code note's language. Not a `<select>`: after its native menu closes, the
+ *  next press on the page did nothing. `items` [[key, label, hint?]]. */
+function MenuPick({ value, items, onPick, label }) {
   const [open, setOpen] = useState(false)
   const box = useRef(null)
   useEffect(() => {
@@ -804,22 +809,27 @@ function ModePick({ mode, onPick }) {
       window.removeEventListener('blur', shut)
     }
   }, [open])
+  const shown = items.find(([k]) => k === value)?.[1] ?? value
   return (
     <span className="nt-mode-box" ref={box} onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false) }}>
       <button type="button" className="rl-in nt-mode" aria-haspopup="listbox" aria-expanded={open}
-        aria-label={tr("nt_mode")} {...press(() => setOpen(!open))}>{MODES[mode].label()} ▾</button>
+        aria-label={label} {...press(() => setOpen(!open))}>{shown} ▾</button>
       {open ? (
-        <span className="nt-mode-menu" role="listbox" aria-label={tr("nt_mode")}>
-          {Object.entries(MODES).map(([k, m]) => (
-            <button key={k} type="button" role="option" aria-selected={k === mode} title={m.hint?.()}
-              className={`rl-btn${k === mode ? ' on' : ''}`}
-              {...press(() => { setOpen(false); if (k !== mode) onPick(k) })}>{m.label()}</button>
+        <span className="nt-mode-menu" role="listbox" aria-label={label}>
+          {items.map(([k, text, hint]) => (
+            <button key={k} type="button" role="option" aria-selected={k === value} title={hint}
+              className={`rl-btn${k === value ? ' on' : ''}`}
+              {...press(() => { setOpen(false); if (k !== value) onPick(k) })}>{text}</button>
           ))}
         </span>
       ) : null}
     </span>
   )
 }
+const ModePick = ({ mode, onPick }) => (
+  <MenuPick value={mode} label={tr("nt_mode")} onPick={onPick}
+    items={Object.entries(MODES).map(([k, m]) => [k, m.label(), m.hint?.()])} />
+)
 
 // A next note being made (flow.js): one at a time, whichever editor asked.
 let following = false
@@ -1040,12 +1050,13 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
   // the note's files get a folder of their own (`files/<id>/`), because LaTeX
   // names a plain `fig1.pdf` that the compile copies next to main.tex.
   const tex = texNote(f)
-  // The mode this note is in, and what it can do (MODES above). A tex note is
-  // in its format's mode whatever `view` says; a markdown note is in the one
-  // it is being looked at in.
-  const mode = tex ? 'tex' : view
+  const code = String(f?.fields?.format || '').toLowerCase() === 'code'
+  // The mode this note is in, and what it can do (MODES above). A tex or a
+  // code note is in its format's mode whatever `view` says; a markdown note
+  // is in the one it is being looked at in.
+  const mode = tex ? 'tex' : code ? 'code' : view
   const can = MODES[mode] || MODES.live
-  const isDeck = view === 'slide' && !tex
+  const isDeck = view === 'slide' && !tex && !code
   const deckH = slideH(f?.fields?.ratio)
   // Which slide a line is on, and going to one: to the top of the box.
   const slideOf = (ln) => pages.reduce((at, p, i) => (i && p.from <= ln ? i : at), 0)
@@ -1625,6 +1636,16 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
           {(mode === 'raw' && recording.state === 'idle') || recording.note === id
             ? <>{recording.state === 'idle' ? <LangPick /> : null}<RecButton note={id} title={f.title} /></> : null}
           {isDeck ? <button type="button" className="rl-btn" title={tr("nt_show_hint")} {...press(startShow)}>{tr("nt_show_btn")}</button> : null}
+          {code ? (
+            <MenuPick value={f.fields?.lang || ''} label={tr("nt_code_lang")}
+              items={[['', tr("nt_code_plain")], ...LANGS.map((l) => [l, l])]}
+              onPick={(l) => setF((st) => {
+                const fields = { ...(st.fields || {}) }
+                if (l) fields.lang = l
+                else delete fields.lang
+                return { ...st, fields }
+              })} />
+          ) : null}
           <button type="button" className={`rl-btn${wide ? ' on' : ''}`} aria-pressed={wide}
             title={tr(wide ? "nt_wide_off_hint" : "nt_wide_hint")} {...press(() => setWide((w) => !w))}>{tr("nt_wide_btn")}</button>
           {/* Every tool behind ONE button. The dot is the only thing a shut
@@ -1722,7 +1743,12 @@ function Editor({ id, say, onSaved, onClosed, onPrint, takeCaret, onCaret, onOpe
           {/* Reading, in place of the text — the same sheet the print page
               draws. Everything else about the tab stays where it was, tools
               and all, so it is one press back. */}
-          {mode === 'review' ? (
+          {code ? (
+            <div className="nt-code-pane">
+              <CodeArea text={f.body} lang={f.fields?.lang} readOnly={locked}
+                onChange={(v) => setF((s) => ({ ...s, body: v }))} />
+            </div>
+          ) : mode === 'review' ? (
             <ReviewPane id={id} version={n?.version} references={references} say={say} locked={locked}
               flush={async () => { if (dirty) await saveNote() }}
               onNote={(note) => { sent.current = null; setN(note); setF(note); live.current = { f: note, n: note } }}

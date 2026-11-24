@@ -1294,3 +1294,8 @@ body.nt-paper #root { height: auto; min-height: 100%; }
 /* A locked note (공용 → 읽기 전용): said beside the title and in the tool. */
 .nt-locked { flex: 0 0 auto; align-self: center; padding: 0 6px; font-size: var(--fs-small); line-height: 1.6;
   color: var(--rk-danger); border: 1px solid var(--rk-danger); white-space: nowrap; }
+
+/* Code mode (CodeArea.jsx): the file fills the editor's place. */
+.nt-code-pane { flex: 1; min-height: 0; overflow: hidden; border-top: 1px solid var(--rk-line); background: var(--rk-panel); }
+.nt-code-pane .cm-editor { height: 100%; }
+.nt-code-pane .cm-gutters { background: var(--rk-gut); border-right: 1px solid var(--rk-line); color: var(--rk-mute); }
